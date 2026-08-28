@@ -76,10 +76,16 @@ const html = fs.readFileSync(path.join(HERE, 'public', 'index.html'), 'utf8');
 const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/);
 if (!bodyMatch) throw new Error('could not find <body> in public/index.html');
 
+// The webfont links live in <head>, which the fragment output does not get.
+// A stylesheet link is valid in the body, so carry them across verbatim.
+const fontLinks = [...html.matchAll(/<link[^>]*fonts\.(?:googleapis|gstatic)\.com[^>]*>/g)].map((m) => m[0]);
+if (!fontLinks.length) console.warn('warning: no webfont links found in public/index.html');
+
 const markup = bodyMatch[1].replace(/\s*<script[\s\S]*?<\/script>\s*/g, '\n');
 const title = (html.match(/<title>([^<]*)<\/title>/) ?? [, 'Prompt Wars'])[1];
 
 const fragment = `<title>${title}</title>
+${fontLinks.join('\n')}
 <style>
 ${styles.trim()}
 </style>
@@ -89,16 +95,20 @@ ${chunks.join('\n')}
 </script>
 `;
 
+// The standalone document lifts the title and font links into a real <head>.
+const headLines = 1 + fontLinks.length;
+const fragmentLines = fragment.split('\n');
+
 const standalone = `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-${fragment.split('\n')[0]}
+${fragmentLines.slice(0, headLines).join('\n')}
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='11' fill='%23ff5c7a'/></svg>" />
 </head>
 <body>
-${fragment.split('\n').slice(1).join('\n')}
+${fragmentLines.slice(headLines).join('\n')}
 </body>
 </html>
 `;

@@ -144,7 +144,7 @@ export class Renderer {
         ctx.stroke();
 
         ctx.fillStyle = '#0c0f16';
-        ctx.font = 'bold 13px ui-monospace, monospace';
+        ctx.font = '500 13px "IBM Plex Mono", ui-monospace, monospace';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(item.weaponId === 'shotgun' ? 'SG' : 'AR', item.x, item.y + 1);
@@ -233,7 +233,7 @@ export class Renderer {
     }
 
     ctx.fillStyle = '#dfe4f0';
-    ctx.font = '600 15px ui-sans-serif, system-ui, sans-serif';
+    ctx.font = '600 14px "Chakra Petch", ui-sans-serif, system-ui, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'bottom';
     ctx.fillText(agent.name, agent.x, agent.y - r - 8);
@@ -241,7 +241,7 @@ export class Renderer {
     const weapon = WEAPONS[agent.weapon];
     if (weapon && weapon.id !== 'pistol') {
       ctx.fillStyle = weapon.color;
-      ctx.font = 'bold 11px ui-monospace, monospace';
+      ctx.font = '500 11px "IBM Plex Mono", ui-monospace, monospace';
       ctx.textBaseline = 'top';
       ctx.fillText(weapon.id === 'shotgun' ? 'SG' : 'AR', agent.x, agent.y + r + 6);
     }

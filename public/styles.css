@@ -11,6 +11,13 @@
   --warn: #facc15;
   --bad: #ef4444;
   --radius: 10px;
+
+  /* Chakra Petch is the HUD voice - wordmark, section labels, live numbers.
+     Plex Sans carries the reading text; Plex Mono the sensor telemetry, where
+     the columns have to line up. */
+  --font-display: "Chakra Petch", "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-body: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
 * { box-sizing: border-box; }
@@ -20,7 +27,7 @@ html, body {
   height: 100%;
   background: var(--bg);
   color: var(--text);
-  font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  font: 15px/1.5 var(--font-body);
 }
 
 /* ------------------------------------------------------------------ topbar */
@@ -36,7 +43,14 @@ html, body {
 }
 
 .brand { display: flex; align-items: baseline; gap: 10px; }
-.brand h1 { font-size: 19px; margin: 0; letter-spacing: 0.2px; }
+.brand h1 {
+  font-family: var(--font-display);
+  font-size: 21px;
+  font-weight: 700;
+  margin: 0;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
 .brand-dot {
   width: 11px; height: 11px; border-radius: 50%;
   background: radial-gradient(circle at 30% 30%, #ff9fb0, var(--accent-2));
@@ -45,7 +59,13 @@ html, body {
 .tagline { color: var(--muted); font-size: 13px; }
 
 .stats { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; font-size: 13px; color: var(--muted); }
-.stat b { color: var(--text); font-variant-numeric: tabular-nums; }
+.stat b {
+  color: var(--text);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
 
 .badge {
   font-size: 12px;
@@ -101,13 +121,15 @@ main {
   margin: 0 0 10px;
   font-size: 12px;
   text-transform: uppercase;
-  letter-spacing: 0.09em;
+  letter-spacing: 0.13em;
+  font-family: var(--font-display);
+  font-weight: 600;
   color: var(--muted);
   display: flex;
   justify-content: space-between;
   align-items: baseline;
 }
-.card h2 em { font-style: normal; text-transform: none; letter-spacing: 0; font-size: 12px; }
+.card h2 em { font-style: normal; text-transform: none; letter-spacing: 0; font-size: 12px; font-family: var(--font-body); font-weight: 400; }
 
 /* -------------------------------------------------------------------- form */
 form { display: flex; flex-direction: column; gap: 10px; }
@@ -116,7 +138,7 @@ form { display: flex; flex-direction: column; gap: 10px; }
 
 label { display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--muted); }
 label span { display: flex; justify-content: space-between; align-items: baseline; }
-label em { font-style: normal; font-variant-numeric: tabular-nums; }
+label em { font-style: normal; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 
 input, textarea, select {
   background: var(--panel-2);
@@ -173,7 +195,7 @@ button.ghost:hover { border-color: #394462; }
 .who { min-width: 0; }
 .who .name { font-weight: 600; }
 .who .sub { color: var(--muted); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.kd { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; text-align: right; }
+.kd { color: var(--muted); font-family: var(--font-display); font-weight: 600; font-size: 12.5px; font-variant-numeric: tabular-nums; text-align: right; }
 
 .hpbar { height: 4px; border-radius: 2px; background: #2a3042; overflow: hidden; margin-top: 4px; }
 .hpbar i { display: block; height: 100%; background: var(--good); }
@@ -187,16 +209,16 @@ button.ghost:hover { border-color: #394462; }
   background: #0c0f17;
   border: 1px solid var(--line);
   border-radius: 8px;
-  font: 11.5px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace;
+  font: 11.5px/1.55 var(--font-mono);
   white-space: pre-wrap;
   word-break: break-word;
   max-height: 260px;
   overflow: auto;
   color: #b9c2d6;
 }
-.inspector .label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em; }
+.inspector .label { color: var(--muted); font-family: var(--font-display); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.11em; }
 .chips { display: flex; flex-wrap: wrap; gap: 5px; }
-.chip { background: var(--panel-2); border: 1px solid var(--line); border-radius: 999px; padding: 2px 9px; font-size: 11.5px; }
+.chip { background: var(--panel-2); border: 1px solid var(--line); border-radius: 999px; padding: 2px 9px; font-size: 11.5px; font-family: var(--font-mono); }
 .chip.err { border-color: rgba(239, 68, 68, 0.5); color: #fca5a5; }
 .muted { color: var(--muted); }
 .prompt-quote {
@@ -208,7 +230,7 @@ button.ghost:hover { border-color: #394462; }
 .log { list-style: none; margin: 0; padding: 0; max-height: 190px; overflow: auto; font-size: 12.5px; }
 .log li { padding: 3px 0; border-bottom: 1px solid rgba(35, 40, 56, 0.6); color: var(--muted); }
 .log li:last-child { border-bottom: 0; }
-.log .t { color: #5a6377; font-variant-numeric: tabular-nums; margin-right: 6px; font-size: 11.5px; }
+.log .t { color: #5a6377; font-family: var(--font-mono); font-variant-numeric: tabular-nums; margin-right: 6px; font-size: 11px; }
 .log li.kill { color: #ffb4b4; }
 .log li.join { color: #a6e2b8; }
 .log li.loot { color: #cbb9f5; }
@@ -223,4 +245,15 @@ button.ghost:hover { border-color: #394462; }
   main { grid-template-columns: 1fr; }
   .arena-wrap { position: static; }
   #arena { max-width: 100%; }
+}
+
+/* Keyboard users get the same affordance mouse users do. */
+button:focus-visible, .roster li:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.roster li { scroll-margin: 8px; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
