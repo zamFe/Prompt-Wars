@@ -361,6 +361,9 @@ const MOVE = {
   stepDistance: 26,    // one "step" of move()
   forwardSpeed: 130,   // world units/sec
   backwardSpeed: 78,   // walking backwards is slower
+  sidestepSpeed: 95,   // sidestepping keeps your cone and gun on target, so it
+                       // costs ground speed - quicker than backing up, slower
+                       // than walking where you are looking
 };
 const VISION = {
   fov: 45,             // total cone width; agents see +/- 22.5 deg
@@ -945,6 +948,19 @@ const senseUtils = { seesTarget, relativeFacing, facingWord, clamp };
 // snap its aim onto a target. Everything costs time, so *what* an agent decides
 // to do matters far more than how precisely it can do it - which is the point
 // of the game.
+
+
+/**
+ * Movement directions, each an angle offset from the body facing. Sidestepping
+ * is the only way to change position without changing where you are looking,
+ * which is what makes it worth its lower speed.
+ */
+const MOVE_DIRECTIONS = {
+  forward: { angle: 0, speed: MOVE.forwardSpeed },
+  backward: { angle: 180, speed: MOVE.backwardSpeed },
+  left: { angle: -90, speed: MOVE.sidestepSpeed },
+  right: { angle: 90, speed: MOVE.sidestepSpeed },
+};
 const ACTION_LIMITS = {
   turnDegrees: [5, 180],
   moveSteps: [1, 8],
@@ -976,13 +992,19 @@ const TOOL_SCHEMAS = [
   {
     name: 'move',
     description:
-      `Walk forwards or backwards a number of steps. One step is ${MOVE.stepDistance} units; ` +
-      `forwards is ${MOVE.forwardSpeed} units/sec and backwards is ${MOVE.backwardSpeed} units/sec. ` +
-      'You always travel along your body facing - there is no strafing. Walking into a wall ends the move early.',
+      `Travel a number of steps. One step is ${MOVE.stepDistance} units. ` +
+      `"forward" (${MOVE.forwardSpeed} units/sec) and "backward" (${MOVE.backwardSpeed} units/sec) go along your body facing. ` +
+      `"left" and "right" sidestep - you move sideways at ${MOVE.sidestepSpeed} units/sec while your body facing, vision cone and aim all stay exactly where they are. ` +
+      'Sidestepping is how you dodge, circle a target you are already aiming at, or lean out from cover without losing sight of it. ' +
+      'Walking into a wall ends the move early.',
     input_schema: {
       type: 'object',
       properties: {
-        direction: { type: 'string', enum: ['forward', 'backward'], description: 'Which way to walk.' },
+        direction: {
+          type: 'string',
+          enum: ['forward', 'backward', 'left', 'right'],
+          description: 'Which way to travel. "left" and "right" sidestep without turning.',
+        },
         steps: { type: 'number', description: 'How many steps, 1 to 8.' },
       },
       required: ['direction', 'steps'],
@@ -1058,7 +1080,7 @@ function normalizeAction(call, agent) {
       return { type: 'turn', direction, remaining: degrees, total: degrees };
     }
     case 'move': {
-      const direction = input.direction === 'backward' ? 'backward' : 'forward';
+      const direction = MOVE_DIRECTIONS[input.direction] ? input.direction : 'forward';
       const steps = Math.round(clampRange(input.steps, ACTION_LIMITS.moveSteps, 2));
       const distance = steps * MOVE.stepDistance;
       return { type: 'move', direction, remaining: distance, total: distance, steps };
@@ -1101,7 +1123,9 @@ function describeAction(action) {
   if (!action) return 'idle';
   switch (action.type) {
     case 'turn': return `turn ${action.direction} ${Math.round(action.total)}°`;
-    case 'move': return `move ${action.direction} ${action.steps}`;
+    case 'move': return action.direction === 'left' || action.direction === 'right'
+      ? `sidestep ${action.direction} ${action.steps}`
+      : `move ${action.direction} ${action.steps}`;
     case 'aim': return action.target === 0 ? 'aim center' : `aim ${action.target < 0 ? 'left' : 'right'} ${Math.abs(Math.round(action.target))}°`;
     case 'fire': return `fire x${action.total}`;
     case 'reload': return 'reload';
@@ -1125,11 +1149,11 @@ function stepAction(agent, action, dt, ctx) {
     }
 
     case 'move': {
-      const speed = action.direction === 'forward' ? MOVE.forwardSpeed : MOVE.backwardSpeed;
-      const amount = Math.min(speed * dt, action.remaining);
-      const sign = action.direction === 'forward' ? 1 : -1;
-      const rad = (agent.facing * Math.PI) / 180;
-      const moved = ctx.tryMove(agent, Math.cos(rad) * amount * sign, Math.sin(rad) * amount * sign);
+      const spec = MOVE_DIRECTIONS[action.direction] ?? MOVE_DIRECTIONS.forward;
+      const amount = Math.min(spec.speed * dt, action.remaining);
+      // The angle offset carries the direction, so the body never rotates here.
+      const rad = toRad(agent.facing + spec.angle);
+      const moved = ctx.tryMove(agent, Math.cos(rad) * amount, Math.sin(rad) * amount);
       action.remaining -= amount;
       // Bumping a wall ends the move so the agent is not stuck grinding into it.
       if (!moved) {
@@ -1770,6 +1794,9 @@ const RULES = [
   { re: /\b(camp|ambush|lurk|wait|hide|hold position|stay put|guard)\b/g, aggression: -0.08, camp: +0.35 },
   { re: /\b(patrol|roam|wander|explore|search|sweep|scout)\b/g, camp: -0.25, roam: +0.3 },
   { re: /\b(spin|rotate|whirl|360|pirouette)\b/g, spin: +0.5 },
+  { re: /\b(strafe|strafing|sidestep|side.?step|circle|circling|orbit|dodge|juke|weave|zig.?zag|serpentine)\b/g, strafe: +0.3 },
+  { re: /\b(keep moving|never stop moving|always be moving|stay mobile|hard to hit)\b/g, strafe: +0.25 },
+  { re: /\b(stand (still|your ground)|do not move|don't move|hold (still|your ground)|stay rooted)\b/g, strafe: -0.4, camp: +0.2 },
 
   // --- range preference ----------------------------------------------------
   { re: /\b(close range|point.?blank|up close|in their face|melee|hug|close the distance)\b/g, range: -0.4 },
@@ -1822,6 +1849,7 @@ function parsePrompt(text = '') {
     camp: 0.15,
     roam: 0.3,
     spin: 0,
+    strafe: 0.15,      // sidestepping is off by default; a prompt has to ask for it
     range: 0,          // -1 wants to be close, +1 wants to stay far
     loot: 0.35,
     trigger: 0,        // -1 conserve ammo, +1 spray
@@ -1882,6 +1910,21 @@ function alignTo(bearing, s, tolerance) {
   return [{ name: 'turn', input: { direction: bearing < 0 ? 'left' : 'right', degrees: clamp(turn, 5, 180) } }];
 }
 
+/**
+ * Which way to sidestep. Uses the left/right proximity probes so an agent does
+ * not repeatedly walk its shoulder into a wall, and keeps the same side while
+ * that side stays open so the movement reads as a deliberate circle.
+ */
+function strafeSide(s, rng, lastSide) {
+  const { left, right } = s.walls.proximity;
+  const clear = 90;
+  if (left < clear && right >= clear) return 'right';
+  if (right < clear && left >= clear) return 'left';
+  if (left < clear && right < clear) return null;      // boxed in, do not bother
+  if (lastSide && rng() < 0.75) return lastSide;       // keep circling one way
+  return rng() < 0.5 ? 'left' : 'right';
+}
+
 /** Pick the most open bearing from the wall probes across the cone. */
 function openestBearing(s) {
   let best = s.walls.cone[0];
@@ -1895,7 +1938,7 @@ function shotsToFire(s, traits) {
   if (traits.trigger < -0.2) return 1;
   return Math.min(s.self.ammo, 2);
 }
-function decideFromTraits(s, traits, rng) {
+function decideFromTraits(s, traits, rng, state = {}) {
   const actions = [];
   const enemy = nearestEnemy(s);
   const hpFraction = s.self.hp / s.self.maxHp;
@@ -1935,6 +1978,13 @@ function decideFromTraits(s, traits, rng) {
       if (enemy.distance < 320) {
         actions.push(...alignTo(enemy.bearing, s, tolerance));
         actions.push({ name: 'fire', input: { shots: 1 } });
+        // Sidestepping breaks their firing line without giving up the sight of
+        // them that backing straight up would keep, but head-on.
+        const side = traits.strafe > 0.3 ? strafeSide(s, rng, state.side) : null;
+        if (side) {
+          state.side = side;
+          actions.push({ name: 'move', input: { direction: side, steps: 3 } });
+        }
         actions.push({ name: 'move', input: { direction: 'backward', steps: 4 } });
       } else {
         actions.push({ name: 'turn', input: { direction: traits.turnBias, degrees: 130 } });
@@ -1955,12 +2005,23 @@ function decideFromTraits(s, traits, rng) {
       note = `lining up on ${enemy.name}`;
     }
 
-    // Close or open the gap toward the preferred fighting distance.
+    // Close or open the gap toward the preferred fighting distance. At the
+    // distance it wants, a strafing agent circles instead of standing still -
+    // sidestepping is the only move that does not cost it the aim it just set.
     const gap = enemy.distance - traits.preferredDistance;
     if (gap > 90 && lined) {
       actions.push({ name: 'move', input: { direction: 'forward', steps: clamp(Math.round(gap / MOVE.stepDistance), 1, 5) } });
     } else if (gap < -90) {
       actions.push({ name: 'move', input: { direction: 'backward', steps: clamp(Math.round(-gap / MOVE.stepDistance), 1, 4) } });
+    } else if (lined && traits.strafe > 0.3) {
+      // Only once the gun is actually on target - sidestepping while still
+      // lining up just moves the bearing the aim is chasing.
+      const side = strafeSide(s, rng, state.side);
+      if (side) {
+        state.side = side;
+        actions.push({ name: 'move', input: { direction: side, steps: 2 + Math.floor(rng() * 2) } });
+        note = `${note}, circling ${side}`;
+      }
     }
     return { actions, note };
   }
@@ -2037,6 +2098,7 @@ function createLocalBrain({ thinkTime = [0.25, 0.6] } = {}) {
           prompt: participant.prompt,
           traits: parsePrompt(participant.prompt),
           rng: makeRng([...participant.id].reduce((h, c) => h * 31 + c.charCodeAt(0), 7)),
+          state: {},   // carries which way it is currently circling
         };
         cache.set(participant, entry);
       }
@@ -2048,7 +2110,7 @@ function createLocalBrain({ thinkTime = [0.25, 0.6] } = {}) {
       // A small delay so offline agents feel like they are deciding, not twitching.
       const delay = thinkTime[0] + entry.rng() * (thinkTime[1] - thinkTime[0]);
       await new Promise((resolve) => setTimeout(resolve, delay * 1000));
-      return decideFromTraits(snapshot, entry.traits, entry.rng);
+      return decideFromTraits(snapshot, entry.traits, entry.rng, entry.state);
     },
   };
 }
@@ -2468,6 +2530,14 @@ const PRESETS = [
       'stop turning, aim at their bearing and spray. Then resume spinning. Do not chase anyone.',
   },
   {
+    name: 'Circler',
+    prompt:
+      'Never stop moving. When you can see an enemy, aim at their bearing and then circle them by sidestepping - ' +
+      'keep stepping to the same side while that side is clear, so your gun stays on them the whole time and you are ' +
+      'always a moving target. Fire whenever your aim is lined up. If your wall proximity says that side is closing in, ' +
+      'circle the other way instead. Reload only when nothing is in sight.',
+  },
+  {
     name: 'Wall Crawler',
     prompt:
       'Use your wall proximity readings to keep a wall on your left at all times, and walk the perimeter of the arena. ' +
@@ -2478,7 +2548,8 @@ const PRESETS = [
     name: 'Duelist',
     prompt:
       'Fight at long range. Keep roughly 450 units between you and your target, backing up when they close in and ' +
-      'advancing when they run. Fire precise single shots and always reload the moment the enemy is out of sight. ' +
+      'advancing when they run. Fire precise single shots, and sidestep between shots so you are never where their last ' +
+      'shot was aimed. Always reload the moment the enemy is out of sight. ' +
       'Below 45 hp, break line of sight by turning away and walking, then heal.',
   },
 ];

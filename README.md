@@ -4,10 +4,11 @@ A top-down 2D browser arena where you don't play — your **prompt** does.
 
 Write instructions for a fighter, drop it into the arena, and watch it work.
 Every sphere is driven by an agent that can only see through a narrow vision
-cone and can only act through six slow, deliberate tools. It cannot strafe,
-cannot sprint, and cannot snap its aim onto a target. That deliberate weakness
-is the whole design: when the mechanics are this constrained, the quality of
-your instructions is what decides the fight.
+cone and can only act through six slow, deliberate tools. It cannot sprint and
+cannot snap its aim onto a target; turning the body is slow enough to be a
+commitment. That deliberate weakness is the whole design: when the mechanics
+are this constrained, the quality of your instructions is what decides the
+fight.
 
 ![the arena](docs/arena.png)
 
@@ -50,7 +51,7 @@ while an action plays out.
 | Tool | Effect |
 |---|---|
 | `turn(direction, degrees)` | Rotate the body at 100°/s. A 180° turn takes nearly two seconds of blindness. |
-| `move(direction, steps)` | Walk along the body facing. 26 units per step, 130 u/s forward, 78 u/s backward. No strafing. |
+| `move(direction, steps)` | Travel 26 units per step. `forward` 130 u/s and `backward` 78 u/s go along the body facing; `left` and `right` sidestep at 95 u/s **without turning** — facing, cone and aim all stay put. |
 | `aim(direction, degrees)` | Swing the gun up to ±35° off the body facing at 160°/s. Far faster than turning. |
 | `fire(shots)` | Shoot along the current aim. Stops when the magazine runs dry. |
 | `reload()` | Refill the magazine. Cannot be cancelled. Nothing auto-reloads. |
@@ -59,6 +60,13 @@ while an action plays out.
 An agent returns 1–4 tool calls per decision, which run in order. Short plans
 stay responsive; long plans commit you to something the world may have already
 invalidated.
+
+Sidestepping is the only movement that doesn't change what you are looking at,
+which makes it the one way to dodge, circle a target, or lean out from cover
+without giving up the aim you just spent time setting. It costs ground speed for
+that privilege, so travel forward and sidestep to fight. Sidesteps use the same
+frame as everything else an agent perceives: moving `right` carries you toward
+positive bearings.
 
 ## What an agent can see
 
@@ -115,8 +123,10 @@ dying in a crowd costs you your place for a long while.
 
 **Offline interpreter** (default, no API key). It reads your prompt for intent —
 posture, preferred range, loot greed, trigger discipline, an explicit HP retreat
-threshold like *"retreat below 40 hp"*, a weapon preference, a turn bias — and
-drives a state machine from those traits. Not a language model, but genuinely
+threshold like *"retreat below 40 hp"*, a weapon preference, a turn bias, and
+whether to strafe — and drives a state machine from those traits. Strafing is
+off unless the prompt asks for it, so *"circle your target"* genuinely changes
+how an agent fights. Not a language model, but genuinely
 prompt-driven, and it makes the game playable with zero setup.
 
 **Claude (live).** Your prompt becomes the agent's standing orders; the sensor
@@ -137,6 +147,10 @@ The starter prompts in the dropdown are a decent tour. What actually matters:
   beats "kill everyone".
 - **Prefer `aim` to `turn` for small corrections.** Turning the body is slow and
   blinds you; the gun swings at 160°/s.
+- **Sidestep rather than back up in a firefight.** Backing up keeps you in the
+  same firing line; a sidestep leaves it while your gun stays on target. Say
+  which side and when — "circle left while firing, and swap sides if your left
+  proximity drops below 90".
 - **Give a retreat rule with a number.** "Back off below 40 hp" is actionable;
   "be careful" is not.
 - **Say what to do when the cone is empty** — that's most of the match.

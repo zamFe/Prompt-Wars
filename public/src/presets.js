@@ -30,6 +30,14 @@ export const PRESETS = [
       'stop turning, aim at their bearing and spray. Then resume spinning. Do not chase anyone.',
   },
   {
+    name: 'Circler',
+    prompt:
+      'Never stop moving. When you can see an enemy, aim at their bearing and then circle them by sidestepping - ' +
+      'keep stepping to the same side while that side is clear, so your gun stays on them the whole time and you are ' +
+      'always a moving target. Fire whenever your aim is lined up. If your wall proximity says that side is closing in, ' +
+      'circle the other way instead. Reload only when nothing is in sight.',
+  },
+  {
     name: 'Wall Crawler',
     prompt:
       'Use your wall proximity readings to keep a wall on your left at all times, and walk the perimeter of the arena. ' +
@@ -40,7 +48,8 @@ export const PRESETS = [
     name: 'Duelist',
     prompt:
       'Fight at long range. Keep roughly 450 units between you and your target, backing up when they close in and ' +
-      'advancing when they run. Fire precise single shots and always reload the moment the enemy is out of sight. ' +
+      'advancing when they run. Fire precise single shots, and sidestep between shots so you are never where their last ' +
+      'shot was aimed. Always reload the moment the enemy is out of sight. ' +
       'Below 45 hp, break line of sight by turning away and walking, then heal.',
   },
 ];

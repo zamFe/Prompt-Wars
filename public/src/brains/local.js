@@ -16,6 +16,9 @@ const RULES = [
   { re: /\b(camp|ambush|lurk|wait|hide|hold position|stay put|guard)\b/g, aggression: -0.08, camp: +0.35 },
   { re: /\b(patrol|roam|wander|explore|search|sweep|scout)\b/g, camp: -0.25, roam: +0.3 },
   { re: /\b(spin|rotate|whirl|360|pirouette)\b/g, spin: +0.5 },
+  { re: /\b(strafe|strafing|sidestep|side.?step|circle|circling|orbit|dodge|juke|weave|zig.?zag|serpentine)\b/g, strafe: +0.3 },
+  { re: /\b(keep moving|never stop moving|always be moving|stay mobile|hard to hit)\b/g, strafe: +0.25 },
+  { re: /\b(stand (still|your ground)|do not move|don't move|hold (still|your ground)|stay rooted)\b/g, strafe: -0.4, camp: +0.2 },
 
   // --- range preference ----------------------------------------------------
   { re: /\b(close range|point.?blank|up close|in their face|melee|hug|close the distance)\b/g, range: -0.4 },
@@ -69,6 +72,7 @@ export function parsePrompt(text = '') {
     camp: 0.15,
     roam: 0.3,
     spin: 0,
+    strafe: 0.15,      // sidestepping is off by default; a prompt has to ask for it
     range: 0,          // -1 wants to be close, +1 wants to stay far
     loot: 0.35,
     trigger: 0,        // -1 conserve ammo, +1 spray
@@ -129,6 +133,21 @@ function alignTo(bearing, s, tolerance) {
   return [{ name: 'turn', input: { direction: bearing < 0 ? 'left' : 'right', degrees: clamp(turn, 5, 180) } }];
 }
 
+/**
+ * Which way to sidestep. Uses the left/right proximity probes so an agent does
+ * not repeatedly walk its shoulder into a wall, and keeps the same side while
+ * that side stays open so the movement reads as a deliberate circle.
+ */
+function strafeSide(s, rng, lastSide) {
+  const { left, right } = s.walls.proximity;
+  const clear = 90;
+  if (left < clear && right >= clear) return 'right';
+  if (right < clear && left >= clear) return 'left';
+  if (left < clear && right < clear) return null;      // boxed in, do not bother
+  if (lastSide && rng() < 0.75) return lastSide;       // keep circling one way
+  return rng() < 0.5 ? 'left' : 'right';
+}
+
 /** Pick the most open bearing from the wall probes across the cone. */
 function openestBearing(s) {
   let best = s.walls.cone[0];
@@ -143,7 +162,7 @@ function shotsToFire(s, traits) {
   return Math.min(s.self.ammo, 2);
 }
 
-export function decideFromTraits(s, traits, rng) {
+export function decideFromTraits(s, traits, rng, state = {}) {
   const actions = [];
   const enemy = nearestEnemy(s);
   const hpFraction = s.self.hp / s.self.maxHp;
@@ -183,6 +202,13 @@ export function decideFromTraits(s, traits, rng) {
       if (enemy.distance < 320) {
         actions.push(...alignTo(enemy.bearing, s, tolerance));
         actions.push({ name: 'fire', input: { shots: 1 } });
+        // Sidestepping breaks their firing line without giving up the sight of
+        // them that backing straight up would keep, but head-on.
+        const side = traits.strafe > 0.3 ? strafeSide(s, rng, state.side) : null;
+        if (side) {
+          state.side = side;
+          actions.push({ name: 'move', input: { direction: side, steps: 3 } });
+        }
         actions.push({ name: 'move', input: { direction: 'backward', steps: 4 } });
       } else {
         actions.push({ name: 'turn', input: { direction: traits.turnBias, degrees: 130 } });
@@ -203,12 +229,23 @@ export function decideFromTraits(s, traits, rng) {
       note = `lining up on ${enemy.name}`;
     }
 
-    // Close or open the gap toward the preferred fighting distance.
+    // Close or open the gap toward the preferred fighting distance. At the
+    // distance it wants, a strafing agent circles instead of standing still -
+    // sidestepping is the only move that does not cost it the aim it just set.
     const gap = enemy.distance - traits.preferredDistance;
     if (gap > 90 && lined) {
       actions.push({ name: 'move', input: { direction: 'forward', steps: clamp(Math.round(gap / MOVE.stepDistance), 1, 5) } });
     } else if (gap < -90) {
       actions.push({ name: 'move', input: { direction: 'backward', steps: clamp(Math.round(-gap / MOVE.stepDistance), 1, 4) } });
+    } else if (lined && traits.strafe > 0.3) {
+      // Only once the gun is actually on target - sidestepping while still
+      // lining up just moves the bearing the aim is chasing.
+      const side = strafeSide(s, rng, state.side);
+      if (side) {
+        state.side = side;
+        actions.push({ name: 'move', input: { direction: side, steps: 2 + Math.floor(rng() * 2) } });
+        note = `${note}, circling ${side}`;
+      }
     }
     return { actions, note };
   }
@@ -285,6 +322,7 @@ export function createLocalBrain({ thinkTime = [0.25, 0.6] } = {}) {
           prompt: participant.prompt,
           traits: parsePrompt(participant.prompt),
           rng: makeRng([...participant.id].reduce((h, c) => h * 31 + c.charCodeAt(0), 7)),
+          state: {},   // carries which way it is currently circling
         };
         cache.set(participant, entry);
       }
@@ -296,7 +334,7 @@ export function createLocalBrain({ thinkTime = [0.25, 0.6] } = {}) {
       // A small delay so offline agents feel like they are deciding, not twitching.
       const delay = thinkTime[0] + entry.rng() * (thinkTime[1] - thinkTime[0]);
       await new Promise((resolve) => setTimeout(resolve, delay * 1000));
-      return decideFromTraits(snapshot, entry.traits, entry.rng);
+      return decideFromTraits(snapshot, entry.traits, entry.rng, entry.state);
     },
   };
 }

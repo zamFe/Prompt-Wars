@@ -9,9 +9,9 @@ import { World } from '../public/src/world.js';
 import { createParticipant } from '../public/src/lobby.js';
 import { createLocalBrain, parsePrompt } from '../public/src/brains/local.js';
 import { buildSnapshot } from '../public/src/sensors.js';
-import { normalizeAction, buildQueue } from '../public/src/actions.js';
+import { normalizeAction, buildQueue, stepAction, describeAction, MOVE_DIRECTIONS, TOOL_SCHEMAS } from '../public/src/actions.js';
 import { hasLineOfSight, castRay, clearance, resolveCollision } from '../public/src/arena.js';
-import { WEAPONS, AGENT, WORLD, LOBBY, VISION } from '../public/src/config.js';
+import { WEAPONS, AGENT, WORLD, LOBBY, VISION, MOVE } from '../public/src/config.js';
 
 let passed = 0;
 let failed = 0;
@@ -323,6 +323,93 @@ test('a plan is capped at four actions', () => {
   assert.equal(buildQueue(calls, { weapon: 'pistol' }).length, 4);
 });
 
+console.log('\n-- sidestepping --------------------------------------------------');
+
+/** Run a movement action to completion on a free-floating body. */
+function runMove(direction, steps, facing = 0) {
+  const agent = { x: 0, y: 0, facing, aimOffset: 0, weapon: 'pistol' };
+  const action = normalizeAction({ name: 'move', input: { direction, steps } }, agent);
+  const ctx = {
+    now: 0,
+    tryMove: (a, dx, dy) => { a.x += dx; a.y += dy; return true; },
+    fireWeapon: () => {},
+  };
+  let elapsed = 0;
+  for (let i = 0; i < 6000 && !stepAction(agent, action, 1 / 60, ctx); i++) elapsed += 1 / 60;
+  return { agent, elapsed };
+}
+
+test('sidestepping moves sideways without rotating the body or the aim', () => {
+  const right = runMove('right', 4).agent;
+  assert.equal(right.facing, 0, 'the body must not turn');
+  assert.equal(right.aimOffset, 0, 'the aim must not move');
+  assert.ok(Math.abs(right.x) < 1e-6, `expected no forward travel, got ${right.x}`);
+  assert.ok(Math.abs(right.y - 4 * MOVE.stepDistance) < 1, `expected ${4 * MOVE.stepDistance} sideways, got ${right.y}`);
+
+  const left = runMove('left', 4).agent;
+  assert.ok(Math.abs(left.y + 4 * MOVE.stepDistance) < 1, 'left should mirror right');
+});
+
+test('sidestep direction matches the frame bearings are reported in', () => {
+  // An agent told "enemy on your right" must be able to sidestep `right`
+  // toward it, so positive bearings and `right` have to agree.
+  const world = makeWorld();
+  const a = addAgent(world, 'A');
+  const b = addAgent(world, 'B');
+  Object.assign(a.agent, { x: 200, y: 700, facing: 0 });
+
+  const radians = (15 * Math.PI) / 180;
+  Object.assign(b.agent, { x: 200 + Math.cos(radians) * 300, y: 700 + Math.sin(radians) * 300 });
+  const enemy = buildSnapshot(a.agent, world).enemies[0];
+  assert.ok(enemy.bearing > 0 && enemy.right > 0, 'target placed toward +y must read as right');
+
+  const stepped = runMove('right', 3).agent;
+  assert.ok(stepped.y > 0, 'sidestep right must travel toward the same side');
+});
+
+test('sidesteps rotate with the body', () => {
+  const facingSouth = runMove('right', 4, 90).agent;   // facing +y, right is -x
+  assert.ok(Math.abs(facingSouth.x + 4 * MOVE.stepDistance) < 1, `expected -x travel, got ${facingSouth.x}`);
+  assert.ok(Math.abs(facingSouth.y) < 1e-6);
+});
+
+test('sidestepping is slower than walking forward and faster than backing up', () => {
+  assert.ok(MOVE.sidestepSpeed < MOVE.forwardSpeed, 'keeping your aim should cost ground speed');
+  assert.ok(MOVE.sidestepSpeed > MOVE.backwardSpeed);
+
+  const forward = runMove('forward', 6).elapsed;
+  const side = runMove('right', 6).elapsed;
+  const back = runMove('backward', 6).elapsed;
+  assert.ok(forward < side && side < back, `timings out of order: ${forward}/${side}/${back}`);
+});
+
+test('every movement direction is covered and unknown ones fall back safely', () => {
+  assert.deepEqual(Object.keys(MOVE_DIRECTIONS).sort(), ['backward', 'forward', 'left', 'right']);
+  const schema = TOOL_SCHEMAS.find((t) => t.name === 'move');
+  assert.deepEqual(schema.input_schema.properties.direction.enum.sort(), ['backward', 'forward', 'left', 'right']);
+  assert.equal(normalizeAction({ name: 'move', input: { direction: 'sideways', steps: 2 } }, { weapon: 'pistol' }).direction, 'forward');
+});
+
+test('sidesteps read as sidesteps in the action feed', () => {
+  const agent = { weapon: 'pistol' };
+  assert.equal(describeAction(normalizeAction({ name: 'move', input: { direction: 'left', steps: 3 } }, agent)), 'sidestep left 3');
+  assert.equal(describeAction(normalizeAction({ name: 'move', input: { direction: 'forward', steps: 3 } }, agent)), 'move forward 3');
+});
+
+test('a wall stops a sidestep the same way it stops a walk', () => {
+  const world = makeWorld();
+  const p = addAgent(world, 'A');
+  // Shoulder against the centre bar, facing east, so sidestepping right hits it.
+  Object.assign(p.agent, { x: 700, y: 740 + WORLD.agentRadius + 2, facing: 180 });
+  const action = normalizeAction({ name: 'move', input: { direction: 'right', steps: 8 } }, p.agent);
+  const ctx = { now: 0, tryMove: (a, dx, dy) => world.tryMove(a, dx, dy), fireWeapon: () => {} };
+
+  let finished = false;
+  for (let i = 0; i < 600 && !finished; i++) finished = stepAction(p.agent, action, 1 / 60, ctx);
+  assert.ok(finished, 'the action must end rather than grind into the wall');
+  assert.ok(clearance(p.agent.x, p.agent.y) > -1, 'the body must not end up inside the wall');
+});
+
 console.log('\n-- prompts drive behaviour ---------------------------------------');
 
 test('different prompts produce meaningfully different traits', () => {
@@ -336,6 +423,14 @@ test('different prompts produce meaningfully different traits', () => {
   assert.ok(camper.camp > rusher.camp);
   assert.ok(camper.loot > rusher.loot);
   assert.ok(camper.trigger < 0, 'conserve ammo should tighten trigger discipline');
+});
+
+test('sidestepping is off by default and prompts turn it on', () => {
+  assert.ok(parsePrompt('attack the nearest enemy and shoot it').strafe <= 0.3,
+    'a prompt that never mentions movement should not strafe');
+  assert.ok(parsePrompt('circle your target while firing, never stop moving').strafe > 0.3);
+  assert.ok(parsePrompt('dodge incoming fire by sidestepping').strafe > 0.3);
+  assert.ok(parsePrompt('camp in a corner and hold your ground, do not move').strafe < 0);
 });
 
 test('a weapon preference is picked up from the prompt', () => {
@@ -357,6 +452,7 @@ await asyncTest('ten prompted agents fight for two minutes without errors', asyn
     'Spin clockwise to scan. Fire the moment anything enters your cone. Do not chase.',
     'Keep a wall on your left and patrol the perimeter. Shoot anything you see. Retreat below 30 hp.',
     'Fight at long range, keep 450 units of distance, fire single shots, reload whenever clear.',
+    'Circle your target by sidestepping while you fire. Never stop moving. Aggressive.',
   ];
   for (let i = 0; i < 12; i++) {
     world.lobby.add(createParticipant({

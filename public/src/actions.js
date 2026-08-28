@@ -6,7 +6,19 @@
 // of the game.
 
 import { MOVE, WEAPONS, BRAIN } from './config.js';
-import { clamp, normalizeDeg, angleDelta } from './util.js';
+import { clamp, normalizeDeg, angleDelta, toRad } from './util.js';
+
+/**
+ * Movement directions, each an angle offset from the body facing. Sidestepping
+ * is the only way to change position without changing where you are looking,
+ * which is what makes it worth its lower speed.
+ */
+export const MOVE_DIRECTIONS = {
+  forward: { angle: 0, speed: MOVE.forwardSpeed },
+  backward: { angle: 180, speed: MOVE.backwardSpeed },
+  left: { angle: -90, speed: MOVE.sidestepSpeed },
+  right: { angle: 90, speed: MOVE.sidestepSpeed },
+};
 
 export const ACTION_LIMITS = {
   turnDegrees: [5, 180],
@@ -39,13 +51,19 @@ export const TOOL_SCHEMAS = [
   {
     name: 'move',
     description:
-      `Walk forwards or backwards a number of steps. One step is ${MOVE.stepDistance} units; ` +
-      `forwards is ${MOVE.forwardSpeed} units/sec and backwards is ${MOVE.backwardSpeed} units/sec. ` +
-      'You always travel along your body facing - there is no strafing. Walking into a wall ends the move early.',
+      `Travel a number of steps. One step is ${MOVE.stepDistance} units. ` +
+      `"forward" (${MOVE.forwardSpeed} units/sec) and "backward" (${MOVE.backwardSpeed} units/sec) go along your body facing. ` +
+      `"left" and "right" sidestep - you move sideways at ${MOVE.sidestepSpeed} units/sec while your body facing, vision cone and aim all stay exactly where they are. ` +
+      'Sidestepping is how you dodge, circle a target you are already aiming at, or lean out from cover without losing sight of it. ' +
+      'Walking into a wall ends the move early.',
     input_schema: {
       type: 'object',
       properties: {
-        direction: { type: 'string', enum: ['forward', 'backward'], description: 'Which way to walk.' },
+        direction: {
+          type: 'string',
+          enum: ['forward', 'backward', 'left', 'right'],
+          description: 'Which way to travel. "left" and "right" sidestep without turning.',
+        },
         steps: { type: 'number', description: 'How many steps, 1 to 8.' },
       },
       required: ['direction', 'steps'],
@@ -122,7 +140,7 @@ export function normalizeAction(call, agent) {
       return { type: 'turn', direction, remaining: degrees, total: degrees };
     }
     case 'move': {
-      const direction = input.direction === 'backward' ? 'backward' : 'forward';
+      const direction = MOVE_DIRECTIONS[input.direction] ? input.direction : 'forward';
       const steps = Math.round(clampRange(input.steps, ACTION_LIMITS.moveSteps, 2));
       const distance = steps * MOVE.stepDistance;
       return { type: 'move', direction, remaining: distance, total: distance, steps };
@@ -165,7 +183,9 @@ export function describeAction(action) {
   if (!action) return 'idle';
   switch (action.type) {
     case 'turn': return `turn ${action.direction} ${Math.round(action.total)}°`;
-    case 'move': return `move ${action.direction} ${action.steps}`;
+    case 'move': return action.direction === 'left' || action.direction === 'right'
+      ? `sidestep ${action.direction} ${action.steps}`
+      : `move ${action.direction} ${action.steps}`;
     case 'aim': return action.target === 0 ? 'aim center' : `aim ${action.target < 0 ? 'left' : 'right'} ${Math.abs(Math.round(action.target))}°`;
     case 'fire': return `fire x${action.total}`;
     case 'reload': return 'reload';
@@ -189,11 +209,11 @@ export function stepAction(agent, action, dt, ctx) {
     }
 
     case 'move': {
-      const speed = action.direction === 'forward' ? MOVE.forwardSpeed : MOVE.backwardSpeed;
-      const amount = Math.min(speed * dt, action.remaining);
-      const sign = action.direction === 'forward' ? 1 : -1;
-      const rad = (agent.facing * Math.PI) / 180;
-      const moved = ctx.tryMove(agent, Math.cos(rad) * amount * sign, Math.sin(rad) * amount * sign);
+      const spec = MOVE_DIRECTIONS[action.direction] ?? MOVE_DIRECTIONS.forward;
+      const amount = Math.min(spec.speed * dt, action.remaining);
+      // The angle offset carries the direction, so the body never rotates here.
+      const rad = toRad(agent.facing + spec.angle);
+      const moved = ctx.tryMove(agent, Math.cos(rad) * amount, Math.sin(rad) * amount);
       action.remaining -= amount;
       // Bumping a wall ends the move so the agent is not stuck grinding into it.
       if (!moved) {

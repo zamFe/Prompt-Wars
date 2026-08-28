@@ -55,7 +55,7 @@ const stub = http.createServer((req, res) => {
         { type: 'text', text: 'Target is slightly right and close. Swing the gun over and fire.' },
         { type: 'tool_use', id: 't1', name: 'aim', input: { direction: 'right', degrees: 12 } },
         { type: 'tool_use', id: 't2', name: 'fire', input: { shots: 2 } },
-        { type: 'tool_use', id: 't3', name: 'move', input: { direction: 'forward', steps: 3 } },
+        { type: 'tool_use', id: 't3', name: 'move', input: { direction: 'right', steps: 3 } },
       ],
       usage: { input_tokens: 900, output_tokens: 60 },
     }));
@@ -114,7 +114,7 @@ try {
     assert.equal(response.status, 200, JSON.stringify(decision));
     assert.deepEqual(decision.actions.map((a) => a.name), ['aim', 'fire', 'move']);
     const queue = buildQueue(decision.actions, { weapon: 'pistol' });
-    assert.deepEqual(queue.map(describeAction), ['aim right 12°', 'fire x2', 'move forward 3']);
+    assert.deepEqual(queue.map(describeAction), ['aim right 12°', 'fire x2', 'sidestep right 3']);
   });
 
   check('assistant prose is surfaced as the reasoning note', () => {
@@ -122,6 +122,18 @@ try {
   });
 
   const request = seen.at(-1);
+
+  check('the move tool offers the model all four travel directions', () => {
+    const move = request.body.tools.find((t) => t.name === 'move');
+    assert.deepEqual(move.input_schema.properties.direction.enum.sort(), ['backward', 'forward', 'left', 'right']);
+    assert.match(move.description, /sidestep/i);
+  });
+
+  check('the system prompt explains which way a sidestep goes', () => {
+    const [block] = request.body.system;
+    assert.match(block.text, /sidestep/i);
+    assert.match(block.text, /"right" carries you toward positive bearings/);
+  });
 
   check('the request targets the configured model with tools and effort', () => {
     assert.equal(request.body.model, 'claude-opus-5');

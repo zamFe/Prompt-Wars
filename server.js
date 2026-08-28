@@ -83,12 +83,14 @@ You control your sphere ONLY through the tools you are given. There are no other
 - ${AGENT.maxHp} HP. At 0 you are eliminated and sit out a cooldown before rejoining.
 - You have a ${VISION.fov}-degree vision cone reaching ${VISION.range} units. You see nothing outside it, and walls block sight.
 - Your body turns at ${MOVE.turnSpeed} degrees per second. Turning is slow: a 180-degree turn takes nearly two seconds during which you are blind to everything you turned away from.
-- You walk only along your body facing - forwards at ${MOVE.forwardSpeed} units/sec, backwards at ${MOVE.backwardSpeed}. There is no strafing.
+- You walk forwards (${MOVE.forwardSpeed} units/sec) and backwards (${MOVE.backwardSpeed}) along your body facing, and you can sidestep left or right at ${MOVE.sidestepSpeed} units/sec.
+- Sidestepping is the only movement that does not change what you are looking at: your facing, your vision cone and your aim all stay exactly where they are. Use it to dodge while keeping a target in your sights, to circle someone you are already aiming at, or to lean out from behind cover without losing sight of what is beyond it. Walking forwards is faster, so travel forwards and sidestep to fight.
 - Your gun can sit up to ${MOVE.aimLimit} degrees either side of your body facing and swings at ${MOVE.aimSpeed} degrees per second. For small corrections, aim - it is much faster than turning.
 
 ## Reading your senses
 - Bearings are relative to your body facing: negative is to your LEFT, positive is to your RIGHT, 0 is dead ahead.
 - To put your gun on a target at bearing B, aim by |B| degrees in that direction. If |B| is larger than ${MOVE.aimLimit}, turn your body first.
+- Sidesteps use the same frame: moving "right" carries you toward positive bearings, "left" toward negative ones.
 - You never receive arena coordinates. Your heading is a compass bearing (0 = north). The wall probes across your cone and the four proximity readings are how you work out where you are and where you can go.
 - A large wall distance means open space in that direction; a small one means cover or a corner.
 

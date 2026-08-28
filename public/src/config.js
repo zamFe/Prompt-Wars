@@ -15,6 +15,9 @@ export const MOVE = {
   stepDistance: 26,    // one "step" of move()
   forwardSpeed: 130,   // world units/sec
   backwardSpeed: 78,   // walking backwards is slower
+  sidestepSpeed: 95,   // sidestepping keeps your cone and gun on target, so it
+                       // costs ground speed - quicker than backing up, slower
+                       // than walking where you are looking
 };
 
 export const VISION = {
