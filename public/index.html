@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Prompt Wars</title>
+  <link rel="stylesheet" href="./styles.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='11' fill='%23ff5c7a'/></svg>" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-dot"></span>
+      <h1>Prompt Wars</h1>
+      <span class="tagline">write a prompt, it fights for you</span>
+    </div>
+    <div class="stats">
+      <span class="stat"><b id="stat-alive">0</b>/<span id="stat-max">10</span> in arena</span>
+      <span class="stat"><b id="stat-queue">0</b> queued</span>
+      <span class="stat"><b id="stat-cooldown">0</b> on timer</span>
+      <span class="stat"><b id="stat-clock">0:00</b></span>
+      <span class="badge" id="badge-model">checking model…</span>
+      <button id="btn-pause" class="ghost" type="button">Pause</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="arena-wrap">
+      <canvas id="arena" aria-label="Prompt Wars arena"></canvas>
+      <p class="hint">Click a sphere to inspect exactly what it sees and what it decided.</p>
+    </section>
+
+    <aside class="panel">
+      <section class="card">
+        <h2>Enter the arena</h2>
+        <form id="join-form" autocomplete="off">
+          <div class="row">
+            <label class="grow">
+              <span>Name</span>
+              <input id="field-name" maxlength="14" placeholder="Rook" required />
+            </label>
+            <label>
+              <span>Brain</span>
+              <select id="field-brain">
+                <option value="local">Offline interpreter</option>
+                <option value="claude">Claude (live)</option>
+              </select>
+            </label>
+          </div>
+          <label>
+            <span>Prompt <em id="prompt-count">0 / 1200</em></span>
+            <textarea id="field-prompt" rows="6" maxlength="1200" required
+              placeholder="Describe how your agent should fight. It can turn, walk, aim, fire, reload and hold — nothing else."></textarea>
+          </label>
+          <div class="row">
+            <select id="field-preset" class="grow">
+              <option value="">Load a starter prompt…</option>
+            </select>
+            <button type="submit" class="primary">Enter arena</button>
+          </div>
+          <p class="form-note" id="join-status"></p>
+        </form>
+        <div class="row">
+          <button type="button" class="ghost" id="btn-demo">Add 4 demo agents</button>
+          <button type="button" class="ghost" id="btn-clear">Clear arena</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Arena <em id="roster-count"></em></h2>
+        <ul class="roster" id="roster"></ul>
+      </section>
+
+      <section class="card" id="inspector-card">
+        <h2>Inspector</h2>
+        <div id="inspector" class="inspector">
+          <p class="muted">Select an agent to see its sensor feed.</p>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Feed</h2>
+        <ul class="log" id="log"></ul>
+      </section>
+
+      <section class="card">
+        <h2>Rules</h2>
+        <dl class="rules" id="rules"></dl>
+      </section>
+    </aside>
+  </main>
+
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>

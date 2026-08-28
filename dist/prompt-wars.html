@@ -1,0 +1,2894 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Prompt Wars</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='11' fill='%23ff5c7a'/></svg>" />
+</head>
+<body>
+<style>
+:root {
+  --bg: #0b0d13;
+  --panel: #12151f;
+  --panel-2: #171b28;
+  --line: #232838;
+  --text: #e6e9f2;
+  --muted: #8b93a7;
+  --accent: #5ec8ff;
+  --accent-2: #ff5c7a;
+  --good: #4ade80;
+  --warn: #facc15;
+  --bad: #ef4444;
+  --radius: 10px;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+/* ------------------------------------------------------------------ topbar */
+.topbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--line);
+  background: linear-gradient(180deg, #141826, #0f121b);
+}
+
+.brand { display: flex; align-items: baseline; gap: 10px; }
+.brand h1 { font-size: 19px; margin: 0; letter-spacing: 0.2px; }
+.brand-dot {
+  width: 11px; height: 11px; border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, #ff9fb0, var(--accent-2));
+  align-self: center;
+}
+.tagline { color: var(--muted); font-size: 13px; }
+
+.stats { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; font-size: 13px; color: var(--muted); }
+.stat b { color: var(--text); font-variant-numeric: tabular-nums; }
+
+.badge {
+  font-size: 12px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--muted);
+}
+.badge.ok { color: var(--good); border-color: rgba(74, 222, 128, 0.4); }
+.badge.off { color: var(--muted); }
+
+/* ------------------------------------------------------------------ layout */
+main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 400px;
+  gap: 16px;
+  padding: 16px;
+  align-items: start;
+}
+
+.arena-wrap {
+  position: sticky;
+  top: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+#arena {
+  width: 100%;
+  max-width: min(calc(100vh - 150px), 100%);
+  aspect-ratio: 1 / 1;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: #0e1016;
+  cursor: crosshair;
+  display: block;
+}
+
+.hint { color: var(--muted); font-size: 12.5px; margin: 0; }
+
+.panel { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+
+.card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 14px;
+}
+.card h2 {
+  margin: 0 0 10px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--muted);
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+.card h2 em { font-style: normal; text-transform: none; letter-spacing: 0; font-size: 12px; }
+
+/* -------------------------------------------------------------------- form */
+form { display: flex; flex-direction: column; gap: 10px; }
+.row { display: flex; gap: 8px; align-items: flex-end; }
+.grow { flex: 1; min-width: 0; }
+
+label { display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--muted); }
+label span { display: flex; justify-content: space-between; align-items: baseline; }
+label em { font-style: normal; font-variant-numeric: tabular-nums; }
+
+input, textarea, select {
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 13.5px;
+  width: 100%;
+}
+textarea { resize: vertical; line-height: 1.45; font-size: 13px; }
+input:focus, textarea:focus, select:focus { outline: 2px solid rgba(94, 200, 255, 0.45); outline-offset: -1px; }
+
+button {
+  font: inherit;
+  font-size: 13px;
+  border-radius: 8px;
+  padding: 8px 13px;
+  cursor: pointer;
+  border: 1px solid var(--line);
+  white-space: nowrap;
+}
+button.primary { background: var(--accent); border-color: var(--accent); color: #05202e; font-weight: 600; }
+button.primary:hover { filter: brightness(1.08); }
+button.ghost { background: var(--panel-2); color: var(--text); }
+button.ghost:hover { border-color: #394462; }
+
+.form-note { margin: 0; font-size: 12.5px; min-height: 1.2em; color: var(--muted); }
+.form-note.ok { color: var(--good); }
+.form-note.warn { color: var(--warn); }
+.form-note.bad { color: var(--bad); }
+
+/* ------------------------------------------------------------------ roster */
+.roster { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+
+.roster li {
+  display: grid;
+  grid-template-columns: 12px 1fr auto;
+  gap: 9px;
+  align-items: center;
+  padding: 7px 9px;
+  border-radius: 8px;
+  background: var(--panel-2);
+  border: 1px solid transparent;
+  cursor: pointer;
+  font-size: 13px;
+}
+.roster li:hover { border-color: var(--line); }
+.roster li.selected { border-color: var(--accent); }
+.roster li.waiting { opacity: 0.62; cursor: default; }
+
+.dot { width: 12px; height: 12px; border-radius: 50%; }
+.who { min-width: 0; }
+.who .name { font-weight: 600; }
+.who .sub { color: var(--muted); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kd { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; text-align: right; }
+
+.hpbar { height: 4px; border-radius: 2px; background: #2a3042; overflow: hidden; margin-top: 4px; }
+.hpbar i { display: block; height: 100%; background: var(--good); }
+
+/* --------------------------------------------------------------- inspector */
+.inspector { display: flex; flex-direction: column; gap: 9px; font-size: 12.5px; }
+.inspector .who-line { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; }
+.inspector pre {
+  margin: 0;
+  padding: 9px;
+  background: #0c0f17;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font: 11.5px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 260px;
+  overflow: auto;
+  color: #b9c2d6;
+}
+.inspector .label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em; }
+.chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.chip { background: var(--panel-2); border: 1px solid var(--line); border-radius: 999px; padding: 2px 9px; font-size: 11.5px; }
+.chip.err { border-color: rgba(239, 68, 68, 0.5); color: #fca5a5; }
+.muted { color: var(--muted); }
+.prompt-quote {
+  margin: 0; padding: 8px 10px; border-left: 2px solid var(--line);
+  color: var(--muted); font-size: 12px; max-height: 90px; overflow: auto;
+}
+
+/* --------------------------------------------------------------------- log */
+.log { list-style: none; margin: 0; padding: 0; max-height: 190px; overflow: auto; font-size: 12.5px; }
+.log li { padding: 3px 0; border-bottom: 1px solid rgba(35, 40, 56, 0.6); color: var(--muted); }
+.log li:last-child { border-bottom: 0; }
+.log .t { color: #5a6377; font-variant-numeric: tabular-nums; margin-right: 6px; font-size: 11.5px; }
+.log li.kill { color: #ffb4b4; }
+.log li.join { color: #a6e2b8; }
+.log li.loot { color: #cbb9f5; }
+.log li.error { color: #fca5a5; }
+
+/* ------------------------------------------------------------------- rules */
+.rules { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 5px 12px; font-size: 12.5px; }
+.rules dt { color: var(--muted); }
+.rules dd { margin: 0; }
+
+@media (max-width: 1080px) {
+  main { grid-template-columns: 1fr; }
+  .arena-wrap { position: static; }
+  #arena { max-width: 100%; }
+}
+</style>
+<header class="topbar">
+    <div class="brand">
+      <span class="brand-dot"></span>
+      <h1>Prompt Wars</h1>
+      <span class="tagline">write a prompt, it fights for you</span>
+    </div>
+    <div class="stats">
+      <span class="stat"><b id="stat-alive">0</b>/<span id="stat-max">10</span> in arena</span>
+      <span class="stat"><b id="stat-queue">0</b> queued</span>
+      <span class="stat"><b id="stat-cooldown">0</b> on timer</span>
+      <span class="stat"><b id="stat-clock">0:00</b></span>
+      <span class="badge" id="badge-model">checking model…</span>
+      <button id="btn-pause" class="ghost" type="button">Pause</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="arena-wrap">
+      <canvas id="arena" aria-label="Prompt Wars arena"></canvas>
+      <p class="hint">Click a sphere to inspect exactly what it sees and what it decided.</p>
+    </section>
+
+    <aside class="panel">
+      <section class="card">
+        <h2>Enter the arena</h2>
+        <form id="join-form" autocomplete="off">
+          <div class="row">
+            <label class="grow">
+              <span>Name</span>
+              <input id="field-name" maxlength="14" placeholder="Rook" required />
+            </label>
+            <label>
+              <span>Brain</span>
+              <select id="field-brain">
+                <option value="local">Offline interpreter</option>
+                <option value="claude">Claude (live)</option>
+              </select>
+            </label>
+          </div>
+          <label>
+            <span>Prompt <em id="prompt-count">0 / 1200</em></span>
+            <textarea id="field-prompt" rows="6" maxlength="1200" required
+              placeholder="Describe how your agent should fight. It can turn, walk, aim, fire, reload and hold — nothing else."></textarea>
+          </label>
+          <div class="row">
+            <select id="field-preset" class="grow">
+              <option value="">Load a starter prompt…</option>
+            </select>
+            <button type="submit" class="primary">Enter arena</button>
+          </div>
+          <p class="form-note" id="join-status"></p>
+        </form>
+        <div class="row">
+          <button type="button" class="ghost" id="btn-demo">Add 4 demo agents</button>
+          <button type="button" class="ghost" id="btn-clear">Clear arena</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Arena <em id="roster-count"></em></h2>
+        <ul class="roster" id="roster"></ul>
+      </section>
+
+      <section class="card" id="inspector-card">
+        <h2>Inspector</h2>
+        <div id="inspector" class="inspector">
+          <p class="muted">Select an agent to see its sensor feed.</p>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Feed</h2>
+        <ul class="log" id="log"></ul>
+      </section>
+
+      <section class="card">
+        <h2>Rules</h2>
+        <dl class="rules" id="rules"></dl>
+      </section>
+    </aside>
+  </main>
+<script type="module">
+// ---- public/src/config.js ----------------------------------------
+// Central tuning table for Prompt Wars.
+// Distances are in world units, times in seconds, angles in degrees.
+const WORLD = {
+  size: 1400,          // arena is a square, size x size
+  agentRadius: 16,
+  maxAgents: 10,
+  tickRate: 60,
+};
+const MOVE = {
+  turnSpeed: 100,      // body rotation, deg/sec
+  aimSpeed: 160,       // aim offset rotation, deg/sec
+  aimLimit: 35,        // aim may deviate this far from body facing
+  stepDistance: 26,    // one "step" of move()
+  forwardSpeed: 130,   // world units/sec
+  backwardSpeed: 78,   // walking backwards is slower
+};
+const VISION = {
+  fov: 45,             // total cone width; agents see +/- 22.5 deg
+  range: 620,
+  wallRays: 9,         // wall-distance probes spread across the cone
+};
+
+// Damage is balanced against 100 HP.
+//   pistol   : 3 shots / 4.25s cycle * 20 dmg  = ~14 dps, 5 hits to kill
+//   assault  : 10 shots / 7.0s cycle * 15 dmg  = ~21 dps, 7 hits to kill
+//   shotgun  : 5 shells / 8.0s cycle * 48 dmg  = ~30 dps up close, falls off hard
+// The two pickup weapons out-damage the default, which is what makes loot worth
+// crossing the arena for, but the shotgun only earns its number inside `falloffStart`.
+const WEAPONS = {
+  pistol: {
+    id: 'pistol',
+    name: 'Pistol',
+    magazine: 3,
+    timeBetweenShots: 0.75,
+    reloadTime: 2.0,
+    damage: 20,
+    pellets: 1,
+    spread: 1.5,
+    bulletSpeed: 1400,
+    range: 900,
+    falloffStart: 900,
+    falloffFloor: 1.0,
+    color: '#e8e8f0',
+  },
+  shotgun: {
+    id: 'shotgun',
+    name: 'Shotgun',
+    magazine: 5,
+    timeBetweenShots: 1.0,
+    reloadTime: 3.0,
+    damage: 8,
+    pellets: 6,
+    spread: 9,
+    bulletSpeed: 1100,
+    range: 520,
+    falloffStart: 130,   // full damage inside this radius
+    falloffFloor: 0.35,  // scales down to this at max range
+    color: '#ffb347',
+  },
+  assault: {
+    id: 'assault',
+    name: 'Assault Rifle',
+    magazine: 10,
+    timeBetweenShots: 0.5,
+    reloadTime: 2.0,
+    damage: 15,
+    pellets: 1,
+    spread: 3,
+    bulletSpeed: 1500,
+    range: 1000,
+    falloffStart: 700,
+    falloffFloor: 0.75,
+    color: '#5ec8ff',
+  },
+};
+const AGENT = {
+  maxHp: 100,
+  startWeapon: 'pistol',
+};
+
+// Health packs are read at a glance: bigger and brighter means more healing.
+const HEALTH_PACKS = {
+  10: { heal: 10, radius: 7, color: '#7fdba0', label: 'S' },
+  25: { heal: 25, radius: 10, color: '#38d97a', label: 'M' },
+  50: { heal: 50, radius: 14, color: '#26f5c4', label: 'L' },
+};
+const LOOT = {
+  maxOnGround: 10,
+  spawnCooldown: [6, 16],   // random range between spawns
+  lifetime: 60,             // uncollected loot despawns
+  // Relative spawn weights.
+  weights: {
+    health10: 26,
+    health25: 20,
+    health50: 8,
+    shotgun: 13,
+    assault: 11,
+  },
+};
+const LOBBY = {
+  respawnCooldown: 60,          // seconds before a dead agent may rejoin
+  congestedCooldown: 600,       // when the arena is full and the queue is long
+  congestedQueueLength: 10,     // "queue > 10" triggers the long cooldown
+};
+const BRAIN = {
+  maxActionsPerDecision: 4,
+  decisionTimeout: 12,          // seconds before a pending decision is abandoned
+  localThinkTime: [0.25, 0.6],  // simulated deliberation for the offline brain
+  damageInterruptCooldown: 0.6, // getting shot flushes the action queue, at most this often
+};
+const COLORS = {
+  background: '#0e1016',
+  floor: '#161a24',
+  grid: '#1e2432',
+  wall: '#39415a',
+  wallEdge: '#59627f',
+};
+
+// A palette of readable, well-separated sphere colors.
+const AGENT_COLORS = [
+  '#ff5c7a', '#ffd166', '#4ade80', '#38bdf8', '#c084fc',
+  '#fb923c', '#2dd4bf', '#f472b6', '#a3e635', '#818cf8',
+  '#f87171', '#60a5fa', '#facc15', '#34d399', '#e879f9',
+];
+
+// ---- public/src/util.js ------------------------------------------
+// Math, geometry and RNG helpers shared by the simulation.
+const TAU = Math.PI * 2;
+const toRad = (deg) => (deg * Math.PI) / 180;
+const toDeg = (rad) => (rad * 180) / Math.PI;
+const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
+
+/** Wrap an angle in degrees into [-180, 180). */
+function normalizeDeg(deg) {
+  let d = ((deg + 180) % 360 + 360) % 360 - 180;
+  if (Object.is(d, -0)) d = 0;
+  return d;
+}
+
+/** Smallest signed rotation in degrees that takes `from` to `to`. */
+const angleDelta = (from, to) => normalizeDeg(to - from);
+const dist = (ax, ay, bx, by) => Math.hypot(bx - ax, by - ay);
+const randRange = (rng, lo, hi) => lo + rng() * (hi - lo);
+const randInt = (rng, lo, hi) => Math.floor(randRange(rng, lo, hi + 1));
+function pick(rng, arr) {
+  return arr[Math.floor(rng() * arr.length)];
+}
+
+/** Weighted pick from a { key: weight } map. */
+function weightedPick(rng, weights) {
+  const entries = Object.entries(weights).filter(([, w]) => w > 0);
+  const total = entries.reduce((sum, [, w]) => sum + w, 0);
+  let roll = rng() * total;
+  for (const [key, w] of entries) {
+    roll -= w;
+    if (roll <= 0) return key;
+  }
+  return entries.length ? entries[entries.length - 1][0] : null;
+}
+
+/** mulberry32 - small, fast, seedable PRNG so matches can be reproduced. */
+function makeRng(seed) {
+  let a = seed >>> 0;
+  return function rng() {
+    a |= 0;
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/**
+ * Ray vs axis-aligned rectangle (slab method).
+ * Returns the distance along the ray to the first hit, or Infinity.
+ */
+function rayRect(ox, oy, dx, dy, rect) {
+  let tmin = 0;
+  let tmax = Infinity;
+
+  for (const axis of [0, 1]) {
+    const o = axis === 0 ? ox : oy;
+    const d = axis === 0 ? dx : dy;
+    const lo = axis === 0 ? rect.x : rect.y;
+    const hi = axis === 0 ? rect.x + rect.w : rect.y + rect.h;
+
+    if (Math.abs(d) < 1e-9) {
+      if (o < lo || o > hi) return Infinity;
+      continue;
+    }
+    let t1 = (lo - o) / d;
+    let t2 = (hi - o) / d;
+    if (t1 > t2) [t1, t2] = [t2, t1];
+    tmin = Math.max(tmin, t1);
+    tmax = Math.min(tmax, t2);
+    if (tmin > tmax) return Infinity;
+  }
+  return tmin;
+}
+
+/** Closest point on an axis-aligned rect to (px, py). */
+function closestPointOnRect(px, py, rect) {
+  return {
+    x: clamp(px, rect.x, rect.x + rect.w),
+    y: clamp(py, rect.y, rect.y + rect.h),
+  };
+}
+function circleHitsRect(px, py, radius, rect) {
+  const c = closestPointOnRect(px, py, rect);
+  return dist(px, py, c.x, c.y) < radius;
+}
+
+/** Shortest distance from point p to segment ab - used for bullet/agent sweeps. */
+function pointSegmentDistance(px, py, ax, ay, bx, by) {
+  const abx = bx - ax;
+  const aby = by - ay;
+  const lenSq = abx * abx + aby * aby;
+  if (lenSq < 1e-9) return dist(px, py, ax, ay);
+  let t = ((px - ax) * abx + (py - ay) * aby) / lenSq;
+  t = clamp(t, 0, 1);
+  return dist(px, py, ax + abx * t, ay + aby * t);
+}
+const round1 = (n) => Math.round(n * 10) / 10;
+const round0 = (n) => Math.round(n);
+function formatClock(seconds) {
+  const s = Math.max(0, Math.ceil(seconds));
+  const m = Math.floor(s / 60);
+  return m > 0 ? `${m}m ${String(s % 60).padStart(2, '0')}s` : `${s}s`;
+}
+
+// ---- public/src/arena.js -----------------------------------------
+// The arena: a square with a handful of interior walls, plus the geometry
+// queries the simulation and the sensors need (line of sight, collision).
+
+
+const S = WORLD.size;
+
+/**
+ * Interior cover. Deliberately sparse - enough to break sightlines and reward
+ * an agent that maps the room with its wall probes, not so much that it plays
+ * like a maze.
+ */
+const WALLS = [
+  { x: 500, y: 660, w: 400, h: 80 },   // centre bar
+  { x: 300, y: 250, w: 80, h: 320 },   // north-west upright
+  { x: 1020, y: 830, w: 80, h: 320 },  // south-east upright
+  { x: 830, y: 300, w: 300, h: 80 },   // north-east bar
+  { x: 270, y: 1020, w: 300, h: 80 },  // south-west bar
+  { x: 655, y: 300, w: 90, h: 90 },    // north pillar
+  { x: 655, y: 1010, w: 90, h: 90 },   // south pillar
+];
+
+/** Border walls, kept separate so they can be drawn differently. */
+const BORDER_THICKNESS = 24;
+function isInsideArena(x, y, radius = 0) {
+  const lo = BORDER_THICKNESS + radius;
+  const hi = S - BORDER_THICKNESS - radius;
+  return x >= lo && x <= hi && y >= lo && y <= hi;
+}
+
+/** Distance from (x, y) to the nearest wall surface, borders included. */
+function clearance(x, y) {
+  let best = Math.min(
+    x - BORDER_THICKNESS,
+    y - BORDER_THICKNESS,
+    S - BORDER_THICKNESS - x,
+    S - BORDER_THICKNESS - y,
+  );
+  for (const wall of WALLS) {
+    const c = closestPointOnRect(x, y, wall);
+    const d = dist(x, y, c.x, c.y);
+    // Inside a wall counts as no clearance at all.
+    const inside =
+      x > wall.x && x < wall.x + wall.w && y > wall.y && y < wall.y + wall.h;
+    best = Math.min(best, inside ? -1 : d);
+  }
+  return best;
+}
+
+/**
+ * Cast a ray and return the distance to the first wall hit (borders included),
+ * capped at `maxDistance`.
+ */
+function castRay(ox, oy, dirX, dirY, maxDistance) {
+  let best = maxDistance;
+
+  // Border planes.
+  const lo = BORDER_THICKNESS;
+  const hi = S - BORDER_THICKNESS;
+  if (dirX > 1e-9) best = Math.min(best, (hi - ox) / dirX);
+  if (dirX < -1e-9) best = Math.min(best, (lo - ox) / dirX);
+  if (dirY > 1e-9) best = Math.min(best, (hi - oy) / dirY);
+  if (dirY < -1e-9) best = Math.min(best, (lo - oy) / dirY);
+
+  for (const wall of WALLS) {
+    const t = rayRect(ox, oy, dirX, dirY, wall);
+    if (t < best) best = t;
+  }
+  return Math.max(0, best);
+}
+
+/** True when nothing solid stands between the two points. */
+function hasLineOfSight(ax, ay, bx, by) {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const len = Math.hypot(dx, dy);
+  if (len < 1e-6) return true;
+  const hit = castRay(ax, ay, dx / len, dy / len, len);
+  return hit >= len - 0.5;
+}
+
+/**
+ * Push a circle out of any wall it overlaps. Returns the corrected position and
+ * whether a correction was needed, which the agent reports as "blocked".
+ */
+function resolveCollision(x, y, radius) {
+  let nx = x;
+  let ny = y;
+  let blocked = false;
+
+  const lo = BORDER_THICKNESS + radius;
+  const hi = S - BORDER_THICKNESS - radius;
+  if (nx < lo) { nx = lo; blocked = true; }
+  if (nx > hi) { nx = hi; blocked = true; }
+  if (ny < lo) { ny = lo; blocked = true; }
+  if (ny > hi) { ny = hi; blocked = true; }
+
+  // Two passes so a corner between two walls settles instead of oscillating.
+  for (let pass = 0; pass < 2; pass++) {
+    for (const wall of WALLS) {
+      const c = closestPointOnRect(nx, ny, wall);
+      const dx = nx - c.x;
+      const dy = ny - c.y;
+      const d = Math.hypot(dx, dy);
+
+      if (d >= radius) continue;
+      blocked = true;
+
+      if (d > 1e-6) {
+        nx = c.x + (dx / d) * radius;
+        ny = c.y + (dy / d) * radius;
+      } else {
+        // Centre is inside the wall - eject along the shallowest axis.
+        const left = nx - wall.x;
+        const right = wall.x + wall.w - nx;
+        const top = ny - wall.y;
+        const bottom = wall.y + wall.h - ny;
+        const min = Math.min(left, right, top, bottom);
+        if (min === left) nx = wall.x - radius;
+        else if (min === right) nx = wall.x + wall.w + radius;
+        else if (min === top) ny = wall.y - radius;
+        else ny = wall.y + wall.h + radius;
+      }
+    }
+  }
+  return { x: nx, y: ny, blocked };
+}
+
+/**
+ * Find an open spot, preferring one that is far from every listed avoid-point
+ * (other agents at spawn time). Falls back to the best of many tries.
+ */
+function findOpenPosition(rng, { radius = WORLD.agentRadius, avoid = [], minAvoidDistance = 240 } = {}) {
+  let fallback = null;
+  let fallbackScore = -Infinity;
+
+  for (let attempt = 0; attempt < 120; attempt++) {
+    const x = randRange(rng, BORDER_THICKNESS + radius + 10, S - BORDER_THICKNESS - radius - 10);
+    const y = randRange(rng, BORDER_THICKNESS + radius + 10, S - BORDER_THICKNESS - radius - 10);
+    if (clearance(x, y) < radius + 12) continue;
+
+    let nearest = Infinity;
+    for (const p of avoid) nearest = Math.min(nearest, dist(x, y, p.x, p.y));
+
+    if (nearest >= minAvoidDistance) return { x, y };
+    if (nearest > fallbackScore) {
+      fallbackScore = nearest;
+      fallback = { x, y };
+    }
+  }
+  return fallback ?? { x: S / 2, y: S / 2 };
+}
+const arenaSize = S;
+const clampToArena = (v, radius) =>
+  clamp(v, BORDER_THICKNESS + radius, S - BORDER_THICKNESS - radius);
+
+// ---- public/src/sensors.js ---------------------------------------
+// Everything an agent knows about the world.
+//
+// Agents never receive absolute arena coordinates. They get a compass heading,
+// bearings and distances to what is inside their vision cone, and wall probes -
+// so working out where you are is itself part of the prompt's job.
+
+
+
+/** Internal facing (0 = east, clockwise) to a compass heading (0 = north). */
+const toCompass = (facing) => (Math.round(normalizeDeg(facing + 90)) + 360) % 360;
+const compassLabel = (heading) => {
+  const names = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+  return names[Math.round(heading / 45) % 8];
+};
+
+/** Bearing from `agent` to a world point, in degrees relative to its body facing. */
+function bearingTo(agent, x, y) {
+  const absolute = (Math.atan2(y - agent.y, x - agent.x) * 180) / Math.PI;
+  return normalizeDeg(absolute - agent.facing);
+}
+
+const inCone = (bearing) => Math.abs(bearing) <= VISION.fov / 2;
+
+/**
+ * Wall probes fanned across the vision cone, plus four short-range proximity
+ * senses. The cone probes let an agent read the room ahead; the proximity
+ * senses are a touch sense for what is immediately around it.
+ */
+function senseWalls(agent) {
+  const cone = [];
+  const half = VISION.fov / 2;
+  const count = VISION.wallRays;
+
+  for (let i = 0; i < count; i++) {
+    const bearing = -half + (i * VISION.fov) / (count - 1);
+    const rad = toRad(agent.facing + bearing);
+    const d = castRay(agent.x, agent.y, Math.cos(rad), Math.sin(rad), VISION.range);
+    cone.push({ bearing: round1(bearing), distance: round0(d) });
+  }
+
+  const probe = (offset) => {
+    const rad = toRad(agent.facing + offset);
+    return round0(castRay(agent.x, agent.y, Math.cos(rad), Math.sin(rad), 400));
+  };
+
+  return {
+    cone,
+    proximity: { front: probe(0), right: probe(90), back: probe(180), left: probe(-90) },
+  };
+}
+
+function seesTarget(agent, x, y, radius) {
+  const bearing = bearingTo(agent, x, y);
+  const d = dist(agent.x, agent.y, x, y);
+  // A target is visible if its centre is in the cone, or it is close enough that
+  // its edge clips the cone - stops large pickups popping in and out at the seam.
+  const edgeSlack = d > 1 ? (Math.atan2(radius, d) * 180) / Math.PI : 90;
+  if (Math.abs(bearing) > VISION.fov / 2 + edgeSlack) return null;
+  if (d > VISION.range) return null;
+  if (!hasLineOfSight(agent.x, agent.y, x, y)) return null;
+  return { bearing, distance: d };
+}
+
+/** How an enemy is oriented: 0 means looking straight back at you. */
+function relativeFacing(agent, other) {
+  const towardMe = (Math.atan2(agent.y - other.y, agent.x - other.x) * 180) / Math.PI;
+  return normalizeDeg(towardMe - other.facing);
+}
+
+function facingWord(relative) {
+  const a = Math.abs(relative);
+  if (a <= 25) return 'facing you';
+  if (a <= 70) return relative < 0 ? 'turned slightly right of you' : 'turned slightly left of you';
+  if (a <= 120) return relative < 0 ? 'side-on, right' : 'side-on, left';
+  return 'facing away from you';
+}
+
+/**
+ * Build the snapshot handed to a brain. `world` supplies live agents and loot.
+ */
+function buildSnapshot(agent, world) {
+  const weapon = WEAPONS[agent.weapon] ?? WEAPONS.pistol;
+  const heading = toCompass(agent.facing);
+
+  const enemies = [];
+  for (const other of world.agents) {
+    if (other === agent || !other.alive) continue;
+    const seen = seesTarget(agent, other.x, other.y, WORLD.agentRadius);
+    if (!seen) continue;
+    const rel = relativeFacing(agent, other);
+    enemies.push({
+      name: other.name,
+      bearing: round1(seen.bearing),
+      distance: round0(seen.distance),
+      // Relative position, in your own frame: how far ahead and how far to your right.
+      forward: round0(Math.cos(toRad(seen.bearing)) * seen.distance),
+      right: round0(Math.sin(toRad(seen.bearing)) * seen.distance),
+      heading: toCompass(other.facing),
+      orientation: facingWord(rel),
+      hp: round0(other.hp),
+      weapon: (WEAPONS[other.weapon] ?? WEAPONS.pistol).name,
+    });
+  }
+  enemies.sort((a, b) => a.distance - b.distance);
+
+  const loot = [];
+  for (const item of world.pickups) {
+    const seen = seesTarget(agent, item.x, item.y, item.radius);
+    if (!seen) continue;
+    loot.push({
+      kind: item.kind,
+      label: item.label,
+      bearing: round1(seen.bearing),
+      distance: round0(seen.distance),
+    });
+  }
+  loot.sort((a, b) => a.distance - b.distance);
+
+  const walls = senseWalls(agent);
+  const reloading = agent.reloadUntil > world.time;
+
+  return {
+    tick: world.tickCount,
+    time: round1(world.time),
+    self: {
+      name: agent.name,
+      hp: round0(agent.hp),
+      maxHp: AGENT.maxHp,
+      weapon: weapon.name,
+      weaponId: weapon.id,
+      ammo: agent.ammo,
+      magazine: weapon.magazine,
+      reloading,
+      canFireNow: !reloading && agent.ammo > 0 && agent.nextShotAt <= world.time,
+      heading,
+      headingLabel: compassLabel(heading),
+      aimOffset: round1(agent.aimOffset),
+    },
+    vision: { fovDegrees: VISION.fov, range: VISION.range },
+    enemies,
+    loot,
+    walls,
+    // Things that happened since this agent's previous decision.
+    events: agent.pendingEvents.slice(-6),
+    arena: {
+      agentsAlive: world.agents.filter((a) => a.alive).length,
+      queueLength: world.queue.length,
+    },
+  };
+}
+
+/**
+ * Compact text rendering of a snapshot - what the Claude brain actually reads,
+ * and what the inspector panel shows. Much cheaper than raw JSON and easier for
+ * a human to sanity-check against the screen.
+ */
+function renderSnapshotText(s) {
+  const lines = [];
+  lines.push(
+    `T=${s.time}s  HP ${s.self.hp}/${s.self.maxHp}  ${s.self.weapon} ${s.self.ammo}/${s.self.magazine}` +
+      `${s.self.reloading ? ' (RELOADING)' : ''}${s.self.canFireNow ? '' : ' (not ready)'}`,
+  );
+  lines.push(
+    `Heading ${s.self.heading}° (${s.self.headingLabel})  aim offset ${s.self.aimOffset}°  ` +
+      `vision ${s.vision.fovDegrees}° cone, ${s.vision.range} range`,
+  );
+
+  if (s.enemies.length) {
+    lines.push('ENEMIES IN SIGHT:');
+    for (const e of s.enemies) {
+      lines.push(
+        `  ${e.name}: bearing ${e.bearing > 0 ? '+' : ''}${e.bearing}° ` +
+          `(${e.bearing > 0 ? 'right' : e.bearing < 0 ? 'left' : 'dead ahead'}), distance ${e.distance}, ` +
+          `${e.forward} ahead / ${Math.abs(e.right)} to your ${e.right >= 0 ? 'right' : 'left'}, ` +
+          `HP ${e.hp}, ${e.weapon}, heading ${e.heading}° - ${e.orientation}`,
+      );
+    }
+  } else {
+    lines.push('ENEMIES IN SIGHT: none');
+  }
+
+  if (s.loot.length) {
+    lines.push('LOOT IN SIGHT:');
+    for (const l of s.loot) {
+      lines.push(`  ${l.label}: bearing ${l.bearing > 0 ? '+' : ''}${l.bearing}°, distance ${l.distance}`);
+    }
+  } else {
+    lines.push('LOOT IN SIGHT: none');
+  }
+
+  lines.push(
+    'WALL DISTANCE ACROSS CONE (left to right): ' +
+      s.walls.cone.map((w) => `${w.bearing > 0 ? '+' : ''}${w.bearing}°:${w.distance}`).join('  '),
+  );
+  const p = s.walls.proximity;
+  lines.push(`WALL PROXIMITY: front ${p.front}, right ${p.right}, back ${p.back}, left ${p.left}`);
+
+  if (s.events.length) {
+    lines.push('SINCE YOUR LAST DECISION:');
+    for (const e of s.events) lines.push(`  - ${e}`);
+  }
+  return lines.join('\n');
+}
+const senseUtils = { seesTarget, relativeFacing, facingWord, clamp };
+
+// ---- public/src/actions.js ---------------------------------------
+// The agent's entire control surface.
+//
+// Deliberately small and slow: an agent cannot strafe, cannot sprint, cannot
+// snap its aim onto a target. Everything costs time, so *what* an agent decides
+// to do matters far more than how precisely it can do it - which is the point
+// of the game.
+const ACTION_LIMITS = {
+  turnDegrees: [5, 180],
+  moveSteps: [1, 8],
+  aimDegrees: [0, MOVE.aimLimit],
+  fireShots: [1, 10],
+  holdSeconds: [0.1, 3],
+};
+
+/**
+ * Tool definitions, in Anthropic Messages API shape. The local brain uses the
+ * same names and argument ranges, so a prompt behaves consistently across both.
+ */
+const TOOL_SCHEMAS = [
+  {
+    name: 'turn',
+    description:
+      'Rotate your body left or right by a number of degrees. Your body turns at ' +
+      `${MOVE.turnSpeed} degrees per second, so a large turn takes real time and leaves you blind to your flanks. ` +
+      'Turning also carries your vision cone and your aim with it.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        direction: { type: 'string', enum: ['left', 'right'], description: 'Which way to rotate.' },
+        degrees: { type: 'number', description: 'How far to rotate, 5 to 180 degrees.' },
+      },
+      required: ['direction', 'degrees'],
+    },
+  },
+  {
+    name: 'move',
+    description:
+      `Walk forwards or backwards a number of steps. One step is ${MOVE.stepDistance} units; ` +
+      `forwards is ${MOVE.forwardSpeed} units/sec and backwards is ${MOVE.backwardSpeed} units/sec. ` +
+      'You always travel along your body facing - there is no strafing. Walking into a wall ends the move early.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        direction: { type: 'string', enum: ['forward', 'backward'], description: 'Which way to walk.' },
+        steps: { type: 'number', description: 'How many steps, 1 to 8.' },
+      },
+      required: ['direction', 'steps'],
+    },
+  },
+  {
+    name: 'aim',
+    description:
+      `Offset your gun from your body facing, up to ${MOVE.aimLimit} degrees either side, at ${MOVE.aimSpeed} degrees per second. ` +
+      'Use "center" to bring the gun back in line with your body. Fine corrections with aim are much faster than turning your whole body.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        direction: { type: 'string', enum: ['left', 'right', 'center'], description: 'Which way to swing the gun.' },
+        degrees: { type: 'number', description: `How far from your body facing to aim, 0 to ${MOVE.aimLimit}. Ignored for "center".` },
+      },
+      required: ['direction'],
+    },
+  },
+  {
+    name: 'fire',
+    description:
+      'Fire your weapon along your current aim. Shots are spaced by your weapon\'s cycle time. ' +
+      'Firing stops early if the magazine runs dry - it never reloads for you.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        shots: { type: 'number', description: 'How many shots to attempt, 1 to 10.' },
+      },
+      required: ['shots'],
+    },
+  },
+  {
+    name: 'reload',
+    description:
+      'Refill your magazine. You cannot fire while reloading, and reloads cannot be cancelled once started. ' +
+      'Reload times: pistol 2s, shotgun 3s, assault rifle 2s.',
+    input_schema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'hold',
+    description:
+      'Stand still and keep watching your cone for up to 3 seconds. Useful for ambushes, and for letting a reload finish.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        seconds: { type: 'number', description: 'How long to hold, 0.1 to 3 seconds.' },
+      },
+      required: ['seconds'],
+    },
+  },
+];
+const TOOL_NAMES = TOOL_SCHEMAS.map((t) => t.name);
+
+const clampRange = (value, [lo, hi], fallback) => {
+  const n = Number(value);
+  return Number.isFinite(n) ? clamp(n, lo, hi) : fallback;
+};
+
+/**
+ * Turn a raw tool call from either brain into an action the simulation can run,
+ * or null if it is not a usable action. Never throws - a malformed call from a
+ * model should cost the agent a turn, not crash the arena.
+ */
+function normalizeAction(call, agent) {
+  if (!call || typeof call.name !== 'string') return null;
+  const input = call.input && typeof call.input === 'object' ? call.input : {};
+
+  switch (call.name) {
+    case 'turn': {
+      const direction = input.direction === 'left' ? 'left' : 'right';
+      const degrees = clampRange(input.degrees, ACTION_LIMITS.turnDegrees, 45);
+      return { type: 'turn', direction, remaining: degrees, total: degrees };
+    }
+    case 'move': {
+      const direction = input.direction === 'backward' ? 'backward' : 'forward';
+      const steps = Math.round(clampRange(input.steps, ACTION_LIMITS.moveSteps, 2));
+      const distance = steps * MOVE.stepDistance;
+      return { type: 'move', direction, remaining: distance, total: distance, steps };
+    }
+    case 'aim': {
+      if (input.direction === 'center') return { type: 'aim', target: 0 };
+      const sign = input.direction === 'left' ? -1 : 1;
+      const degrees = clampRange(input.degrees, ACTION_LIMITS.aimDegrees, 10);
+      return { type: 'aim', target: sign * degrees };
+    }
+    case 'fire': {
+      const weapon = WEAPONS[agent?.weapon] ?? WEAPONS.pistol;
+      const shots = Math.round(
+        clampRange(input.shots, [1, Math.max(1, weapon.magazine)], 1),
+      );
+      return { type: 'fire', remaining: shots, total: shots };
+    }
+    case 'reload':
+      return { type: 'reload', started: false };
+    case 'hold': {
+      const seconds = clampRange(input.seconds, ACTION_LIMITS.holdSeconds, 0.5);
+      return { type: 'hold', remaining: seconds, total: seconds };
+    }
+    default:
+      return null;
+  }
+}
+
+/** Convert a decision (list of tool calls) into a bounded action queue. */
+function buildQueue(calls, agent) {
+  if (!Array.isArray(calls)) return [];
+  return calls
+    .slice(0, BRAIN.maxActionsPerDecision)
+    .map((call) => normalizeAction(call, agent))
+    .filter(Boolean);
+}
+
+/** Short human-readable form of an action, for the UI feed. */
+function describeAction(action) {
+  if (!action) return 'idle';
+  switch (action.type) {
+    case 'turn': return `turn ${action.direction} ${Math.round(action.total)}°`;
+    case 'move': return `move ${action.direction} ${action.steps}`;
+    case 'aim': return action.target === 0 ? 'aim center' : `aim ${action.target < 0 ? 'left' : 'right'} ${Math.abs(Math.round(action.target))}°`;
+    case 'fire': return `fire x${action.total}`;
+    case 'reload': return 'reload';
+    case 'hold': return `hold ${action.total}s`;
+    default: return action.type;
+  }
+}
+
+/**
+ * Advance one action by `dt`. Returns true when the action is finished.
+ * Movement and shooting are delegated back to the world through `ctx`, which
+ * owns collision and projectiles.
+ */
+function stepAction(agent, action, dt, ctx) {
+  switch (action.type) {
+    case 'turn': {
+      const amount = Math.min(MOVE.turnSpeed * dt, action.remaining);
+      agent.facing = normalizeDeg(agent.facing + (action.direction === 'left' ? -amount : amount));
+      action.remaining -= amount;
+      return action.remaining <= 1e-6;
+    }
+
+    case 'move': {
+      const speed = action.direction === 'forward' ? MOVE.forwardSpeed : MOVE.backwardSpeed;
+      const amount = Math.min(speed * dt, action.remaining);
+      const sign = action.direction === 'forward' ? 1 : -1;
+      const rad = (agent.facing * Math.PI) / 180;
+      const moved = ctx.tryMove(agent, Math.cos(rad) * amount * sign, Math.sin(rad) * amount * sign);
+      action.remaining -= amount;
+      // Bumping a wall ends the move so the agent is not stuck grinding into it.
+      if (!moved) {
+        agent.blocked = true;
+        return true;
+      }
+      return action.remaining <= 1e-6;
+    }
+
+    case 'aim': {
+      const delta = angleDelta(agent.aimOffset, action.target);
+      const amount = Math.min(MOVE.aimSpeed * dt, Math.abs(delta));
+      agent.aimOffset = clamp(
+        agent.aimOffset + Math.sign(delta) * amount,
+        -MOVE.aimLimit,
+        MOVE.aimLimit,
+      );
+      return Math.abs(angleDelta(agent.aimOffset, action.target)) < 0.5;
+    }
+
+    case 'fire': {
+      if (agent.reloadUntil > ctx.now) return false;      // wait out a reload
+      if (agent.nextShotAt > ctx.now) return false;       // weapon still cycling
+      if (agent.ammo <= 0) return true;                   // dry: caller must reload
+      ctx.fireWeapon(agent);
+      action.remaining -= 1;
+      return action.remaining <= 0;
+    }
+
+    case 'reload': {
+      const weapon = WEAPONS[agent.weapon] ?? WEAPONS.pistol;
+      if (!action.started) {
+        action.started = true;
+        agent.reloadUntil = ctx.now + weapon.reloadTime;
+        return false;
+      }
+      if (ctx.now >= agent.reloadUntil) {
+        agent.ammo = weapon.magazine;
+        return true;
+      }
+      return false;
+    }
+
+    case 'hold': {
+      action.remaining -= dt;
+      return action.remaining <= 0;
+    }
+
+    default:
+      return true;
+  }
+}
+
+// ---- public/src/lobby.js -----------------------------------------
+// Who is in the arena, who is waiting, and who is sitting out a death timer.
+
+let nextId = 1;
+function createParticipant({ name, prompt, brainKind, colorIndex }) {
+  return {
+    id: `p${nextId++}`,
+    name,
+    prompt,
+    brainKind,
+    colorIndex,
+    status: 'queued',      // 'live' | 'queued' | 'cooldown'
+    readyAt: 0,
+    kills: 0,
+    deaths: 0,
+    damageDealt: 0,
+    damageTaken: 0,
+    shotsFired: 0,
+    decisions: 0,
+    lastError: null,
+    joinedAt: 0,
+  };
+}
+class Lobby {
+  constructor(world) {
+    this.world = world;
+    this.participants = new Map();
+    this.queue = [];           // participant ids, front is next in
+  }
+
+  get liveCount() {
+    return this.world.agents.filter((a) => a.alive).length;
+  }
+
+  get isFull() {
+    return this.liveCount >= WORLD.maxAgents;
+  }
+
+  list() {
+    return [...this.participants.values()];
+  }
+
+  get(id) {
+    return this.participants.get(id);
+  }
+
+  /** Register a new participant. Spawns immediately if there is room. */
+  add(participant) {
+    participant.joinedAt = this.world.time;
+    this.participants.set(participant.id, participant);
+    this.queue.push(participant.id);
+    const spawned = this.pump();
+    return spawned.includes(participant.id) ? 'spawned' : 'queued';
+  }
+
+  remove(id) {
+    const participant = this.participants.get(id);
+    if (!participant) return;
+    this.world.removeAgentFor(id);
+    this.participants.delete(id);
+    this.queue = this.queue.filter((qid) => qid !== id);
+  }
+
+  /** Arena full *and* more than congestedQueueLength waiting to get in. */
+  isCongested() {
+    return this.isFull && this.queue.length > LOBBY.congestedQueueLength;
+  }
+
+  /**
+   * Death timer. The long cooldown applies when the arena was full and the queue
+   * was deep at the moment of death - dying while a crowd is waiting costs you
+   * your place for a long while. The caller passes the congestion state it read
+   * before the body was removed, since removing it changes the answer.
+   */
+  onDeath(participant, congested = this.isCongested()) {
+    participant.deaths += 1;
+    const wait = congested ? LOBBY.congestedCooldown : LOBBY.respawnCooldown;
+    participant.status = 'cooldown';
+    participant.readyAt = this.world.time + wait;
+    participant.lastCooldown = wait;
+    return wait;
+  }
+
+  /** Move expired cooldowns back into the queue, then fill any free slots. */
+  update() {
+    for (const participant of this.participants.values()) {
+      if (participant.status === 'cooldown' && this.world.time >= participant.readyAt) {
+        participant.status = 'queued';
+        this.queue.push(participant.id);
+      }
+    }
+    this.pump();
+  }
+
+  /** Spawn queued participants while slots remain. Returns the ids spawned. */
+  pump() {
+    const spawned = [];
+    while (this.queue.length && !this.isFull) {
+      const id = this.queue.shift();
+      const participant = this.participants.get(id);
+      if (!participant || participant.status === 'live') continue;
+      if (participant.status === 'cooldown' && this.world.time < participant.readyAt) continue;
+      this.world.spawnAgent(participant);
+      participant.status = 'live';
+      spawned.push(id);
+    }
+    return spawned;
+  }
+
+  /** Position in the waiting line, 1-based, or null if not waiting. */
+  queuePosition(id) {
+    const index = this.queue.indexOf(id);
+    return index === -1 ? null : index + 1;
+  }
+}
+
+// ---- public/src/world.js -----------------------------------------
+// The simulation: bodies, bullets, loot, damage and the decision loop.
+
+
+
+
+
+
+const SPAWN_PROTECTION = 1.5;
+let nextAgentId = 1;
+let nextPickupId = 1;
+let nextProjectileId = 1;
+class World {
+  constructor({ seed = Date.now(), brains } = {}) {
+    this.rng = makeRng(seed);
+    this.brains = brains;              // { local, claude } - each has decide()
+    this.time = 0;
+    this.tickCount = 0;
+    this.agents = [];
+    this.projectiles = [];
+    this.pickups = [];
+    this.effects = [];                 // short-lived visuals (hits, deaths)
+    this.log = [];
+    this.lobby = new Lobby(this);
+    this.nextLootAt = randRange(this.rng, ...LOOT.spawnCooldown);
+    this.paused = false;
+  }
+
+  get queue() {
+    return this.lobby.queue;
+  }
+
+  addLog(text, kind = 'info') {
+    this.log.push({ time: this.time, text, kind });
+    if (this.log.length > 200) this.log.shift();
+  }
+
+  // ---------------------------------------------------------------- lifecycle
+
+  spawnAgent(participant) {
+    const weapon = WEAPONS[AGENT.startWeapon];
+    const spot = findOpenPosition(this.rng, {
+      avoid: this.agents.filter((a) => a.alive),
+      minAvoidDistance: 300,
+    });
+
+    const agent = {
+      id: `a${nextAgentId++}`,
+      participant,
+      name: participant.name,
+      color: AGENT_COLORS[participant.colorIndex % AGENT_COLORS.length],
+      x: spot.x,
+      y: spot.y,
+      facing: randRange(this.rng, -180, 180),
+      aimOffset: 0,
+      hp: AGENT.maxHp,
+      alive: true,
+      weapon: weapon.id,
+      ammo: weapon.magazine,
+      nextShotAt: 0,
+      reloadUntil: 0,
+      spawnProtectedUntil: this.time + SPAWN_PROTECTION,
+
+      queue: [],
+      current: null,
+      thinking: false,
+      thinkToken: 0,
+      nextDecisionAt: 0,
+      lastActions: [],
+      lastSnapshot: null,
+      lastNote: null,
+      lastError: null,
+      pendingEvents: ['You have entered the arena.'],
+      blocked: false,
+      lastInterruptAt: -Infinity,
+      spawnedAt: this.time,
+    };
+
+    this.agents.push(agent);
+    participant.agent = agent;
+    this.addLog(`${participant.name} entered the arena.`, 'join');
+    return agent;
+  }
+
+  removeAgentFor(participantId) {
+    this.agents = this.agents.filter((a) => a.participant.id !== participantId);
+  }
+
+  killAgent(agent, killer) {
+    if (!agent.alive) return;
+
+    // Read the congestion state *before* this agent stops counting as alive -
+    // the long cooldown is about the arena you died in, not the one you left.
+    const congested = this.lobby.isCongested();
+
+    agent.alive = false;
+    agent.hp = 0;
+    this.effects.push({ kind: 'death', x: agent.x, y: agent.y, color: agent.color, until: this.time + 0.8 });
+
+    if (killer && killer !== agent) {
+      killer.participant.kills += 1;
+      killer.pendingEvents.push(`You killed ${agent.name}.`);
+      this.addLog(`${killer.name} killed ${agent.name}.`, 'kill');
+    } else {
+      this.addLog(`${agent.name} died.`, 'kill');
+    }
+
+    const wait = this.lobby.onDeath(agent.participant, congested);
+    agent.participant.agent = null;
+    this.agents = this.agents.filter((a) => a !== agent);
+    this.addLog(`${agent.name} may rejoin in ${Math.round(wait)}s.`, 'info');
+    this.lobby.pump();
+  }
+
+  // ---------------------------------------------------------------- combat
+
+  applyDamage(target, amount, attacker, weaponName) {
+    if (!target.alive) return;
+    if (this.time < target.spawnProtectedUntil) return;
+
+    const dealt = Math.min(amount, target.hp);
+    target.hp -= amount;
+    target.participant.damageTaken += dealt;
+    if (attacker) attacker.participant.damageDealt += dealt;
+
+    const from = attacker ? bearingTo(target, attacker.x, attacker.y) : 0;
+    const side =
+      Math.abs(from) < 45 ? 'ahead' : Math.abs(from) > 135 ? 'behind you' : from > 0 ? 'your right' : 'your left';
+    target.pendingEvents.push(
+      `Took ${Math.round(dealt)} damage from ${side}${weaponName ? ` (${weaponName})` : ''}. HP now ${Math.max(0, Math.round(target.hp))}.`,
+    );
+
+    // Being shot cancels the rest of the current plan so the agent can react,
+    // but not more often than damageInterruptCooldown or it would never act.
+    if (this.time - target.lastInterruptAt > BRAIN.damageInterruptCooldown) {
+      target.lastInterruptAt = this.time;
+      if (target.current?.type !== 'reload') {
+        target.queue = [];
+        target.current = null;
+      }
+    }
+
+    if (target.hp <= 0) this.killAgent(target, attacker);
+  }
+
+  fireWeapon(agent) {
+    const weapon = WEAPONS[agent.weapon] ?? WEAPONS.pistol;
+    if (agent.ammo <= 0) return;
+
+    agent.ammo -= 1;
+    agent.nextShotAt = this.time + weapon.timeBetweenShots;
+    agent.participant.shotsFired += 1;
+
+    const baseAngle = agent.facing + agent.aimOffset;
+    for (let i = 0; i < weapon.pellets; i++) {
+      const jitter = randRange(this.rng, -weapon.spread, weapon.spread);
+      const rad = toRad(baseAngle + jitter);
+      this.projectiles.push({
+        id: `b${nextProjectileId++}`,
+        x: agent.x + Math.cos(rad) * (WORLD.agentRadius + 2),
+        y: agent.y + Math.sin(rad) * (WORLD.agentRadius + 2),
+        dx: Math.cos(rad),
+        dy: Math.sin(rad),
+        speed: weapon.bulletSpeed,
+        damage: weapon.damage,
+        range: weapon.range,
+        falloffStart: weapon.falloffStart,
+        falloffFloor: weapon.falloffFloor,
+        travelled: 0,
+        owner: agent,
+        color: weapon.color,
+        weaponName: weapon.name,
+      });
+    }
+    this.effects.push({
+      kind: 'muzzle',
+      x: agent.x,
+      y: agent.y,
+      angle: baseAngle,
+      color: weapon.color,
+      until: this.time + 0.06,
+    });
+  }
+
+  stepProjectiles(dt) {
+    const survivors = [];
+
+    for (const p of this.projectiles) {
+      const travel = Math.min(p.speed * dt, p.range - p.travelled);
+      const x2 = p.x + p.dx * travel;
+      const y2 = p.y + p.dy * travel;
+
+      // Wall first - a bullet cannot pass through cover to reach a body behind it.
+      const wallHit = castRay(p.x, p.y, p.dx, p.dy, travel);
+      const limit = Math.min(travel, wallHit);
+
+      let closest = null;
+      let closestDistance = Infinity;
+      for (const agent of this.agents) {
+        if (!agent.alive || agent === p.owner) continue;
+        if (this.time < agent.spawnProtectedUntil) continue;
+        const d = pointSegmentDistance(agent.x, agent.y, p.x, p.y, p.x + p.dx * limit, p.y + p.dy * limit);
+        if (d > WORLD.agentRadius) continue;
+        const along = dist(p.x, p.y, agent.x, agent.y);
+        if (along < closestDistance) {
+          closestDistance = along;
+          closest = agent;
+        }
+      }
+
+      if (closest) {
+        const total = p.travelled + closestDistance;
+        const scale =
+          total <= p.falloffStart
+            ? 1
+            : clamp(
+                1 - ((total - p.falloffStart) / Math.max(1, p.range - p.falloffStart)) * (1 - p.falloffFloor),
+                p.falloffFloor,
+                1,
+              );
+        this.applyDamage(closest, p.damage * scale, p.owner, p.weaponName);
+        this.effects.push({ kind: 'hit', x: closest.x, y: closest.y, color: p.color, until: this.time + 0.18 });
+        continue;
+      }
+
+      if (wallHit < travel) {
+        this.effects.push({
+          kind: 'spark',
+          x: p.x + p.dx * wallHit,
+          y: p.y + p.dy * wallHit,
+          color: p.color,
+          until: this.time + 0.12,
+        });
+        continue;
+      }
+
+      p.x = x2;
+      p.y = y2;
+      p.travelled += travel;
+      if (p.travelled < p.range) survivors.push(p);
+    }
+
+    this.projectiles = survivors;
+  }
+
+  // ---------------------------------------------------------------- loot
+
+  spawnPickup() {
+    const kind = weightedPick(this.rng, LOOT.weights);
+    if (!kind) return;
+
+    const spot = findOpenPosition(this.rng, {
+      radius: 16,
+      avoid: [...this.agents.filter((a) => a.alive), ...this.pickups],
+      minAvoidDistance: 160,
+    });
+
+    let item;
+    if (kind.startsWith('health')) {
+      const heal = Number(kind.replace('health', ''));
+      const spec = HEALTH_PACKS[heal];
+      item = {
+        kind: 'health',
+        heal,
+        radius: spec.radius,
+        color: spec.color,
+        label: `Medkit +${heal}`,
+        sizeLabel: spec.label,
+      };
+    } else {
+      const weapon = WEAPONS[kind];
+      item = {
+        kind: 'weapon',
+        weaponId: weapon.id,
+        radius: 13,
+        color: weapon.color,
+        label: weapon.name,
+      };
+    }
+
+    this.pickups.push({
+      id: `k${nextPickupId++}`,
+      x: spot.x,
+      y: spot.y,
+      expiresAt: this.time + LOOT.lifetime,
+      spawnedAt: this.time,
+      ...item,
+    });
+  }
+
+  stepLoot(dt) {
+    if (this.time >= this.nextLootAt) {
+      if (this.pickups.length < LOOT.maxOnGround) this.spawnPickup();
+      this.nextLootAt = this.time + randRange(this.rng, ...LOOT.spawnCooldown);
+    }
+
+    const remaining = [];
+    for (const item of this.pickups) {
+      if (this.time >= item.expiresAt) continue;
+
+      let taken = false;
+      for (const agent of this.agents) {
+        if (!agent.alive) continue;
+        if (dist(agent.x, agent.y, item.x, item.y) > WORLD.agentRadius + item.radius) continue;
+
+        if (item.kind === 'health') {
+          if (agent.hp >= AGENT.maxHp) continue;    // full health leaves it for someone else
+          const healed = Math.min(item.heal, AGENT.maxHp - agent.hp);
+          agent.hp += healed;
+          agent.pendingEvents.push(`Picked up a medkit, healed ${Math.round(healed)}. HP now ${Math.round(agent.hp)}.`);
+          this.addLog(`${agent.name} picked up ${item.label}.`, 'loot');
+        } else {
+          const weapon = WEAPONS[item.weaponId];
+          const sameWeapon = agent.weapon === weapon.id;
+          agent.weapon = weapon.id;
+          agent.ammo = weapon.magazine;
+          agent.reloadUntil = 0;
+          agent.pendingEvents.push(
+            sameWeapon ? `Restocked ${weapon.name} ammo.` : `Picked up a ${weapon.name}. Magazine ${weapon.magazine}.`,
+          );
+          this.addLog(`${agent.name} picked up ${weapon.name}.`, 'loot');
+        }
+        this.effects.push({ kind: 'pickup', x: item.x, y: item.y, color: item.color, until: this.time + 0.3 });
+        taken = true;
+        break;
+      }
+      if (!taken) remaining.push(item);
+    }
+    this.pickups = remaining;
+  }
+
+  // ---------------------------------------------------------------- movement
+
+  tryMove(agent, dx, dy) {
+    const targetX = agent.x + dx;
+    const targetY = agent.y + dy;
+    const resolved = resolveCollision(targetX, targetY, WORLD.agentRadius);
+
+    // Push apart from other bodies so agents do not stack on one square.
+    let px = resolved.x;
+    let py = resolved.y;
+    for (const other of this.agents) {
+      if (other === agent || !other.alive) continue;
+      const d = dist(px, py, other.x, other.y);
+      const minimum = WORLD.agentRadius * 2;
+      if (d < minimum && d > 1e-6) {
+        px += ((px - other.x) / d) * (minimum - d) * 0.5;
+        py += ((py - other.y) / d) * (minimum - d) * 0.5;
+      }
+    }
+    const settled = resolveCollision(px, py, WORLD.agentRadius);
+    agent.x = settled.x;
+    agent.y = settled.y;
+
+    // Report "blocked" only when the wall actually ate most of the step.
+    const wanted = Math.hypot(dx, dy);
+    const achieved = dist(targetX - dx, targetY - dy, agent.x, agent.y);
+    return achieved > wanted * 0.35;
+  }
+
+  // ---------------------------------------------------------------- decisions
+
+  requestDecision(agent) {
+    const snapshot = buildSnapshot(agent, this);
+    agent.lastSnapshot = snapshot;
+    const consumedEvents = agent.pendingEvents.length;
+
+    const brain = this.brains[agent.participant.brainKind] ?? this.brains.local;
+    const token = ++agent.thinkToken;
+    agent.thinking = true;
+
+    Promise.resolve(brain.decide(snapshot, agent.participant))
+      .then((decision) => {
+        if (token !== agent.thinkToken || !agent.alive) return;
+        agent.thinking = false;
+        agent.participant.decisions += 1;
+        agent.participant.lastError = null;
+        agent.lastError = null;
+        agent.lastNote = decision?.note ?? null;
+
+        const actions = buildQueue(decision?.actions, agent);
+        agent.queue = actions;
+        agent.lastActions = actions.map(describeAction);
+        if (!actions.length) {
+          // A brain that returned nothing usable should not spin the CPU.
+          agent.queue = [{ type: 'hold', remaining: 0.4, total: 0.4 }];
+          agent.lastActions = ['hold 0.4s (no action returned)'];
+        }
+        agent.pendingEvents.splice(0, consumedEvents);
+      })
+      .catch((error) => {
+        if (token !== agent.thinkToken || !agent.alive) return;
+        agent.thinking = false;
+        const message = error?.message ?? String(error);
+        agent.lastError = message;
+        agent.participant.lastError = message;
+        agent.queue = [{ type: 'hold', remaining: 1, total: 1 }];
+        agent.lastActions = ['hold 1s (brain error)'];
+        this.addLog(`${agent.name}: brain error - ${message}`, 'error');
+      });
+  }
+
+  stepAgent(agent, dt) {
+    if (!agent.alive) return;
+    agent.blocked = false;
+
+    // Finished reloads are applied even if the plan moved on.
+    if (agent.reloadUntil && this.time >= agent.reloadUntil) {
+      const weapon = WEAPONS[agent.weapon] ?? WEAPONS.pistol;
+      if (agent.ammo < weapon.magazine && agent.current?.type === 'reload') agent.ammo = weapon.magazine;
+      agent.reloadUntil = 0;
+    }
+
+    if (!agent.current) {
+      if (agent.queue.length) {
+        agent.current = agent.queue.shift();
+      } else if (!agent.thinking) {
+        this.requestDecision(agent);
+        return;
+      } else {
+        return;   // still deliberating - the body just stands and watches
+      }
+    }
+
+    const ctx = {
+      now: this.time,
+      tryMove: (a, dx, dy) => this.tryMove(a, dx, dy),
+      fireWeapon: (a) => this.fireWeapon(a),
+    };
+
+    const finished = stepAction(agent, agent.current, dt, ctx);
+    if (agent.blocked) agent.pendingEvents.push('Your walk was blocked by a wall.');
+    if (finished) agent.current = null;
+  }
+
+  // ---------------------------------------------------------------- main tick
+
+  update(dt) {
+    if (this.paused) return;
+    this.time += dt;
+    this.tickCount += 1;
+
+    for (const agent of [...this.agents]) this.stepAgent(agent, dt);
+    this.stepProjectiles(dt);
+    this.stepLoot(dt);
+    this.lobby.update();
+
+    this.effects = this.effects.filter((e) => e.until > this.time);
+    for (const agent of this.agents) {
+      if (agent.pendingEvents.length > 12) agent.pendingEvents.splice(0, agent.pendingEvents.length - 12);
+    }
+  }
+}
+
+// ---- public/src/brains/local.js ----------------------------------
+// The offline brain.
+//
+// It reads the player's prompt for intent - how aggressive, how greedy for
+// loot, what range it wants to fight at, when to run - and drives a small state
+// machine from those traits. It is not a language model, but it is driven
+// entirely by the prompt text, so writing a better prompt still wins games.
+
+
+/** Keyword -> trait nudges. Each entry may push several traits at once. */
+const RULES = [
+  // --- posture -------------------------------------------------------------
+  { re: /\b(aggressiv\w*|attack|hunt|rush|charge|berserk|relentless|kill|hostile|push|brawl)\b/g, aggression: +0.22 },
+  { re: /\b(defensiv\w*|cautious|careful|patient|passive|avoid|survive|coward\w*|timid)\b/g, aggression: -0.2, caution: +0.2 },
+  { re: /\b(camp|ambush|lurk|wait|hide|hold position|stay put|guard)\b/g, aggression: -0.08, camp: +0.35 },
+  { re: /\b(patrol|roam|wander|explore|search|sweep|scout)\b/g, camp: -0.25, roam: +0.3 },
+  { re: /\b(spin|rotate|whirl|360|pirouette)\b/g, spin: +0.5 },
+
+  // --- range preference ----------------------------------------------------
+  { re: /\b(close range|point.?blank|up close|in their face|melee|hug|close the distance)\b/g, range: -0.4 },
+  { re: /\b(long range|from afar|at distance|snip\w*|keep away|keep your distance|kite|poke)\b/g, range: +0.4 },
+
+  // --- loot ----------------------------------------------------------------
+  { re: /\b(heal|health|medkit|med.?pack|hp|first aid)\b/g, loot: +0.18 },
+  { re: /\b(loot|pick ?up|grab|collect|scavenge|gather|item)\b/g, loot: +0.2 },
+  { re: /\b(ignore (the )?(loot|items|pickups|health))\b/g, loot: -0.6 },
+
+  // --- weapon preference ---------------------------------------------------
+  { re: /\bshotgun\b/g, wantWeapon: 'shotgun', range: -0.15 },
+  { re: /\b(assault rifle|\bar\b|rifle|full.?auto)\b/g, wantWeapon: 'assault' },
+
+  // --- trigger discipline --------------------------------------------------
+  { re: /\b(spray|dump|unload|empty the mag|full.?auto|suppress)\b/g, trigger: +0.4 },
+  { re: /\b(conserve|save ammo|single shot|one shot at a time|disciplined|precise|accurate)\b/g, trigger: -0.35 },
+  { re: /\b(burst)\b/g, trigger: +0.1 },
+
+  // --- turning bias --------------------------------------------------------
+  { re: /\b(clockwise|turn right|to the right|rightward)\b/g, turnBias: 'right' },
+  { re: /\b(counter.?clockwise|anti.?clockwise|turn left|to the left|leftward)\b/g, turnBias: 'left' },
+
+  // --- misc ---------------------------------------------------------------
+  { re: /\b(never (retreat|run|flee)|fight to the death|no retreat|last stand)\b/g, retreatOverride: 0 },
+  { re: /\b(always reload|reload (early|often|whenever))\b/g, eagerReload: +0.5 },
+];
+
+/** Pull an explicit HP threshold out of phrasings like "retreat below 40 hp". */
+function parseHpThreshold(text) {
+  const patterns = [
+    /(?:below|under|less than|beneath|<)\s*(\d{1,3})\s*(?:%|hp|health)?/i,
+    /(?:at or below|at)\s*(\d{1,3})\s*(?:%|hp|health)\b/i,
+    /(\d{1,3})\s*(?:%|hp|health)\s*(?:or (?:less|lower|below))/i,
+  ];
+  for (const re of patterns) {
+    const match = text.match(re);
+    if (match) {
+      const value = Number(match[1]);
+      if (value >= 1 && value <= 100) return value;
+    }
+  }
+  return null;
+}
+function parsePrompt(text = '') {
+  const lower = ` ${String(text).toLowerCase()} `;
+  const traits = {
+    aggression: 0.5,
+    caution: 0.2,
+    camp: 0.15,
+    roam: 0.3,
+    spin: 0,
+    range: 0,          // -1 wants to be close, +1 wants to stay far
+    loot: 0.35,
+    trigger: 0,        // -1 conserve ammo, +1 spray
+    turnBias: null,
+    wantWeapon: null,
+    eagerReload: 0,
+    retreatOverride: null,
+  };
+
+  for (const rule of RULES) {
+    rule.re.lastIndex = 0;
+    const hits = (lower.match(rule.re) ?? []).length;
+    if (!hits) continue;
+    const weight = Math.min(hits, 3);
+    for (const [key, value] of Object.entries(rule)) {
+      if (key === 're') continue;
+      if (typeof value === 'number') traits[key] = clamp(traits[key] + value * weight, -1, 1);
+      else traits[key] = value;
+    }
+  }
+
+  traits.aggression = clamp(traits.aggression, 0.05, 1);
+  traits.loot = clamp(traits.loot, 0, 1);
+
+  const explicit = parseHpThreshold(lower);
+  traits.retreatAt =
+    traits.retreatOverride === 0 ? 0 : explicit ?? Math.round(clamp(58 - traits.aggression * 45 + traits.caution * 25, 0, 85));
+
+  traits.turnBias ??= lower.includes('left') ? 'left' : 'right';
+  traits.preferredDistance = Math.round(clamp(330 + traits.range * 260, 90, 600));
+  return traits;
+}
+
+const nearestEnemy = (s) => (s.enemies.length ? s.enemies[0] : null);
+
+/** Aim tolerance that actually corresponds to hitting a body of this size. */
+function aimTolerance(distance, weaponId) {
+  const angular = toDeg(Math.atan2(WORLD.agentRadius * 0.9, Math.max(40, distance)));
+  const weaponBonus = weaponId === 'shotgun' ? 3 : 0;
+  return clamp(angular + weaponBonus, 1.5, 20);
+}
+
+/**
+ * Line the gun up with `bearing`. What matters is where the *gun* points, which
+ * is body facing plus aim offset - so the error to close is `bearing - aimOffset`,
+ * not the bearing itself. Returns [] when the shot is already on target.
+ */
+function alignTo(bearing, s, tolerance) {
+  const error = bearing - s.self.aimOffset;
+  if (Math.abs(error) <= tolerance) return [];
+
+  if (Math.abs(bearing) <= MOVE.aimLimit) {
+    return [{ name: 'aim', input: { direction: bearing < 0 ? 'left' : 'right', degrees: Math.abs(bearing) } }];
+  }
+  // Beyond the aim cone the body has to come round. Turn far enough that the
+  // remainder falls inside the aim cone, so the next decision can finish the job.
+  const turn = Math.abs(bearing) - MOVE.aimLimit * 0.5;
+  return [{ name: 'turn', input: { direction: bearing < 0 ? 'left' : 'right', degrees: clamp(turn, 5, 180) } }];
+}
+
+/** Pick the most open bearing from the wall probes across the cone. */
+function openestBearing(s) {
+  let best = s.walls.cone[0];
+  for (const ray of s.walls.cone) if (ray.distance > best.distance) best = ray;
+  return best;
+}
+
+function shotsToFire(s, traits) {
+  if (s.self.ammo <= 0) return 0;
+  if (traits.trigger > 0.25) return Math.min(s.self.ammo, s.self.weaponId === 'assault' ? 5 : 3);
+  if (traits.trigger < -0.2) return 1;
+  return Math.min(s.self.ammo, 2);
+}
+function decideFromTraits(s, traits, rng) {
+  const actions = [];
+  const enemy = nearestEnemy(s);
+  const hpFraction = s.self.hp / s.self.maxHp;
+  let note;
+
+  // --- housekeeping --------------------------------------------------------
+  if (s.self.reloading) {
+    return { actions: [{ name: 'hold', input: { seconds: 0.5 } }], note: 'waiting out reload' };
+  }
+
+  if (s.self.ammo <= 0) {
+    // Reload behind cover if something is shooting at us.
+    if (enemy && enemy.distance < 260) {
+      return {
+        actions: [
+          { name: 'move', input: { direction: 'backward', steps: 3 } },
+          { name: 'reload', input: {} },
+        ],
+        note: 'dry - backing off to reload',
+      };
+    }
+    return { actions: [{ name: 'reload', input: {} }], note: 'reloading' };
+  }
+
+  const magazine = WEAPONS[s.self.weaponId]?.magazine ?? 3;
+  if (!enemy && traits.eagerReload > 0.2 && s.self.ammo < magazine) {
+    return { actions: [{ name: 'reload', input: {} }], note: 'topping up while clear' };
+  }
+
+  // --- fight ---------------------------------------------------------------
+  if (enemy) {
+    const tolerance = aimTolerance(enemy.distance, s.self.weaponId);
+    const wantsOut = traits.retreatAt > 0 && s.self.hp <= traits.retreatAt;
+
+    if (wantsOut) {
+      note = `HP ${s.self.hp} at or below retreat threshold ${traits.retreatAt}`;
+      if (enemy.distance < 320) {
+        actions.push(...alignTo(enemy.bearing, s, tolerance));
+        actions.push({ name: 'fire', input: { shots: 1 } });
+        actions.push({ name: 'move', input: { direction: 'backward', steps: 4 } });
+      } else {
+        actions.push({ name: 'turn', input: { direction: traits.turnBias, degrees: 130 } });
+        actions.push({ name: 'move', input: { direction: 'forward', steps: 6 } });
+      }
+      return { actions, note };
+    }
+
+    const align = alignTo(enemy.bearing, s, tolerance);
+    actions.push(...align);
+
+    const lined = align.length === 0;
+    if (lined && s.self.canFireNow) {
+      const shots = shotsToFire(s, traits);
+      if (shots > 0) actions.push({ name: 'fire', input: { shots } });
+      note = `engaging ${enemy.name} at ${enemy.distance}`;
+    } else {
+      note = `lining up on ${enemy.name}`;
+    }
+
+    // Close or open the gap toward the preferred fighting distance.
+    const gap = enemy.distance - traits.preferredDistance;
+    if (gap > 90 && lined) {
+      actions.push({ name: 'move', input: { direction: 'forward', steps: clamp(Math.round(gap / MOVE.stepDistance), 1, 5) } });
+    } else if (gap < -90) {
+      actions.push({ name: 'move', input: { direction: 'backward', steps: clamp(Math.round(-gap / MOVE.stepDistance), 1, 4) } });
+    }
+    return { actions, note };
+  }
+
+  // --- loot ----------------------------------------------------------------
+  const wantsHealth = hpFraction < 0.95;
+  const target = s.loot.find((item) => {
+    if (item.kind === 'health') return wantsHealth && (hpFraction < 0.6 || traits.loot > 0.3);
+    if (traits.wantWeapon) return item.label.toLowerCase().includes(traits.wantWeapon === 'assault' ? 'assault' : 'shotgun');
+    return traits.loot > 0.25;
+  });
+
+  if (target) {
+    actions.push(...alignTo(target.bearing, s, 4));
+    const steps = clamp(Math.round(target.distance / MOVE.stepDistance), 1, 8);
+    actions.push({ name: 'move', input: { direction: 'forward', steps } });
+    return { actions, note: `collecting ${target.label}` };
+  }
+
+  // --- nothing in sight: search -------------------------------------------
+  const ahead = s.walls.proximity.front;
+  if (ahead < 70) {
+    const open = openestBearing(s);
+    const away = open.distance > 200 ? open.bearing : (traits.turnBias === 'left' ? -110 : 110);
+    return {
+      actions: [
+        { name: 'turn', input: { direction: away < 0 ? 'left' : 'right', degrees: clamp(Math.abs(away), 25, 180) } },
+        { name: 'move', input: { direction: 'forward', steps: 3 } },
+      ],
+      note: 'wall ahead, turning away',
+    };
+  }
+
+  if (traits.spin > 0.3) {
+    return {
+      actions: [{ name: 'turn', input: { direction: traits.turnBias, degrees: 60 } }],
+      note: 'spinning to scan',
+    };
+  }
+
+  if (traits.camp > 0.3 && rng() > traits.roam) {
+    return {
+      actions: [
+        { name: 'turn', input: { direction: rng() < 0.5 ? 'left' : 'right', degrees: 22 + rng() * 25 } },
+        { name: 'hold', input: { seconds: 0.8 + rng() * 1.2 } },
+      ],
+      note: 'holding position, watching',
+    };
+  }
+
+  const sweep = 25 + rng() * 45;
+  const direction = rng() < 0.72 ? traits.turnBias : traits.turnBias === 'left' ? 'right' : 'left';
+  return {
+    actions: [
+      { name: 'turn', input: { direction, degrees: sweep } },
+      { name: 'move', input: { direction: 'forward', steps: 2 + Math.floor(rng() * 4) } },
+    ],
+    note: 'searching',
+  };
+}
+
+/** Brain object consumed by the world. */
+function createLocalBrain({ thinkTime = [0.25, 0.6] } = {}) {
+  const cache = new WeakMap();
+
+  return {
+    id: 'local',
+    label: 'Offline (prompt interpreter)',
+
+    traitsFor(participant) {
+      let entry = cache.get(participant);
+      if (!entry || entry.prompt !== participant.prompt) {
+        entry = {
+          prompt: participant.prompt,
+          traits: parsePrompt(participant.prompt),
+          rng: makeRng([...participant.id].reduce((h, c) => h * 31 + c.charCodeAt(0), 7)),
+        };
+        cache.set(participant, entry);
+      }
+      return entry;
+    },
+
+    async decide(snapshot, participant) {
+      const entry = this.traitsFor(participant);
+      // A small delay so offline agents feel like they are deciding, not twitching.
+      const delay = thinkTime[0] + entry.rng() * (thinkTime[1] - thinkTime[0]);
+      await new Promise((resolve) => setTimeout(resolve, delay * 1000));
+      return decideFromTraits(snapshot, entry.traits, entry.rng);
+    },
+  };
+}
+
+// ---- public/src/brains/claude.js ---------------------------------
+// Brain backed by a real model.
+//
+// The browser never holds an API key - it posts the sensor snapshot to this
+// game's own /api/decide endpoint, which calls the Messages API server-side and
+// returns the tool calls the model made.
+function createClaudeBrain({ endpoint = '/api/decide', fallback = null } = {}) {
+  let available = true;
+  let lastFailureAt = 0;
+
+  return {
+    id: 'claude',
+    label: 'Claude (live model)',
+
+    get available() {
+      return available;
+    },
+
+    /** Re-check availability a minute after a hard failure. */
+    markUnavailable() {
+      available = false;
+      lastFailureAt = Date.now();
+    },
+
+    async decide(snapshot, participant) {
+      if (!available && Date.now() - lastFailureAt < 60_000) {
+        if (fallback) return fallback.decide(snapshot, participant);
+        throw new Error('model backend unavailable');
+      }
+
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), BRAIN.decisionTimeout * 1000);
+
+      try {
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            prompt: participant.prompt,
+            name: participant.name,
+            observation: renderSnapshotText(snapshot),
+          }),
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          const detail = await response.text().catch(() => '');
+          if (response.status === 503 || response.status === 501) this.markUnavailable();
+          throw new Error(`${response.status} ${detail.slice(0, 160)}`);
+        }
+
+        available = true;
+        const data = await response.json();
+        return { actions: data.actions ?? [], note: data.note ?? null };
+      } catch (error) {
+        if (error.name === 'AbortError') throw new Error('model timed out');
+        if (fallback && !available) return fallback.decide(snapshot, participant);
+        throw error;
+      } finally {
+        clearTimeout(timer);
+      }
+    },
+  };
+}
+
+// ---- public/src/brains/index.js ----------------------------------
+function createBrains() {
+  const local = createLocalBrain({ thinkTime: BRAIN.localThinkTime });
+  const claude = createClaudeBrain({ fallback: local });
+  return { local, claude };
+}
+
+// ---- public/src/render.js ----------------------------------------
+// Canvas rendering. The arena is drawn in world units and scaled to fit.
+class Renderer {
+  constructor(canvas) {
+    this.canvas = canvas;
+    this.ctx = canvas.getContext('2d');
+    this.scale = 1;
+    this.resize();
+  }
+
+  resize() {
+    const rect = this.canvas.getBoundingClientRect();
+    const size = Math.max(200, Math.min(rect.width, rect.height));
+    const dpr = window.devicePixelRatio || 1;
+    this.canvas.width = Math.round(size * dpr);
+    this.canvas.height = Math.round(size * dpr);
+    this.cssSize = size;
+    this.dpr = dpr;
+    this.scale = (size * dpr) / arenaSize;
+  }
+
+  /** Canvas click position -> world coordinates. */
+  toWorld(clientX, clientY) {
+    const rect = this.canvas.getBoundingClientRect();
+    return {
+      x: ((clientX - rect.left) / rect.width) * arenaSize,
+      y: ((clientY - rect.top) / rect.height) * arenaSize,
+    };
+  }
+
+  draw(world, { selectedId = null } = {}) {
+    const { ctx } = this;
+    ctx.save();
+    ctx.setTransform(this.scale, 0, 0, this.scale, 0, 0);
+
+    this.drawFloor(ctx);
+    this.drawWalls(ctx);
+    for (const agent of world.agents) this.drawVisionCone(ctx, agent, agent.participant.id === selectedId);
+    this.drawPickups(ctx, world);
+    this.drawProjectiles(ctx, world);
+    for (const agent of world.agents) this.drawAgent(ctx, agent, agent.participant.id === selectedId, world.time);
+    this.drawEffects(ctx, world);
+
+    ctx.restore();
+  }
+
+  drawFloor(ctx) {
+    ctx.fillStyle = COLORS.background;
+    ctx.fillRect(0, 0, arenaSize, arenaSize);
+
+    ctx.fillStyle = COLORS.floor;
+    ctx.fillRect(
+      BORDER_THICKNESS,
+      BORDER_THICKNESS,
+      arenaSize - BORDER_THICKNESS * 2,
+      arenaSize - BORDER_THICKNESS * 2,
+    );
+
+    ctx.strokeStyle = COLORS.grid;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let v = BORDER_THICKNESS; v <= arenaSize - BORDER_THICKNESS; v += 100) {
+      ctx.moveTo(v, BORDER_THICKNESS);
+      ctx.lineTo(v, arenaSize - BORDER_THICKNESS);
+      ctx.moveTo(BORDER_THICKNESS, v);
+      ctx.lineTo(arenaSize - BORDER_THICKNESS, v);
+    }
+    ctx.stroke();
+  }
+
+  drawWalls(ctx) {
+    ctx.fillStyle = COLORS.wall;
+    ctx.strokeStyle = COLORS.wallEdge;
+    ctx.lineWidth = 2;
+
+    // Border ring.
+    ctx.beginPath();
+    ctx.rect(0, 0, arenaSize, arenaSize);
+    ctx.rect(
+      BORDER_THICKNESS,
+      BORDER_THICKNESS,
+      arenaSize - BORDER_THICKNESS * 2,
+      arenaSize - BORDER_THICKNESS * 2,
+    );
+    ctx.fill('evenodd');
+
+    for (const wall of WALLS) {
+      ctx.fillRect(wall.x, wall.y, wall.w, wall.h);
+      ctx.strokeRect(wall.x, wall.y, wall.w, wall.h);
+    }
+  }
+
+  drawVisionCone(ctx, agent, selected) {
+    const half = toRad(VISION.fov / 2);
+    const facing = toRad(agent.facing);
+
+    const gradient = ctx.createRadialGradient(agent.x, agent.y, 10, agent.x, agent.y, VISION.range);
+    gradient.addColorStop(0, this.withAlpha(agent.color, selected ? 0.28 : 0.095));
+    gradient.addColorStop(1, this.withAlpha(agent.color, 0));
+
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.moveTo(agent.x, agent.y);
+    ctx.arc(agent.x, agent.y, VISION.range, facing - half, facing + half);
+    ctx.closePath();
+    ctx.fill();
+
+    if (selected) {
+      ctx.strokeStyle = this.withAlpha(agent.color, 0.5);
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+  }
+
+  drawPickups(ctx, world) {
+    for (const item of world.pickups) {
+      const fading = item.expiresAt - world.time < 6;
+      ctx.globalAlpha = fading ? 0.45 + 0.45 * Math.abs(Math.sin(world.time * 6)) : 1;
+
+      if (item.kind === 'health') {
+        ctx.fillStyle = item.color;
+        ctx.beginPath();
+        ctx.arc(item.x, item.y, item.radius, 0, Math.PI * 2);
+        ctx.fill();
+
+        // A cross, so the size/colour reading is unambiguous.
+        const arm = item.radius * 0.55;
+        const thickness = Math.max(2, item.radius * 0.28);
+        ctx.fillStyle = '#0c1a14';
+        ctx.fillRect(item.x - arm, item.y - thickness / 2, arm * 2, thickness);
+        ctx.fillRect(item.x - thickness / 2, item.y - arm, thickness, arm * 2);
+      } else {
+        ctx.fillStyle = item.color;
+        ctx.strokeStyle = '#0c0f16';
+        ctx.lineWidth = 2;
+        const r = item.radius;
+        ctx.beginPath();
+        ctx.rect(item.x - r, item.y - r * 0.7, r * 2, r * 1.4);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = '#0c0f16';
+        ctx.font = 'bold 13px ui-monospace, monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(item.weaponId === 'shotgun' ? 'SG' : 'AR', item.x, item.y + 1);
+      }
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  drawProjectiles(ctx, world) {
+    ctx.lineCap = 'round';
+    for (const p of world.projectiles) {
+      const tail = 16;
+      ctx.strokeStyle = p.color;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+      ctx.lineTo(p.x - p.dx * tail, p.y - p.dy * tail);
+      ctx.stroke();
+    }
+  }
+
+  drawAgent(ctx, agent, selected, now) {
+    const r = WORLD.agentRadius;
+
+    // Aim line, so you can see where the gun is pointing versus the body.
+    const aimRad = toRad(agent.facing + agent.aimOffset);
+    ctx.strokeStyle = this.withAlpha(agent.color, 0.85);
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(agent.x, agent.y);
+    ctx.lineTo(agent.x + Math.cos(aimRad) * (r + 16), agent.y + Math.sin(aimRad) * (r + 16));
+    ctx.stroke();
+
+    // The sphere.
+    const gradient = ctx.createRadialGradient(
+      agent.x - r * 0.35, agent.y - r * 0.35, r * 0.15,
+      agent.x, agent.y, r,
+    );
+    gradient.addColorStop(0, this.lighten(agent.color, 0.45));
+    gradient.addColorStop(1, agent.color);
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.arc(agent.x, agent.y, r, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Health ring.
+    const fraction = Math.max(0, agent.hp / AGENT.maxHp);
+    ctx.strokeStyle = fraction > 0.5 ? '#4ade80' : fraction > 0.25 ? '#facc15' : '#ef4444';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(agent.x, agent.y, r + 4, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * fraction);
+    ctx.stroke();
+
+    if (selected) {
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.arc(agent.x, agent.y, r + 11, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    if (now < agent.spawnProtectedUntil) {
+      // Spawn shield: invulnerable, so it must be visible.
+      ctx.strokeStyle = this.withAlpha('#ffffff', 0.35 + 0.35 * Math.abs(Math.sin(now * 8)));
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(agent.x, agent.y, r + 8, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    if (agent.thinking) {
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(agent.x, agent.y - r - 12, 2.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    if (agent.reloadUntil > now) {
+      ctx.strokeStyle = '#94a3b8';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(agent.x, agent.y, r + 9, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    ctx.fillStyle = '#dfe4f0';
+    ctx.font = '600 15px ui-sans-serif, system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText(agent.name, agent.x, agent.y - r - 8);
+
+    const weapon = WEAPONS[agent.weapon];
+    if (weapon && weapon.id !== 'pistol') {
+      ctx.fillStyle = weapon.color;
+      ctx.font = 'bold 11px ui-monospace, monospace';
+      ctx.textBaseline = 'top';
+      ctx.fillText(weapon.id === 'shotgun' ? 'SG' : 'AR', agent.x, agent.y + r + 6);
+    }
+  }
+
+  drawEffects(ctx, world) {
+    for (const effect of world.effects) {
+      const remaining = effect.until - world.time;
+
+      if (effect.kind === 'muzzle') {
+        ctx.fillStyle = effect.color;
+        ctx.globalAlpha = 0.9;
+        const rad = toRad(effect.angle);
+        ctx.beginPath();
+        ctx.arc(effect.x + Math.cos(rad) * 22, effect.y + Math.sin(rad) * 22, 5, 0, Math.PI * 2);
+        ctx.fill();
+      } else if (effect.kind === 'hit') {
+        ctx.globalAlpha = Math.max(0, remaining / 0.18);
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(effect.x, effect.y, 22 * (1 - remaining / 0.18) + 6, 0, Math.PI * 2);
+        ctx.stroke();
+      } else if (effect.kind === 'spark') {
+        ctx.globalAlpha = Math.max(0, remaining / 0.12);
+        ctx.fillStyle = effect.color;
+        ctx.beginPath();
+        ctx.arc(effect.x, effect.y, 3, 0, Math.PI * 2);
+        ctx.fill();
+      } else if (effect.kind === 'death') {
+        const t = 1 - remaining / 0.8;
+        ctx.globalAlpha = Math.max(0, 1 - t);
+        ctx.strokeStyle = effect.color;
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(effect.x, effect.y, 16 + t * 60, 0, Math.PI * 2);
+        ctx.stroke();
+      } else if (effect.kind === 'pickup') {
+        ctx.globalAlpha = Math.max(0, remaining / 0.3);
+        ctx.strokeStyle = effect.color;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(effect.x, effect.y, 10 + (1 - remaining / 0.3) * 22, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  withAlpha(hex, alpha) {
+    const { r, g, b } = this.parseHex(hex);
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  }
+
+  lighten(hex, amount) {
+    const { r, g, b } = this.parseHex(hex);
+    const mix = (c) => Math.round(c + (255 - c) * amount);
+    return `rgb(${mix(r)}, ${mix(g)}, ${mix(b)})`;
+  }
+
+  parseHex(hex) {
+    const value = hex.replace('#', '');
+    const full = value.length === 3 ? value.split('').map((c) => c + c).join('') : value;
+    return {
+      r: parseInt(full.slice(0, 2), 16),
+      g: parseInt(full.slice(2, 4), 16),
+      b: parseInt(full.slice(4, 6), 16),
+    };
+  }
+}
+
+// ---- public/src/presets.js ---------------------------------------
+// Starter prompts. They double as a tutorial: each one leans on a different
+// part of the sensor feed and the tool set.
+const PRESETS = [
+  {
+    name: 'Hunter',
+    prompt:
+      'Be aggressive. Hunt down the nearest enemy and close the distance until you are within about 200 units, ' +
+      'then fire in bursts. Keep your aim on the target rather than turning your whole body when the bearing is small. ' +
+      'Reload only when your magazine is empty and no enemy is in sight. Never retreat.',
+  },
+  {
+    name: 'Ambusher',
+    prompt:
+      'Camp. Find a wall with cover to one side, hold position and watch your cone. Stay still and wait for someone ' +
+      'to walk into view, then fire single, accurate shots. Conserve ammo. If your HP drops below 50, back away ' +
+      'from the threat and reload behind cover before fighting again.',
+  },
+  {
+    name: 'Scavenger',
+    prompt:
+      'Your priority is loot. Always pick up health packs and grab the shotgun or assault rifle whenever one is in sight. ' +
+      'Avoid fights while you still carry the pistol. Once you have a better weapon, fight at long range and keep your distance. ' +
+      'Retreat below 40 hp and find a medkit.',
+  },
+  {
+    name: 'Spinner',
+    prompt:
+      'Spin clockwise constantly to sweep the arena with your vision cone. The moment an enemy appears in your cone, ' +
+      'stop turning, aim at their bearing and spray. Then resume spinning. Do not chase anyone.',
+  },
+  {
+    name: 'Wall Crawler',
+    prompt:
+      'Use your wall proximity readings to keep a wall on your left at all times, and walk the perimeter of the arena. ' +
+      'This makes you hard to flank. Fire at anything that enters your cone, at any range. Grab health packs you walk past. ' +
+      'Retreat below 30 hp.',
+  },
+  {
+    name: 'Duelist',
+    prompt:
+      'Fight at long range. Keep roughly 450 units between you and your target, backing up when they close in and ' +
+      'advancing when they run. Fire precise single shots and always reload the moment the enemy is out of sight. ' +
+      'Below 45 hp, break line of sight by turning away and walking, then heal.',
+  },
+];
+const DEMO_NAMES = [
+  'Vex', 'Nyx', 'Rook', 'Quill', 'Sable', 'Onyx', 'Wren', 'Fable', 'Ash', 'Kite',
+  'Juno', 'Pike', 'Lyra', 'Corvus', 'Tessel',
+];
+
+// ---- public/src/ui.js --------------------------------------------
+// DOM wiring: the join form, roster, inspector, feed and rules panel.
+
+
+
+
+const $ = (id) => document.getElementById(id);
+class UI {
+  constructor({ world, onJoin, onDemo, onClear, onSelect, onTogglePause }) {
+    this.world = world;
+    this.onJoin = onJoin;
+    this.onSelect = onSelect;
+    this.selectedId = null;
+    this.lastLogLength = 0;
+
+    this.el = {
+      alive: $('stat-alive'),
+      max: $('stat-max'),
+      queue: $('stat-queue'),
+      cooldown: $('stat-cooldown'),
+      clock: $('stat-clock'),
+      badge: $('badge-model'),
+      pause: $('btn-pause'),
+      form: $('join-form'),
+      name: $('field-name'),
+      prompt: $('field-prompt'),
+      brain: $('field-brain'),
+      preset: $('field-preset'),
+      count: $('prompt-count'),
+      status: $('join-status'),
+      roster: $('roster'),
+      rosterCount: $('roster-count'),
+      inspector: $('inspector'),
+      log: $('log'),
+      rules: $('rules'),
+      demo: $('btn-demo'),
+      clear: $('btn-clear'),
+    };
+
+    this.el.max.textContent = String(WORLD.maxAgents);
+    this.fillPresets();
+    this.fillRules();
+
+    this.el.form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const result = this.onJoin({
+        name: this.el.name.value.trim(),
+        prompt: this.el.prompt.value.trim(),
+        brainKind: this.el.brain.value,
+      });
+      this.showStatus(result.message, result.tone);
+      if (result.ok) {
+        this.el.name.value = '';
+        this.el.prompt.value = '';
+        this.updateCount();
+      }
+    });
+
+    this.el.prompt.addEventListener('input', () => this.updateCount());
+    this.el.preset.addEventListener('change', () => {
+      const preset = PRESETS.find((p) => p.name === this.el.preset.value);
+      if (!preset) return;
+      this.el.prompt.value = preset.prompt;
+      if (!this.el.name.value) this.el.name.value = preset.name;
+      this.updateCount();
+      this.el.preset.value = '';
+    });
+
+    this.el.demo.addEventListener('click', () => onDemo());
+    this.el.clear.addEventListener('click', () => onClear());
+    this.el.pause.addEventListener('click', () => {
+      const paused = onTogglePause();
+      this.el.pause.textContent = paused ? 'Resume' : 'Pause';
+    });
+
+    this.el.roster.addEventListener('click', (event) => {
+      const li = event.target.closest('li[data-id]');
+      if (li) this.select(li.dataset.id);
+    });
+
+    this.updateCount();
+  }
+
+  fillPresets() {
+    for (const preset of PRESETS) {
+      const option = document.createElement('option');
+      option.value = preset.name;
+      option.textContent = preset.name;
+      this.el.preset.append(option);
+    }
+  }
+
+  fillRules() {
+    const rows = [
+      ['Arena', `${WORLD.maxAgents} agents max, overflow waits in a queue`],
+      ['Vision', `${VISION.fov}° cone, ${VISION.range} range, blocked by walls`],
+      ['Body', `${MOVE.turnSpeed}°/s turn, ${MOVE.stepDistance}u steps, aim ±${MOVE.aimLimit}°`],
+      ['Health', `${AGENT.maxHp} HP`],
+      ...Object.values(WEAPONS).map((w) => [
+        w.name,
+        `${w.magazine} shots · ${w.timeBetweenShots}s between · ${w.reloadTime}s reload · ` +
+          `${w.pellets > 1 ? `${w.pellets}×${w.damage}` : w.damage} dmg`,
+      ]),
+      ['Medkits', Object.values(HEALTH_PACKS).map((h) => `+${h.heal}`).join(' / ') + ' — bigger and brighter heals more'],
+      ['Loot', `spawns every ${LOOT.spawnCooldown[0]}–${LOOT.spawnCooldown[1]}s, ${LOOT.maxOnGround} max on the floor`],
+      ['Death', `${LOBBY.respawnCooldown}s before you may rejoin — ${LOBBY.congestedCooldown / 60} min if the arena is full and more than ${LOBBY.congestedQueueLength} are queued`],
+    ];
+    this.el.rules.innerHTML = rows
+      .map(([term, def]) => `<dt>${term}</dt><dd>${def}</dd>`)
+      .join('');
+  }
+
+  updateCount() {
+    this.el.count.textContent = `${this.el.prompt.value.length} / 1200`;
+  }
+
+  showStatus(message, tone = '') {
+    this.el.status.textContent = message ?? '';
+    this.el.status.className = `form-note ${tone}`;
+  }
+
+  setModelBadge(state, detail) {
+    const badge = this.el.badge;
+    badge.textContent = detail;
+    badge.className = `badge ${state}`;
+    // Only offer the live brain when the server can actually reach the model.
+    this.el.brain.querySelector('option[value="claude"]').disabled = state !== 'ok';
+    if (state !== 'ok' && this.el.brain.value === 'claude') this.el.brain.value = 'local';
+  }
+
+  select(participantId) {
+    this.selectedId = this.selectedId === participantId ? null : participantId;
+    this.onSelect?.(this.selectedId);
+  }
+
+  selectByPoint(x, y) {
+    let hit = null;
+    for (const agent of this.world.agents) {
+      if (Math.hypot(agent.x - x, agent.y - y) <= WORLD.agentRadius + 10) hit = agent;
+    }
+    this.selectedId = hit ? hit.participant.id : null;
+    this.onSelect?.(this.selectedId);
+  }
+
+  // ------------------------------------------------------------------ render
+
+  update() {
+    const world = this.world;
+    const participants = world.lobby.list();
+    const alive = world.agents.filter((a) => a.alive);
+
+    this.el.alive.textContent = String(alive.length);
+    this.el.queue.textContent = String(world.lobby.queue.length);
+    this.el.cooldown.textContent = String(participants.filter((p) => p.status === 'cooldown').length);
+    const total = Math.floor(world.time);
+    this.el.clock.textContent = `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
+
+    this.renderRoster(participants);
+    this.renderInspector();
+    this.renderLog();
+  }
+
+  renderRoster(participants) {
+    const ordered = [...participants].sort((a, b) => {
+      const rank = (p) => (p.status === 'live' ? 0 : p.status === 'queued' ? 1 : 2);
+      return rank(a) - rank(b) || b.kills - a.kills || a.joinedAt - b.joinedAt;
+    });
+
+    this.el.rosterCount.textContent = `${participants.length} total`;
+    this.el.roster.innerHTML = ordered.map((p) => this.rosterRow(p)).join('') ||
+      '<li class="waiting"><span></span><span class="muted">Nobody has entered yet.</span><span></span></li>';
+  }
+
+  rosterRow(p) {
+    const color = AGENT_COLORS[p.colorIndex % AGENT_COLORS.length];
+    const agent = p.agent;
+    let sub;
+
+    if (p.status === 'live' && agent) {
+      const weapon = WEAPONS[agent.weapon];
+      sub = `${weapon.name} ${agent.ammo}/${weapon.magazine}` +
+        `${agent.reloadUntil > this.world.time ? ' · reloading' : ''}` +
+        `${agent.thinking ? ' · thinking' : ''}`;
+    } else if (p.status === 'queued') {
+      const place = this.world.lobby.queuePosition(p.id);
+      sub = place ? `waiting — #${place} in queue` : 'waiting';
+    } else {
+      sub = `dead — rejoins in ${formatClock(p.readyAt - this.world.time)}`;
+    }
+
+    const hp = agent ? Math.max(0, agent.hp / AGENT.maxHp) : 0;
+    const hpColor = hp > 0.5 ? 'var(--good)' : hp > 0.25 ? 'var(--warn)' : 'var(--bad)';
+    const brainTag = p.brainKind === 'claude' ? ' · Claude' : '';
+
+    return `
+      <li data-id="${p.id}" class="${p.status !== 'live' ? 'waiting' : ''} ${this.selectedId === p.id ? 'selected' : ''}">
+        <span class="dot" style="background:${color}"></span>
+        <span class="who">
+          <span class="name">${escapeHtml(p.name)}</span>
+          <div class="sub">${escapeHtml(sub)}${brainTag}</div>
+          ${p.status === 'live' ? `<div class="hpbar"><i style="width:${hp * 100}%;background:${hpColor}"></i></div>` : ''}
+        </span>
+        <span class="kd">${p.kills}<span class="muted">K</span> ${p.deaths}<span class="muted">D</span></span>
+      </li>`;
+  }
+
+  renderInspector() {
+    const participant = this.selectedId ? this.world.lobby.get(this.selectedId) : null;
+    if (!participant) {
+      this.el.inspector.innerHTML = '<p class="muted">Select an agent to see its sensor feed.</p>';
+      return;
+    }
+
+    const color = AGENT_COLORS[participant.colorIndex % AGENT_COLORS.length];
+    const agent = participant.agent;
+    const parts = [
+      `<div class="who-line"><span class="dot" style="background:${color}"></span>${escapeHtml(participant.name)}
+        <span class="muted" style="font-weight:400;font-size:12px">
+          ${participant.brainKind === 'claude' ? 'Claude' : 'offline interpreter'} ·
+          ${participant.kills}K / ${participant.deaths}D ·
+          ${round0(participant.damageDealt)} dmg dealt · ${participant.decisions} decisions
+        </span></div>`,
+      `<blockquote class="prompt-quote">${escapeHtml(participant.prompt)}</blockquote>`,
+    ];
+
+    if (participant.lastError) {
+      parts.push(`<div class="chips"><span class="chip err">${escapeHtml(participant.lastError)}</span></div>`);
+    }
+
+    if (agent) {
+      if (agent.lastNote) parts.push(`<div><span class="label">Reasoning</span><div>${escapeHtml(agent.lastNote)}</div></div>`);
+      const chips = (agent.lastActions ?? []).map((a) => `<span class="chip">${escapeHtml(a)}</span>`).join('');
+      parts.push(`<div><span class="label">Last plan${agent.thinking ? ' (thinking…)' : ''}</span><div class="chips">${chips || '<span class="muted">—</span>'}</div></div>`);
+      if (agent.lastSnapshot) {
+        parts.push(`<div><span class="label">What it sees</span><pre>${escapeHtml(renderSnapshotText(agent.lastSnapshot))}</pre></div>`);
+      }
+    } else if (participant.status === 'cooldown') {
+      parts.push(`<p class="muted">Eliminated. Rejoins in ${formatClock(participant.readyAt - this.world.time)}.</p>`);
+    } else {
+      const place = this.world.lobby.queuePosition(participant.id);
+      parts.push(`<p class="muted">Waiting to enter${place ? ` — #${place} in queue` : ''}.</p>`);
+    }
+
+    this.el.inspector.innerHTML = parts.join('');
+  }
+
+  renderLog() {
+    if (this.world.log.length === this.lastLogLength) return;
+    this.lastLogLength = this.world.log.length;
+
+    const recent = this.world.log.slice(-40).reverse();
+    this.el.log.innerHTML = recent
+      .map((entry) => {
+        const t = Math.floor(entry.time);
+        return `<li class="${entry.kind}"><span class="t">${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}</span>${escapeHtml(entry.text)}</li>`;
+      })
+      .join('');
+  }
+}
+
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (c) =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+// ---- public/src/main.js ------------------------------------------
+// Entry point: builds the world, wires the UI, runs the loop.
+
+
+
+
+
+
+
+const brains = createBrains();
+const world = new World({ brains });
+const renderer = new Renderer(document.getElementById('arena'));
+
+let usedColors = new Set();
+let usedNames = new Set();
+
+/** Every agent gets a random sphere colour, avoiding repeats while it can. */
+function pickColorIndex() {
+  const free = AGENT_COLORS.map((_, i) => i).filter((i) => !usedColors.has(i));
+  const pool = free.length ? free : AGENT_COLORS.map((_, i) => i);
+  const index = pool[Math.floor(Math.random() * pool.length)];
+  usedColors.add(index);
+  return index;
+}
+
+function uniqueName(base) {
+  let name = base;
+  let n = 2;
+  while (usedNames.has(name.toLowerCase())) name = `${base}${n++}`;
+  usedNames.add(name.toLowerCase());
+  return name;
+}
+
+function join({ name, prompt, brainKind }) {
+  if (!name) return { ok: false, message: 'Give your agent a name.', tone: 'bad' };
+  if (prompt.length < 12) {
+    return { ok: false, message: 'Write a real prompt — at least a sentence of tactics.', tone: 'bad' };
+  }
+  if (brainKind === 'claude' && !brains.claude.available) {
+    return { ok: false, message: 'The live model backend is not available. Use the offline interpreter.', tone: 'bad' };
+  }
+
+  const participant = createParticipant({
+    name: uniqueName(name.slice(0, 14)),
+    prompt,
+    brainKind,
+    colorIndex: pickColorIndex(),
+  });
+
+  const outcome = world.lobby.add(participant);
+  ui.select(participant.id);
+
+  return outcome === 'spawned'
+    ? { ok: true, message: `${participant.name} is in the arena.`, tone: 'ok' }
+    : {
+        ok: true,
+        message: `Arena is full — ${participant.name} is #${world.lobby.queuePosition(participant.id)} in the queue.`,
+        tone: 'warn',
+      };
+}
+
+function addDemoAgents(count = 4) {
+  for (let i = 0; i < count; i++) {
+    const preset = PRESETS[Math.floor(Math.random() * PRESETS.length)];
+    const base = DEMO_NAMES[Math.floor(Math.random() * DEMO_NAMES.length)];
+    join({ name: base, prompt: preset.prompt, brainKind: 'local' });
+  }
+}
+
+function clearArena() {
+  for (const participant of world.lobby.list()) world.lobby.remove(participant.id);
+  world.projectiles = [];
+  world.pickups = [];
+  world.effects = [];
+  world.log = [];
+  usedColors = new Set();
+  usedNames = new Set();
+  ui.selectedId = null;
+  world.addLog('Arena cleared.', 'info');
+}
+
+const ui = new UI({
+  world,
+  onJoin: join,
+  onDemo: () => addDemoAgents(4),
+  onClear: clearArena,
+  onSelect: () => ui.update(),
+  onTogglePause: () => {
+    world.paused = !world.paused;
+    return world.paused;
+  },
+});
+
+// --------------------------------------------------------------- model check
+async function checkModelBackend() {
+  // Opened straight off disk there is no server to ask, and attempting the
+  // fetch only logs a CORS failure. Offline brains still work.
+  if (!location.protocol.startsWith('http')) {
+    brains.claude.markUnavailable();
+    ui.setModelBadge('off', 'Claude off · run the server to enable it');
+    return;
+  }
+
+  try {
+    const response = await fetch('/api/status');
+    if (!response.ok) throw new Error(String(response.status));
+    const data = await response.json();
+    if (data.ready) {
+      ui.setModelBadge('ok', `Claude ready · ${data.model}`);
+    } else {
+      brains.claude.markUnavailable();
+      ui.setModelBadge('off', data.reason ?? 'Claude off');
+    }
+  } catch {
+    brains.claude.markUnavailable();
+    ui.setModelBadge('off', 'Claude off · offline brains only');
+  }
+}
+checkModelBackend();
+
+// ---------------------------------------------------------------- input
+renderer.canvas.addEventListener('click', (event) => {
+  const point = renderer.toWorld(event.clientX, event.clientY);
+  ui.selectByPoint(point.x, point.y);
+});
+
+window.addEventListener('resize', () => renderer.resize());
+
+// ---------------------------------------------------------------- main loop
+const STEP = 1 / WORLD.tickRate;
+let accumulator = 0;
+let previous = performance.now();
+let uiClock = 0;
+
+function frame(now) {
+  const elapsed = Math.min(0.25, (now - previous) / 1000);
+  previous = now;
+  accumulator += elapsed;
+
+  let guard = 0;
+  while (accumulator >= STEP && guard++ < 8) {
+    world.update(STEP);
+    accumulator -= STEP;
+  }
+
+  renderer.draw(world, { selectedId: ui.selectedId });
+
+  // The panel does not need 60 Hz.
+  uiClock += elapsed;
+  if (uiClock >= 0.2) {
+    uiClock = 0;
+    ui.update();
+  }
+
+  requestAnimationFrame(frame);
+}
+
+addDemoAgents(4);
+ui.update();
+requestAnimationFrame(frame);
+
+// Handy for poking at the simulation from the console.
+window.promptWars = { world, brains, ui, renderer, join, addDemoAgents, clearArena };
+
+</script>
+
+</body>
+</html>

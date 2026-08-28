@@ -1,0 +1,18 @@
+{
+  "name": "prompt-wars",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A top-down 2D browser arena where every fighter is driven by a prompt.",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "build": "node build.js",
+    "test": "node test/sim.test.js && node test/model-proxy.test.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.122.0"
+  }
+}
