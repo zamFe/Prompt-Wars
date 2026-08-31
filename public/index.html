@@ -53,7 +53,7 @@
           <label>
             <span>Prompt <em id="prompt-count">0 / 1200</em></span>
             <textarea id="field-prompt" rows="6" maxlength="1200" required
-              placeholder="Describe how your agent should fight. It can turn, walk, aim, fire, reload and hold — nothing else."></textarea>
+              placeholder="Describe how your agent should fight. It can turn, walk, sidestep, aim, fire, reload and hold — nothing else."></textarea>
           </label>
           <div class="row">
             <select id="field-preset" class="grow">
@@ -67,6 +67,15 @@
           <button type="button" class="ghost" id="btn-demo">Add 4 demo agents</button>
           <button type="button" class="ghost" id="btn-clear">Clear arena</button>
         </div>
+      </section>
+
+      <section class="card">
+        <h2>What your agent can do <em>six tools, nothing else</em></h2>
+        <dl class="rules tools" id="tools"></dl>
+        <p class="tools-note">
+          Bearings are relative to your body: negative is left, positive is right.
+          Sidesteps use the same frame, and are the only move that keeps your aim where it is.
+        </p>
       </section>
 
       <section class="card">

@@ -2,6 +2,7 @@
 
 import { WORLD, LOBBY, WEAPONS, HEALTH_PACKS, LOOT, VISION, MOVE, AGENT, AGENT_COLORS } from './config.js';
 import { renderSnapshotText } from './sensors.js';
+import { TOOL_SCHEMAS, TOOL_SUMMARIES } from './actions.js';
 import { formatClock, round0 } from './util.js';
 import { PRESETS } from './presets.js';
 
@@ -35,12 +36,14 @@ export class UI {
       inspector: $('inspector'),
       log: $('log'),
       rules: $('rules'),
+      tools: $('tools'),
       demo: $('btn-demo'),
       clear: $('btn-clear'),
     };
 
     this.el.max.textContent = String(WORLD.maxAgents);
     this.fillPresets();
+    this.fillTools();
     this.fillRules();
 
     this.el.form.addEventListener('submit', (event) => {
@@ -90,6 +93,23 @@ export class UI {
       option.textContent = preset.name;
       this.el.preset.append(option);
     }
+  }
+
+  /**
+   * The action surface, rendered from TOOL_SCHEMAS itself - argument names and
+   * their allowed values come from the same definitions the agents are given,
+   * so this panel cannot quietly fall out of date with the tools.
+   */
+  fillTools() {
+    this.el.tools.innerHTML = TOOL_SCHEMAS.map((tool) => {
+      const properties = tool.input_schema.properties ?? {};
+      const args = Object.entries(properties)
+        .map(([key, spec]) => (spec.enum ? `${key}: ${spec.enum.join('|')}` : key))
+        .join(', ');
+      const signature = `${tool.name}(${args})`;
+      const summary = TOOL_SUMMARIES[tool.name] ?? tool.description.split('.')[0];
+      return `<dt><code>${escapeHtml(signature)}</code></dt><dd>${escapeHtml(summary)}</dd>`;
+    }).join('');
   }
 
   fillRules() {

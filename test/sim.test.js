@@ -9,7 +9,7 @@ import { World } from '../public/src/world.js';
 import { createParticipant } from '../public/src/lobby.js';
 import { createLocalBrain, parsePrompt } from '../public/src/brains/local.js';
 import { buildSnapshot } from '../public/src/sensors.js';
-import { normalizeAction, buildQueue, stepAction, describeAction, MOVE_DIRECTIONS, TOOL_SCHEMAS } from '../public/src/actions.js';
+import { normalizeAction, buildQueue, stepAction, describeAction, MOVE_DIRECTIONS, TOOL_SCHEMAS, TOOL_NAMES, TOOL_SUMMARIES } from '../public/src/actions.js';
 import { hasLineOfSight, castRay, clearance, resolveCollision } from '../public/src/arena.js';
 import { WEAPONS, AGENT, WORLD, LOBBY, VISION, MOVE } from '../public/src/config.js';
 
@@ -316,6 +316,15 @@ test('malformed or unknown tool calls are dropped without throwing', () => {
   assert.equal(normalizeAction(null, agent), null);
   assert.equal(normalizeAction({ name: 'teleport' }, agent), null);
   assert.equal(normalizeAction({ name: 'fire' }, agent).total, 1, 'missing input falls back to a default');
+});
+
+test('every tool has a summary for the panel a prompt writer reads', () => {
+  assert.deepEqual(Object.keys(TOOL_SUMMARIES).sort(), [...TOOL_NAMES].sort(),
+    'adding a tool means documenting it in TOOL_SUMMARIES too');
+  for (const [name, text] of Object.entries(TOOL_SUMMARIES)) {
+    assert.ok(text.length > 20, `${name} needs a real summary`);
+  }
+  assert.match(TOOL_SUMMARIES.move, /sidestep/, 'the move summary must mention sidestepping');
 });
 
 test('a plan is capped at four actions', () => {

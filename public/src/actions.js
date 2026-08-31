@@ -119,6 +119,22 @@ export const TOOL_SCHEMAS = [
 
 export const TOOL_NAMES = TOOL_SCHEMAS.map((t) => t.name);
 
+/**
+ * Short, human-facing summaries of the same tools, for the panel a prompt
+ * writer reads. Kept beside the schemas so a new tool cannot be added without
+ * one - there is a test asserting these keys match TOOL_NAMES exactly.
+ */
+export const TOOL_SUMMARIES = {
+  turn: `Rotate the body at ${MOVE.turnSpeed}°/s. Slow, and you are blind to wherever you turned away from.`,
+  move:
+    `Travel ${MOVE.stepDistance}u per step. Forward ${MOVE.forwardSpeed}u/s, back ${MOVE.backwardSpeed}u/s, ` +
+    `sidestep ${MOVE.sidestepSpeed}u/s without turning.`,
+  aim: `Swing the gun up to ±${MOVE.aimLimit}° off the body at ${MOVE.aimSpeed}°/s. Much faster than turning.`,
+  fire: 'Shoot along the current aim. Stops when the magazine runs dry.',
+  reload: 'Refill the magazine. Cannot be cancelled, and nothing reloads for you.',
+  hold: 'Stand still and keep watching the cone.',
+};
+
 const clampRange = (value, [lo, hi], fallback) => {
   const n = Number(value);
   return Number.isFinite(n) ? clamp(n, lo, hi) : fallback;
