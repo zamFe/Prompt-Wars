@@ -107,7 +107,9 @@ async function checkModelBackend() {
     if (!response.ok) throw new Error(String(response.status));
     const data = await response.json();
     if (data.ready) {
-      ui.setModelBadge('ok', `Claude ready · ${data.model}`);
+      // In compatibility mode something other than Claude is answering, so name
+      // the model rather than claiming a provider.
+      ui.setModelBadge('ok', data.compat ? `Model ready · ${data.model}` : `Claude ready · ${data.model}`, { compat: data.compat });
     } else {
       brains.claude.markUnavailable();
       ui.setModelBadge('off', data.reason ?? 'Claude off');

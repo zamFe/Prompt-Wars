@@ -20,6 +20,10 @@ const PORT = Number(process.env.PORT ?? 8080);
 const MODEL = process.env.PROMPT_WARS_MODEL ?? 'claude-opus-5';
 const EFFORT = process.env.PROMPT_WARS_EFFORT ?? 'low';
 const MAX_CONCURRENT = Number(process.env.PROMPT_WARS_CONCURRENCY ?? 4);
+// Third-party Messages-compatible gateways (a local model behind LiteLLM, say)
+// generally do not implement effort or prompt caching, and reject requests that
+// carry them. Opt in to dropping those so the game still runs.
+const COMPAT = /^(1|true|yes)$/i.test(process.env.PROMPT_WARS_COMPAT ?? '');
 const MAX_PROMPT_CHARS = 1200;
 
 // --------------------------------------------------------------- minimal .env
@@ -151,8 +155,11 @@ async function decide({ prompt, observation, name }) {
     const response = await client.messages.create({
       model: MODEL,
       max_tokens: 4000,
-      output_config: { effort: EFFORT },
-      system: [{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
+      // The stable rules go first and are cached; only the observation varies.
+      system: COMPAT
+        ? SYSTEM_PROMPT
+        : [{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
+      ...(COMPAT ? {} : { output_config: { effort: EFFORT } }),
       tools: TOOL_SCHEMAS,
       messages: [{ role: 'user', content: buildUserMessage(prompt, observation, name) }],
     });
@@ -250,7 +257,8 @@ const server = http.createServer(async (req, res) => {
     return sendJson(res, 200, {
       ready: modelReady(),
       model: MODEL,
-      effort: EFFORT,
+      effort: COMPAT ? null : EFFORT,
+      compat: COMPAT,
       maxAgents: WORLD.maxAgents,
       respawnCooldown: LOBBY.respawnCooldown,
       reason: modelReady() ? null : (clientError ?? "no credentials found"),
@@ -289,9 +297,12 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, async () => {
   console.log(`Prompt Wars running at http://localhost:${PORT}`);
   await credentialProbe;
-  console.log(
-    modelReady()
-      ? `Claude brain enabled — model ${MODEL}, effort ${EFFORT}, up to ${MAX_CONCURRENT} concurrent decisions.`
-      : `Claude brain disabled (${clientError ?? 'no credentials'}). The offline prompt interpreter still works.`,
-  );
+  if (!modelReady()) {
+    console.log(`Model brain disabled (${clientError ?? 'no credentials'}). The offline prompt interpreter still works.`);
+  } else if (COMPAT) {
+    console.log(`Model brain enabled — ${MODEL} via ${process.env.ANTHROPIC_BASE_URL ?? 'the Claude API'}`);
+    console.log('Compatibility mode: effort and prompt caching are omitted.');
+  } else {
+    console.log(`Claude brain enabled — model ${MODEL}, effort ${EFFORT}, up to ${MAX_CONCURRENT} concurrent decisions.`);
+  }
 });

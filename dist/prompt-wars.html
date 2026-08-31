@@ -2687,8 +2687,10 @@ class UI {
     this.el.status.className = `form-note ${tone}`;
   }
 
-  setModelBadge(state, detail) {
+  setModelBadge(state, detail, { compat = false } = {}) {
     const badge = this.el.badge;
+    const option = this.el.brain.querySelector('option[value="claude"]');
+    if (option) option.textContent = compat ? 'Live model (via gateway)' : 'Claude (live)';
     badge.textContent = detail;
     badge.className = `badge ${state}`;
     // Only offer the live brain when the server can actually reach the model.
@@ -2939,7 +2941,9 @@ async function checkModelBackend() {
     if (!response.ok) throw new Error(String(response.status));
     const data = await response.json();
     if (data.ready) {
-      ui.setModelBadge('ok', `Claude ready · ${data.model}`);
+      // In compatibility mode something other than Claude is answering, so name
+      // the model rather than claiming a provider.
+      ui.setModelBadge('ok', data.compat ? `Model ready · ${data.model}` : `Claude ready · ${data.model}`, { compat: data.compat });
     } else {
       brains.claude.markUnavailable();
       ui.setModelBadge('off', data.reason ?? 'Claude off');

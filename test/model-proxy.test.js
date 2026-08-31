@@ -192,6 +192,58 @@ try {
   check('a request missing prompt or observation is a 400', () => {
     assert.equal(empty.status, 400);
   });
+  console.log('\n-- compatibility mode --------------------------------------------');
+  // A third-party Messages-compatible gateway (a local model behind LiteLLM)
+  // generally rejects effort and prompt caching, so compat mode must drop them.
+  const compat = spawn(process.execPath, ['server.js'], {
+    cwd: ROOT,
+    env: {
+      ...process.env,
+      PORT: String(GAME_PORT + 1),
+      ANTHROPIC_BASE_URL: `http://127.0.0.1:${STUB_PORT}`,
+      ANTHROPIC_API_KEY: 'sk-ant-test-key',
+      PROMPT_WARS_COMPAT: '1',
+      PROMPT_WARS_MODEL: 'some-local-model',
+      NO_PROXY: '*',
+      no_proxy: '*',
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+
+  try {
+    const compatBase = `http://127.0.0.1:${GAME_PORT + 1}`;
+    for (let i = 0; i < 60; i++) {
+      try { if ((await fetch(`${compatBase}/api/status`)).ok) break; } catch { /* not up */ }
+      await new Promise((r) => setTimeout(r, 200));
+    }
+
+    const compatStatus = await (await fetch(`${compatBase}/api/status`)).json();
+    check('compat mode reports itself and the model actually in use', () => {
+      assert.equal(compatStatus.ready, true, JSON.stringify(compatStatus));
+      assert.equal(compatStatus.compat, true);
+      assert.equal(compatStatus.model, 'some-local-model');
+      assert.equal(compatStatus.effort, null, 'effort is meaningless without Anthropic extensions');
+    });
+
+    const before = seen.length;
+    await fetch(`${compatBase}/api/decide`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ prompt: 'hunt and shoot', name: 'Local', observation: 'HP 100/100 Pistol 3/3' }),
+    });
+
+    check('compat mode drops the Anthropic-only parameters but keeps the tools', () => {
+      assert.equal(seen.length, before + 1, 'the request should still be made');
+      const body = seen.at(-1).body;
+      assert.equal(body.output_config, undefined, 'effort must not be sent');
+      assert.equal(typeof body.system, 'string', 'system must be plain text, not cache-controlled blocks');
+      assert.ok(!JSON.stringify(body).includes('cache_control'), 'no cache_control anywhere');
+      assert.deepEqual(body.tools.map((t) => t.name), TOOL_NAMES, 'tools still have to go');
+      assert.equal(body.model, 'some-local-model');
+    });
+  } finally {
+    compat.kill('SIGTERM');
+  }
 } finally {
   game.kill('SIGTERM');
   stub.close();

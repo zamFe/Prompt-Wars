@@ -121,8 +121,10 @@ export class UI {
     this.el.status.className = `form-note ${tone}`;
   }
 
-  setModelBadge(state, detail) {
+  setModelBadge(state, detail, { compat = false } = {}) {
     const badge = this.el.badge;
+    const option = this.el.brain.querySelector('option[value="claude"]');
+    if (option) option.textContent = compat ? 'Live model (via gateway)' : 'Claude (live)';
     badge.textContent = detail;
     badge.className = `badge ${state}`;
     // Only offer the live brain when the server can actually reach the model.

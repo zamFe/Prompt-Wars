@@ -40,8 +40,66 @@ the page posts its sensor readings to `/api/decide` and gets tool calls back.
 | `PROMPT_WARS_MODEL` | `claude-opus-5` | Model that drives live agents |
 | `PROMPT_WARS_EFFORT` | `low` | Reasoning effort — agents are a reflex loop, not a research task |
 | `PROMPT_WARS_CONCURRENCY` | `4` | Max simultaneous model calls |
+| `PROMPT_WARS_COMPAT` | off | Drop effort and prompt caching, for non-Anthropic gateways |
+| `ANTHROPIC_BASE_URL` | Claude API | Point the SDK at any Messages-compatible endpoint |
 
 A `.env` file in the project root is read if present.
+
+## Testing without paying for anything
+
+There is no free tier on the Claude API — new accounts get a small amount of
+starter credit, and that is it. Three ways to work without spending:
+
+**1. The offline interpreter.** Free, the default, no key, no network. It is
+genuinely prompt-driven, so it is the right way to test arena balance, weapons,
+loot and the lobby.
+
+**2. The bundled stub model** — free, offline, and exercises the entire live
+path (proxy, tool schemas, async decisions, the thinking indicator, error
+handling) so you can confirm your wiring before spending a cent:
+
+```bash
+npm run stub-model                       # terminal 1, listens on :8790
+ANTHROPIC_BASE_URL=http://127.0.0.1:8790 ANTHROPIC_API_KEY=stub PROMPT_WARS_MODEL=stub-model PROMPT_WARS_COMPAT=1 npm start           # terminal 2
+```
+
+Pick "Live model" as the brain and it plays. The stub reads the observation and
+returns real tool calls, but it is not a language model and ignores your prompt
+entirely — it tells you nothing about whether a prompt is any good.
+
+**3. A free local model.** The SDK honours `ANTHROPIC_BASE_URL`, so any endpoint
+that speaks the Messages API works — for example a local model behind a
+[LiteLLM](https://github.com/BerriAI/litellm) proxy:
+
+```bash
+litellm --model ollama/qwen2.5:14b --port 4000
+ANTHROPIC_BASE_URL=http://127.0.0.1:4000 ANTHROPIC_API_KEY=local PROMPT_WARS_MODEL=ollama/qwen2.5:14b PROMPT_WARS_COMPAT=1 npm start
+```
+
+`PROMPT_WARS_COMPAT=1` drops effort and prompt caching, which non-Anthropic
+gateways reject. Be warned that small local models are weak at structured tool
+calling: bad calls are clamped or dropped rather than crashing the arena, so a
+struggling model looks like an agent that stands around rather than an error.
+Reach for a model with solid tool-use support and expect it to play poorly
+below roughly 14B.
+
+### What a paid run actually costs
+
+Measured from a real request this game sends: a ~1,600-token cached prefix
+(system prompt plus tool schemas) and ~370 fresh tokens per decision. Output —
+mostly thinking — dominates the bill. An agent makes very roughly 10–15
+decisions a minute.
+
+| Model | Per decision | One agent for 10 min | Five agents for 10 min |
+|---|---|---|---|
+| Haiku 4.5 | ~$0.002 | ~$0.20 | ~$1 |
+| Sonnet 5 | ~$0.004 | ~$0.40 | ~$2 |
+| Opus 5 | ~$0.009 | ~$0.70 | ~$3.50 |
+
+Estimates, not a quote — output length is the variable. `PROMPT_WARS_MODEL=claude-haiku-4-5`
+is the cheapest real model, and honestly a reflex loop like this is a good fit
+for it. Mixing brains works too: run one Claude agent against nine offline ones
+and you pay for one.
 
 ## What an agent can do
 
@@ -178,6 +236,8 @@ public/
     brains/
       local.js         the offline prompt interpreter
       claude.js        client for the model proxy
+tools/
+  stub-model.js        a free offline stand-in for the Messages API
 test/
   sim.test.js          rules: balance, vision, bullets, lobby, loot, prompts
   model-proxy.test.js  the Claude path, against a stub Messages API
@@ -196,7 +256,8 @@ npm test
 walls blocking sight and bullets, the queue, both death cooldowns, loot rules,
 tool-argument clamping, prompt parsing, and a full 12-agent two-minute match.
 `model-proxy.test.js` runs the server against a stub Messages API and checks the
-request shape and the tool-call round trip; it needs no credentials.
+request shape, the tool-call round trip and compatibility mode; it needs no
+credentials.
 
 ## Building the single file
 
