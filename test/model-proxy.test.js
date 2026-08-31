@@ -206,6 +206,67 @@ try {
   check('a request missing prompt or observation is a 400', () => {
     assert.equal(empty.status, 400);
   });
+  console.log('\n-- spend protection ----------------------------------------------');
+  // A public deployment turns requests into billed tokens, so both caps have to
+  // actually refuse rather than just be configurable.
+  const capped = spawn(process.execPath, ['server.js'], {
+    cwd: ROOT,
+    env: {
+      ...process.env,
+      PORT: String(GAME_PORT + 2),
+      ANTHROPIC_BASE_URL: `http://127.0.0.1:${STUB_PORT}`,
+      ANTHROPIC_API_KEY: 'sk-ant-test-key',
+      PROMPT_WARS_RATE_LIMIT: '3',
+      PROMPT_WARS_DAILY_LIMIT: '5',
+      NO_PROXY: '*',
+      no_proxy: '*',
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+
+  try {
+    const cappedBase = `http://127.0.0.1:${GAME_PORT + 2}`;
+    for (let i = 0; i < 60; i++) {
+      try { if ((await fetch(`${cappedBase}/api/status`)).ok) break; } catch { /* not up */ }
+      await new Promise((r) => setTimeout(r, 200));
+    }
+
+    const requestsBefore = seen.length;
+    const decide = () => fetch(`${cappedBase}/api/decide`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ prompt: 'hunt and shoot', name: 'Spender', observation: 'HP 100/100 Pistol 3/3' }),
+    });
+
+    // Do every request up front: check() is synchronous, so anything awaited
+    // inside it would run after the finally block has killed this server.
+    const statuses = [];
+    for (let i = 0; i < 5; i++) statuses.push((await decide()).status);
+    const refusal = await (await decide()).json();
+    const info = await (await fetch(`${cappedBase}/api/status`)).json();
+
+    check('a caller past the per-minute rate is refused, not billed', () => {
+      assert.deepEqual(statuses.slice(0, 3), [200, 200, 200], 'the allowance must be spendable');
+      assert.deepEqual(statuses.slice(3), [429, 429], `got ${statuses}`);
+    });
+
+    check('the refusal says which limit was hit', () => {
+      assert.match(refusal.error, /rate limit: 3 decisions per minute/);
+    });
+
+    check('the caps are reported on /api/status', () => {
+      assert.equal(info.rateLimit, 3);
+      assert.equal(info.dailyLimit, 5);
+    });
+
+    check('refused requests never reach the model', () => {
+      // Three allowed calls, and the stub saw exactly three more requests.
+      assert.equal(seen.length, requestsBefore + 3, `stub saw ${seen.length - requestsBefore}`);
+    });
+  } finally {
+    capped.kill('SIGTERM');
+  }
+
   console.log('\n-- compatibility mode --------------------------------------------');
   // A third-party Messages-compatible gateway (a local model behind LiteLLM)
   // generally rejects effort and prompt caching, so compat mode must drop them.

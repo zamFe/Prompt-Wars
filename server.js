@@ -25,6 +25,12 @@ const MAX_CONCURRENT = Number(process.env.PROMPT_WARS_CONCURRENCY ?? 4);
 // generally do not implement effort or prompt caching, and reject requests that
 // carry them. Opt in to dropping those so the game still runs.
 const COMPAT = /^(1|true|yes)$/i.test(process.env.PROMPT_WARS_COMPAT ?? '');
+
+// Spend protection. /api/decide turns requests into billed tokens, so anyone
+// who finds a public deployment can spend the owner's money. These are the two
+// caps that matter: a per-visitor rate, and a hard daily ceiling.
+const RATE_PER_MIN = Number(process.env.PROMPT_WARS_RATE_LIMIT ?? 90);
+const DAILY_LIMIT = Number(process.env.PROMPT_WARS_DAILY_LIMIT ?? 0);   // 0 = no ceiling
 const MAX_PROMPT_CHARS = 1200;
 
 // --------------------------------------------------------------- minimal .env
@@ -134,6 +140,56 @@ function buildUserMessage(playerPrompt, observation, name) {
     `Current senses:\n\n<observation>\n${observation}\n</observation>\n\n` +
     `Decide what to do now and call your tools.`
   );
+}
+
+/**
+ * Per-caller token bucket, keyed by IP. Ten agents on one screen are a normal
+ * burst, so the bucket holds a full minute's worth and refills continuously
+ * rather than resetting on a fixed window.
+ */
+const buckets = new Map();
+
+function overRateLimit(key) {
+  if (RATE_PER_MIN <= 0) return false;
+  const now = Date.now();
+  const bucket = buckets.get(key) ?? { tokens: RATE_PER_MIN, at: now };
+
+  bucket.tokens = Math.min(RATE_PER_MIN, bucket.tokens + ((now - bucket.at) / 60_000) * RATE_PER_MIN);
+  bucket.at = now;
+
+  if (bucket.tokens < 1) {
+    buckets.set(key, bucket);
+    return true;
+  }
+  bucket.tokens -= 1;
+  buckets.set(key, bucket);
+
+  // Drop idle callers so the map cannot grow without bound.
+  if (buckets.size > 5000) {
+    for (const [id, entry] of buckets) if (now - entry.at > 600_000) buckets.delete(id);
+  }
+  return false;
+}
+
+/** Hard ceiling on decisions per UTC day across every caller. */
+let daily = { day: null, count: 0 };
+
+function overDailyLimit() {
+  if (DAILY_LIMIT <= 0) return false;
+  const today = new Date().toISOString().slice(0, 10);
+  if (daily.day !== today) daily = { day: today, count: 0 };
+  if (daily.count >= DAILY_LIMIT) return true;
+  daily.count += 1;
+  return false;
+}
+
+/** Best-effort caller identity: the proxy header when trusted, else the socket. */
+function callerKey(req) {
+  const forwarded = req.headers['x-forwarded-for'];
+  if (forwarded && /^(1|true|yes)$/i.test(process.env.PROMPT_WARS_TRUST_PROXY ?? '')) {
+    return String(forwarded).split(',')[0].trim();
+  }
+  return req.socket.remoteAddress ?? 'unknown';
 }
 
 // A small semaphore: ten agents deciding at once would otherwise hammer the API.
@@ -267,6 +323,8 @@ const server = http.createServer(async (req, res) => {
       effort: COMPAT ? null : EFFORT,
       compat: COMPAT,
       maxAgents: WORLD.maxAgents,
+      rateLimit: RATE_PER_MIN,
+      dailyLimit: DAILY_LIMIT || null,
       respawnCooldown: LOBBY.respawnCooldown,
       reason: modelReady() ? null : (clientError ?? "no credentials found"),
     });
@@ -275,6 +333,13 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === '/api/decide') {
     if (req.method !== 'POST') return sendJson(res, 405, { error: 'POST only' });
     if (!modelReady()) return sendJson(res, 503, { error: clientError ?? 'model backend unavailable' });
+
+    if (overRateLimit(callerKey(req))) {
+      return sendJson(res, 429, { error: `rate limit: ${RATE_PER_MIN} decisions per minute` });
+    }
+    if (overDailyLimit()) {
+      return sendJson(res, 429, { error: `daily limit of ${DAILY_LIMIT} decisions reached` });
+    }
 
     try {
       const body = JSON.parse(await readBody(req));
@@ -311,5 +376,11 @@ server.listen(PORT, async () => {
     console.log('Compatibility mode: effort and prompt caching are omitted.');
   } else {
     console.log(`Claude brain enabled — model ${MODEL}, effort ${EFFORT}, up to ${MAX_CONCURRENT} concurrent decisions.`);
+  }
+  if (modelReady()) {
+    console.log(
+      `Spend caps: ${RATE_PER_MIN || 'no'} decisions/min per caller` +
+        `${DAILY_LIMIT ? `, ${DAILY_LIMIT}/day overall` : ', no daily ceiling'}.`,
+    );
   }
 });

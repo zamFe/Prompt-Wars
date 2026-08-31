@@ -14,6 +14,9 @@ fight.
 
 ## Running it
 
+> New here? **[SETUP.md](SETUP.md)** is the full guide — every way to run it,
+> every setting, deployment, and troubleshooting. The short version:
+
 ```bash
 npm install
 npm start          # http://localhost:8080
