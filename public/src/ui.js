@@ -30,6 +30,7 @@ export class UI {
       brain: $('field-brain'),
       preset: $('field-preset'),
       count: $('prompt-count'),
+      brainNote: $('brain-note'),
       status: $('join-status'),
       roster: $('roster'),
       rosterCount: $('roster-count'),
@@ -184,10 +185,15 @@ export class UI {
     this.el.status.className = `form-note ${tone}`;
   }
 
-  setModelBadge(state, detail, { compat = false } = {}) {
+  setModelBadge(state, detail, { compat = false, hint = null } = {}) {
     const badge = this.el.badge;
     const option = this.el.brain.querySelector('option[value="claude"]');
     if (option) option.textContent = compat ? 'Live model (via gateway)' : 'Claude (live)';
+
+    // "Off" on its own tells a visitor nothing. Say what is running instead,
+    // and what running the server would add.
+    this.el.brainNote.hidden = !hint;
+    if (hint) this.el.brainNote.innerHTML = hint;
     badge.textContent = detail;
     badge.className = `badge ${state}`;
     // Only offer the live brain when the server can actually reach the model.

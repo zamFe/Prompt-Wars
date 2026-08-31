@@ -241,6 +241,27 @@ button.ghost:hover { border-color: #394462; }
 .rules dt { color: var(--muted); }
 .rules dd { margin: 0; }
 
+.brain-note {
+  margin: -2px 0 0;
+  padding: 8px 10px;
+  border-radius: 7px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.brain-note b { color: var(--text); font-weight: 600; }
+.brain-note code {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--accent);
+  background: rgba(94, 200, 255, 0.09);
+  padding: 1px 4px;
+  border-radius: 4px;
+}
+.brain-note a { color: var(--accent); }
+
 /* ---------------------------------------------------------------- focus bar */
 .focusbar {
   width: 100%;

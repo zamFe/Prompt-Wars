@@ -95,12 +95,28 @@ const ui = new UI({
 });
 
 // --------------------------------------------------------------- model check
+const REPO = 'https://github.com/zamFe/Prompt-Wars';
+
+// This page is a single static file. There is no server behind it to hold an
+// API key, so agents here run on the offline interpreter - which is genuinely
+// prompt-driven, and the whole game works.
+const NO_SERVER_HINT =
+  `Agents here run on the <b>offline interpreter</b> — it reads your prompt for intent, ` +
+  `so everything on this page works. Live model agents need the server, which holds the key: ` +
+  `<a href="${REPO}" target="_blank" rel="noopener">clone the repo</a> and run <code>npm start</code>. ` +
+  `It also ships a free offline stub model (<code>npm run stub-model</code>), and works against a local ` +
+  `model through any Messages-compatible gateway.`;
+
+const NO_CREDENTIALS_HINT =
+  `The server is running but has no working credentials. Set <code>ANTHROPIC_API_KEY</code>, or try the ` +
+  `free routes: <code>npm run stub-model</code>, or point <code>ANTHROPIC_BASE_URL</code> at a local model ` +
+  `with <code>PROMPT_WARS_COMPAT=1</code>.`;
 async function checkModelBackend() {
   // Opened straight off disk there is no server to ask, and attempting the
   // fetch only logs a CORS failure. Offline brains still work.
   if (!location.protocol.startsWith('http')) {
     brains.claude.markUnavailable();
-    ui.setModelBadge('off', 'Claude off · run the server to enable it');
+    ui.setModelBadge('off', 'Offline brain · no server behind this page', { hint: NO_SERVER_HINT });
     return;
   }
 
@@ -114,11 +130,11 @@ async function checkModelBackend() {
       ui.setModelBadge('ok', data.compat ? `Model ready · ${data.model}` : `Claude ready · ${data.model}`, { compat: data.compat });
     } else {
       brains.claude.markUnavailable();
-      ui.setModelBadge('off', data.reason ?? 'Claude off');
+      ui.setModelBadge('off', data.reason ?? 'Claude off', { hint: NO_CREDENTIALS_HINT });
     }
   } catch {
     brains.claude.markUnavailable();
-    ui.setModelBadge('off', 'Claude off · offline brains only');
+    ui.setModelBadge('off', 'Offline brain · server unreachable', { hint: NO_SERVER_HINT });
   }
 }
 checkModelBackend();
