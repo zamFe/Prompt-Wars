@@ -30,7 +30,49 @@
   <main>
     <section class="arena-wrap">
       <canvas id="arena" aria-label="Prompt Wars arena"></canvas>
-      <p class="hint">Click a sphere to inspect exactly what it sees and what it decided.</p>
+
+      <section class="focusbar" id="focusbar" aria-live="polite">
+        <p class="focusbar-empty" id="focus-empty">Deploy an agent, or click a sphere, to follow it here.</p>
+
+        <div class="focusbar-body" id="focus-body" hidden>
+          <div class="fb-identity">
+            <span class="fb-dot" id="fb-dot"></span>
+            <span class="fb-name" id="fb-name"></span>
+            <span class="fb-brain" id="fb-brain"></span>
+          </div>
+
+          <div class="fb-block fb-health" id="fb-health">
+            <span class="fb-label">Health</span>
+            <div class="fb-hp"><i id="fb-hp-fill"></i></div>
+            <span class="fb-value" id="fb-hp-value">100</span>
+          </div>
+
+          <div class="fb-block fb-loadout">
+            <span class="fb-label">Loadout</span>
+            <div class="fb-weapons" id="fb-weapons"></div>
+          </div>
+
+          <div class="fb-block fb-ammo">
+            <span class="fb-label" id="fb-ammo-label">Ammo</span>
+            <div class="fb-pips" id="fb-pips"></div>
+            <span class="fb-reload" id="fb-reload" hidden></span>
+          </div>
+
+          <div class="fb-block fb-status">
+            <span class="fb-label">Doing</span>
+            <span class="fb-doing" id="fb-doing">—</span>
+          </div>
+
+          <div class="fb-block fb-score">
+            <span class="fb-stat" id="fb-kills"><b>0</b><span>kills</span></span>
+            <span class="fb-stat" id="fb-assists"><b>0</b><span>assists</span></span>
+            <span class="fb-stat" id="fb-deaths"><b>0</b><span>deaths</span></span>
+          </div>
+
+        </div>
+      </section>
+
+      <p class="hint">Click a sphere to follow it here and inspect exactly what it sees.</p>
     </section>
 
     <aside class="panel">
@@ -81,6 +123,16 @@
       <section class="card">
         <h2>Arena <em id="roster-count"></em></h2>
         <ul class="roster" id="roster"></ul>
+      </section>
+
+      <section class="card">
+        <h2>Leaderboard <em>live kills</em></h2>
+        <ol class="board" id="leaderboard"></ol>
+      </section>
+
+      <section class="card">
+        <h2>Champions <em>best lives so far</em></h2>
+        <ol class="board champions" id="champions"></ol>
       </section>
 
       <section class="card" id="inspector-card">

@@ -32,7 +32,7 @@ function uniqueName(base) {
   return name;
 }
 
-function join({ name, prompt, brainKind }) {
+function join({ name, prompt, brainKind, focus = true }) {
   if (!name) return { ok: false, message: 'Give your agent a name.', tone: 'bad' };
   if (prompt.length < 12) {
     return { ok: false, message: 'Write a real prompt — at least a sentence of tactics.', tone: 'bad' };
@@ -49,7 +49,9 @@ function join({ name, prompt, brainKind }) {
   });
 
   const outcome = world.lobby.add(participant);
-  ui.select(participant.id);
+  // Deploying your own agent follows it in the focus bar. Filler agents must
+  // not steal that focus back.
+  if (focus) ui.focus(participant.id);
 
   return outcome === 'spawned'
     ? { ok: true, message: `${participant.name} is in the arena.`, tone: 'ok' }
@@ -64,7 +66,7 @@ function addDemoAgents(count = 4) {
   for (let i = 0; i < count; i++) {
     const preset = PRESETS[Math.floor(Math.random() * PRESETS.length)];
     const base = DEMO_NAMES[Math.floor(Math.random() * DEMO_NAMES.length)];
-    join({ name: base, prompt: preset.prompt, brainKind: 'local' });
+    join({ name: base, prompt: preset.prompt, brainKind: 'local', focus: false });
   }
 }
 
@@ -148,7 +150,11 @@ function frame(now) {
 
   renderer.draw(world, { selectedId: ui.selectedId });
 
-  // The panel does not need 60 Hz.
+  // The focus bar carries sub-second action flashes, so it tracks the frame
+  // rate; it diffs every field, so an unchanged frame writes no DOM at all.
+  ui.renderFocusBar();
+
+  // The heavier panels do not need 60 Hz.
   uiClock += elapsed;
   if (uiClock >= 0.2) {
     uiClock = 0;

@@ -52,7 +52,7 @@ const stub = http.createServer((req, res) => {
       model: 'claude-opus-5',
       stop_reason: 'tool_use',
       content: [
-        { type: 'text', text: 'Target is slightly right and close. Swing the gun over and fire.' },
+        { type: 'text', text: 'Target is slightly right and close. {"chat": "Contact — you are mine."} Swing the gun over and fire.' },
         { type: 'tool_use', id: 't1', name: 'aim', input: { direction: 'right', degrees: 12 } },
         { type: 'tool_use', id: 't2', name: 'fire', input: { shots: 2 } },
         { type: 'tool_use', id: 't3', name: 'move', input: { direction: 'right', steps: 3 } },
@@ -121,6 +121,12 @@ try {
     assert.match(decision.note, /Swing the gun over/);
   });
 
+  check('a {"chat"} line becomes a speech bubble and leaves the note', () => {
+    assert.equal(decision.chat, 'Contact — you are mine.');
+    assert.ok(!decision.note.includes('chat'), 'the bubble must not be duplicated in the note');
+    assert.ok(!decision.note.includes('{'), `note still carries JSON: ${decision.note}`);
+  });
+
   const request = seen.at(-1);
 
   check('the move tool offers the model all four travel directions', () => {
@@ -133,6 +139,14 @@ try {
     const [block] = request.body.system;
     assert.match(block.text, /sidestep/i);
     assert.match(block.text, /"right" carries you toward positive bearings/);
+  });
+
+  check('the system prompt teaches the chat format without spending a tool slot', () => {
+    const [block] = request.body.system;
+    assert.match(block.text, /\{"chat": "your line"\}/);
+    assert.match(block.text, /speak only when something actually happens/i);
+    assert.ok(!request.body.tools.some((t) => t.name === 'chat' || t.name === 'say'),
+      'speaking must not cost one of the four action slots');
   });
 
   check('the request targets the configured model with tools and effort', () => {

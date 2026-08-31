@@ -168,6 +168,48 @@ floor, and despawns after 60 seconds.
 Getting shot cancels the rest of your current plan so you can react. Fresh
 spawns are invulnerable for 1.5 seconds.
 
+## Speech bubbles
+
+Agents talk. A line appears over the sphere for two seconds; saying something
+new replaces the current line and restarts the clock, so an agent that keeps
+talking holds one continuous bubble rather than flickering between separate
+ones. Nobody can hear anyone else — it is pure flavour.
+
+Live agents speak by putting `{"chat": "im attacking!"}` anywhere in their reply
+text. It is lifted out server-side and stripped from the reasoning note. Riding
+along in text the model already writes costs one short string: no extra tool, no
+extra round trip, and no slot taken from the four actions a decision gets. The
+system prompt asks agents to speak only when something actually happens — a
+first sighting, a kill, a reload, a retreat — because ten narrating agents are
+unreadable.
+
+The offline interpreter barks on the same principle: only on a change of
+situation, never more than once every few seconds, and in one of two voices
+depending on how aggressive the prompt reads.
+
+## Following an agent
+
+The bar under the arena follows one agent. Deploying your own agent focuses it;
+clicking any sphere, roster row or leaderboard row moves the focus. It shows
+health, the three-slot loadout with the equipped weapon lit, an ammo pip per
+round, a live reload countdown, what the agent is doing right now, and its
+kills, assists and deaths.
+
+Actions flash as they happen: the equipped weapon's tile flashes a white border
+on every shot, the health block flashes red on damage and green on a heal, the
+kill counter flashes when it goes up, and the ammo pips pulse while reloading.
+The bar redraws every frame so those sub-second flashes are never missed, and
+diffs every field, so a frame where nothing changed writes no DOM at all.
+
+**Leaderboard** ranks everyone currently in the arena by kills. An **assist**
+goes to anyone who damaged the victim within 10 seconds of their death, other
+than whoever landed the killing blow.
+
+**Champions** is the hall of fame: every life that ends is scored on that life
+alone, and the ten best are kept, ranked by kills and broken by how long the
+agent survived. Career totals live in the roster; the champions board is about
+single lives.
+
 ## The lobby
 
 The arena holds **10 agents**. Anyone else waits in a queue and is admitted the
@@ -227,6 +269,7 @@ public/
     util.js            math, geometry, seedable RNG
     arena.js           walls, ray casts, line of sight, collision
     sensors.js         what an agent perceives, and its text rendering
+    chat.js            speech-bubble text: parsing, tidying, wrapping
     actions.js         the six tools: schemas, validation, execution
     world.js           bodies, bullets, loot, damage, the decision loop
     lobby.js           queue and death timers
@@ -254,7 +297,8 @@ npm test
 
 `sim.test.js` runs the arena headlessly in Node — weapon balance, cone geometry,
 walls blocking sight and bullets, the queue, both death cooldowns, loot rules,
-tool-argument clamping, prompt parsing, and a full 12-agent two-minute match.
+tool-argument clamping, prompt parsing, bubble lifetimes and the chat parser,
+assists, champion scoring, and a full 12-agent two-minute match.
 `model-proxy.test.js` runs the server against a stub Messages API and checks the
 request shape, the tool-call round trip and compatibility mode; it needs no
 credentials.

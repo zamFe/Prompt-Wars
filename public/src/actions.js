@@ -264,6 +264,7 @@ export function stepAction(agent, action, dt, ctx) {
       if (!action.started) {
         action.started = true;
         agent.reloadUntil = ctx.now + weapon.reloadTime;
+        ctx.pulse?.(agent, 'reload');
         return false;
       }
       if (ctx.now >= agent.reloadUntil) {

@@ -36,13 +36,14 @@ function readObservation(text) {
 }
 
 let turn = 0;
+let lastSeen = null;   // so a first sighting is announced but a chase is not
 
 function plan(observation) {
   const s = readObservation(observation);
   const call = (name, input = {}) => ({ type: 'tool_use', id: `stub_${turn++}`, name, input });
 
   if (s.reloading) return { text: 'Reload in progress, holding.', calls: [call('hold', { seconds: 0.5 })] };
-  if (s.ammo <= 0) return { text: 'Magazine dry.', calls: [call('reload')] };
+  if (s.ammo <= 0) return { text: 'Magazine dry. {"chat": "Reloading!"}', calls: [call('reload')] };
 
   if (s.enemy) {
     const calls = [];
@@ -55,7 +56,10 @@ function plan(observation) {
     calls.push(call('fire', { shots: Math.min(2, s.ammo) }));
     if (s.enemy.distance > 300) calls.push(call('move', { direction: 'forward', steps: 3 }));
     else calls.push(call('move', { direction: turn % 2 ? 'left' : 'right', steps: 2 }));
-    return { text: `Engaging ${s.enemy.name} at ${s.enemy.distance}.`, calls };
+    // Speak on a first sighting only, the same discipline the system prompt asks for.
+    const greeting = s.enemy.name !== lastSeen ? ` {"chat": "Contact — ${s.enemy.name}!"}` : '';
+    lastSeen = s.enemy.name;
+    return { text: `Engaging ${s.enemy.name} at ${s.enemy.distance}.${greeting}`, calls };
   }
 
   if (s.loot && (s.hp < 100 || !s.loot.label.startsWith('Medkit'))) {
@@ -68,6 +72,7 @@ function plan(observation) {
     };
   }
 
+  lastSeen = null;
   if (s.frontWall < 80) {
     return { text: 'Wall ahead, turning.', calls: [call('turn', { direction: 'right', degrees: 90 }), call('move', { direction: 'forward', steps: 3 })] };
   }

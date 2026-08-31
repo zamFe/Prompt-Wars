@@ -11,7 +11,8 @@ import { createLocalBrain, parsePrompt } from '../public/src/brains/local.js';
 import { buildSnapshot } from '../public/src/sensors.js';
 import { normalizeAction, buildQueue, stepAction, describeAction, MOVE_DIRECTIONS, TOOL_SCHEMAS, TOOL_NAMES, TOOL_SUMMARIES } from '../public/src/actions.js';
 import { hasLineOfSight, castRay, clearance, resolveCollision } from '../public/src/arena.js';
-import { WEAPONS, AGENT, WORLD, LOBBY, VISION, MOVE } from '../public/src/config.js';
+import { WEAPONS, AGENT, WORLD, LOBBY, VISION, MOVE, CHAT, PULSE } from '../public/src/config.js';
+import { extractChat, wrapChat, tidy } from '../public/src/chat.js';
 
 let passed = 0;
 let failed = 0;
@@ -446,6 +447,211 @@ test('a weapon preference is picked up from the prompt', () => {
   assert.equal(parsePrompt('grab the shotgun and brawl').wantWeapon, 'shotgun');
   assert.equal(parsePrompt('find an assault rifle').wantWeapon, 'assault');
   assert.equal(parsePrompt('just walk around').wantWeapon, null);
+});
+
+console.log('\n-- speech bubbles ------------------------------------------------');
+
+test('a new line replaces the current one and restarts the clock', () => {
+  const world = makeWorld();
+  const p = addAgent(world, 'A');
+
+  world.say(p.agent, 'Contact!');
+  const first = p.agent.chat.until;
+  assert.equal(p.agent.chat.text, 'Contact!');
+
+  // Half a second later, saying something else must reset the full duration -
+  // this is what lets a talkative agent hold one continuous bubble.
+  world.time += 0.5;
+  world.say(p.agent, 'Reloading!');
+  assert.equal(p.agent.chat.text, 'Reloading!');
+  assert.ok(p.agent.chat.until > first, 'the clock must restart, not carry over');
+  assert.equal(Math.round(p.agent.chat.until - world.time), CHAT.duration);
+});
+
+test('a bubble expires once nothing new is said', () => {
+  const world = makeWorld();
+  const p = addAgent(world, 'A');
+  world.say(p.agent, 'Anyone there?');
+
+  world.time += CHAT.duration - 0.1;
+  assert.ok(p.agent.chat.until > world.time, 'still alive just before the deadline');
+  world.time += 0.2;
+  assert.ok(p.agent.chat.until <= world.time, 'expired just after');
+});
+
+test('empty lines are ignored and long ones are cut', () => {
+  const world = makeWorld();
+  const p = addAgent(world, 'A');
+
+  world.say(p.agent, '   ');
+  assert.equal(p.agent.chat, null, 'whitespace should not open a bubble');
+
+  world.say(p.agent, 'x'.repeat(400));
+  assert.ok(p.agent.chat.text.length <= CHAT.maxLength, `got ${p.agent.chat.text.length} chars`);
+  assert.ok(p.agent.chat.text.endsWith('…'));
+});
+
+test('a {"chat"} object is lifted out of a model reply and off the note', () => {
+  const plain = extractChat('Closing in. {"chat": "im attacking!"}');
+  assert.equal(plain.chat, 'im attacking!');
+  assert.equal(plain.rest, 'Closing in.', 'the bubble must not also appear in the note');
+
+  assert.equal(extractChat('nothing here').chat, null);
+  assert.equal(extractChat('{"chat": "first"} {"chat": "second"}').chat, 'first', 'first line wins');
+  assert.equal(extractChat('{"chat": "he said \\"hi\\""}').chat, 'he said "hi"', 'escapes survive');
+  assert.equal(extractChat('').chat, null);
+});
+
+test('a malformed chat object is dropped rather than rendered', () => {
+  const broken = extractChat('{"chat": } oops');
+  assert.equal(broken.chat, null, 'no bubble');
+  assert.match(broken.rest, /oops/, 'the text is left alone');
+  assert.equal(extractChat('{"chat": 42}').chat, null, 'a non-string is not a line');
+});
+
+test('bubble text wraps to at most two lines', () => {
+  const lines = wrapChat('Contact on the left, moving to flank him right now before he turns');
+  assert.ok(lines.length <= CHAT.maxLines, `got ${lines.length} lines`);
+  assert.ok(lines.every((l) => l.length <= CHAT.lineWidth + 2), JSON.stringify(lines));
+  assert.deepEqual(wrapChat('Down!'), ['Down!'], 'a short line stays on one');
+  assert.equal(tidy('  lots   of\n  space '), 'lots of space');
+});
+
+test('the offline brain speaks when something happens, not every tick', async () => {
+  const brain = createLocalBrain({ thinkTime: [0, 0] });
+  const participant = createParticipant({ name: 'Talker', prompt: 'Be aggressive and hunt enemies.', brainKind: 'local', colorIndex: 0 });
+
+  const snapshot = (time, events = []) => ({
+    tick: 1, time,
+    self: { name: 'Talker', hp: 100, maxHp: 100, weapon: 'Pistol', weaponId: 'pistol', ammo: 3, magazine: 3,
+      reloading: false, canFireNow: true, heading: 90, headingLabel: 'E', aimOffset: 0 },
+    vision: { fovDegrees: 45, range: 620 },
+    enemies: [], loot: [],
+    walls: { cone: Array.from({ length: 9 }, (_, i) => ({ bearing: -22.5 + i * 5.625, distance: 500 })),
+      proximity: { front: 400, right: 400, back: 400, left: 400 } },
+    events, arena: { agentsAlive: 2, queueLength: 0 },
+  });
+
+  const kill = await brain.decide(snapshot(10, ['You killed Vex.']), participant);
+  assert.ok(kill.chat, 'a kill is worth saying something about');
+  assert.match(kill.chat, /Vex|Down|Next|easy|Clear/);
+
+  // Two gates keep ten agents readable. First: nothing at all within the
+  // minimum interval, whatever happened.
+  const tooSoon = await brain.decide(snapshot(10.5, ['Took 20 damage from ahead. HP now 80.']), participant);
+  assert.equal(tooSoon.chat, null, `spoke again after 0.5s: ${tooSoon.chat}`);
+
+  // Second: a *different* situation may speak once the interval has passed.
+  const different = await brain.decide(
+    snapshot(10 + CHAT.minInterval + 0.5, ['Took 20 damage from ahead. HP now 80.']), participant);
+  assert.ok(different.chat, 'a new kind of event should get a line');
+
+  // But repeating the same situation needs a longer gap, so an agent on a
+  // killing spree does not shout the same thing over and over.
+  const fresh = createParticipant({ name: 'Spree', prompt: 'Be aggressive and hunt enemies.', brainKind: 'local', colorIndex: 1 });
+  assert.ok((await brain.decide(snapshot(50, ['You killed A.']), fresh)).chat);
+  assert.equal((await brain.decide(snapshot(50 + CHAT.minInterval + 0.5, ['You killed B.']), fresh)).chat, null,
+    'the same bark must not repeat just because the interval elapsed');
+  assert.ok((await brain.decide(snapshot(50 + CHAT.duration * 3 + 0.5, ['You killed C.']), fresh)).chat,
+    'after the longer repeat window it may say it again');
+});
+
+console.log('\n-- assists, pulses and champions ---------------------------------');
+
+test('damaging a victim someone else finishes earns an assist', () => {
+  const world = makeWorld();
+  const victim = addAgent(world, 'V');
+  const helper = addAgent(world, 'H');
+  const killer = addAgent(world, 'K');
+  for (const a of [victim.agent, helper.agent, killer.agent]) a.spawnProtectedUntil = 0;
+
+  world.applyDamage(victim.agent, 30, helper.agent, 'Pistol');
+  world.applyDamage(victim.agent, 70, killer.agent, 'Pistol');   // this one kills
+
+  assert.equal(killer.kills, 1);
+  assert.equal(killer.assists, 0, 'the killer does not assist their own kill');
+  assert.equal(helper.assists, 1);
+  assert.equal(victim.deaths, 1);
+});
+
+test('damage that has gone stale earns no assist', () => {
+  const world = makeWorld();
+  const victim = addAgent(world, 'V');
+  const helper = addAgent(world, 'H');
+  const killer = addAgent(world, 'K');
+  for (const a of [victim.agent, helper.agent, killer.agent]) a.spawnProtectedUntil = 0;
+
+  world.applyDamage(victim.agent, 30, helper.agent, 'Pistol');
+  world.time += PULSE.assistWindow + 1;
+  world.applyDamage(victim.agent, 70, killer.agent, 'Pistol');
+
+  assert.equal(helper.assists, 0, `assist window is ${PULSE.assistWindow}s`);
+  assert.equal(killer.kills, 1);
+});
+
+test('actions stamp a pulse the focus bar can flash on', () => {
+  const world = makeWorld();
+  const p = addAgent(world, 'A');
+  p.agent.spawnProtectedUntil = 0;
+  assert.equal(p.agent.pulses.fire, -Infinity);
+
+  world.time = 5;
+  world.fireWeapon(p.agent);
+  assert.equal(p.agent.pulses.fire, 5, 'firing must stamp the weapon tile');
+
+  world.time = 6;
+  world.applyDamage(p.agent, 10, null, 'Pistol');
+  assert.equal(p.agent.pulses.hurt, 6);
+});
+
+test('each life becomes a champion record scored on that life alone', () => {
+  const world = makeWorld();
+  const killer = addAgent(world, 'K');
+  killer.agent.spawnProtectedUntil = 0;
+
+  for (let i = 0; i < 3; i++) {
+    const victim = addAgent(world, `V${i}`);
+    victim.agent.spawnProtectedUntil = 0;
+    world.time += 1;
+    world.killAgent(victim.agent, killer.agent);
+  }
+  assert.equal(killer.kills, 3);
+  assert.equal(killer.agent.lifeKills, 3);
+
+  world.time += 5;
+  world.killAgent(killer.agent, null);
+
+  const best = world.champions[0];
+  assert.equal(best.name, 'K');
+  assert.equal(best.kills, 3, 'the record scores the life, not the career');
+  assert.ok(best.survived > 0);
+  assert.equal(world.champions.length, 4, 'every ended life is recorded');
+});
+
+test('the champions board ranks by kills and never exceeds ten rows', () => {
+  const world = makeWorld();
+  for (let i = 0; i < 16; i++) {
+    const p = addAgent(world, `A${i}`);
+    p.agent.lifeKills = i;          // later agents did better
+    world.killAgent(p.agent, null);
+  }
+  assert.equal(world.champions.length, PULSE.championRows);
+  assert.equal(world.champions[0].kills, 15, 'best life first');
+  const kills = world.champions.map((c) => c.kills);
+  assert.deepEqual(kills, [...kills].sort((a, b) => b - a), 'must stay sorted');
+  assert.ok(Math.min(...kills) > 5, 'the weakest lives should have been pushed off');
+});
+
+test('a respawned agent starts a fresh life score', () => {
+  const world = makeWorld();
+  const p = addAgent(world, 'A');
+  p.agent.lifeKills = 4;
+  world.killAgent(p.agent, null);
+
+  world.time += LOBBY.respawnCooldown + 1;
+  world.lobby.update();
+  assert.equal(p.agent.lifeKills, 0, 'the new life starts at zero');
+  assert.equal(p.kills, 0, 'career kills are separate and unchanged here');
 });
 
 console.log('\n-- a full match --------------------------------------------------');

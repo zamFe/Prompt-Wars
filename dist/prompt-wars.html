@@ -111,7 +111,7 @@ main {
 
 #arena {
   width: 100%;
-  max-width: min(calc(100vh - 150px), 100%);
+  max-width: min(calc(100vh - 250px), 100%);
   aspect-ratio: 1 / 1;
   border-radius: var(--radius);
   border: 1px solid var(--line);
@@ -254,6 +254,150 @@ button.ghost:hover { border-color: #394462; }
 .rules dt { color: var(--muted); }
 .rules dd { margin: 0; }
 
+/* ---------------------------------------------------------------- focus bar */
+.focusbar {
+  width: 100%;
+  max-width: min(calc(100vh - 250px), 100%);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+}
+
+.focusbar-empty { margin: 0; color: var(--muted); font-size: 12.5px; text-align: center; }
+
+.focusbar-body {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  row-gap: 10px;
+}
+
+.fb-identity { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.fb-dot { width: 14px; height: 14px; border-radius: 50%; flex: none; }
+.fb-name { font-family: var(--font-display); font-weight: 700; font-size: 16px; letter-spacing: 0.02em; }
+.fb-brain { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; }
+
+.fb-block { display: flex; align-items: center; gap: 8px; }
+.fb-label {
+  font-family: var(--font-display);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.11em;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* Health ------------------------------------------------------------------ */
+.fb-hp { width: 96px; height: 7px; border-radius: 4px; background: #2a3042; overflow: hidden; }
+.fb-hp i { display: block; height: 100%; background: var(--good); transition: width 0.12s linear; }
+.fb-value { font-family: var(--font-display); font-weight: 600; font-variant-numeric: tabular-nums; min-width: 26px; }
+
+.fb-health { border-radius: 6px; padding: 3px 6px; margin: -3px -6px; }
+.fb-health.flash-hurt { animation: hurt 0.4s ease-out; }
+.fb-health.flash-heal { animation: heal 0.4s ease-out; }
+@keyframes hurt { from { background: rgba(239, 68, 68, 0.45); } to { background: transparent; } }
+@keyframes heal { from { background: rgba(74, 222, 128, 0.4); } to { background: transparent; } }
+
+/* Loadout ----------------------------------------------------------------- */
+.fb-weapons { display: flex; gap: 5px; }
+.fb-weapon {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1.5px solid transparent;
+  background: var(--panel-2);
+  opacity: 0.4;
+}
+.fb-weapon b {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--weapon-color);
+}
+.fb-weapon span { font-size: 11px; color: var(--muted); display: none; }
+.fb-weapon.equipped { opacity: 1; border-color: var(--weapon-color); }
+.fb-weapon.equipped span { display: inline; color: var(--text); }
+/* The white border flash the moment a shot leaves the barrel. */
+.fb-weapon.firing { animation: muzzle 0.4s ease-out; }
+.fb-weapon.picked { animation: picked 0.4s ease-out; }
+@keyframes muzzle {
+  0% { border-color: #fff; background: rgba(255, 255, 255, 0.22); }
+  100% { border-color: var(--weapon-color); background: var(--panel-2); }
+}
+@keyframes picked {
+  0%, 60% { border-color: #fff; }
+  100% { border-color: var(--weapon-color); }
+}
+
+/* Ammo -------------------------------------------------------------------- */
+.fb-pips { display: flex; gap: 3px; }
+.fb-pips i {
+  width: 5px;
+  height: 15px;
+  border-radius: 2px;
+  background: #2a3042;
+}
+.fb-pips i.live { background: var(--weapon-color); }
+.fb-pips.reloading i { animation: reloadPulse 1s ease-in-out infinite; }
+@keyframes reloadPulse { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
+
+.fb-reload {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--warn);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Score ------------------------------------------------------------------- */
+.fb-score { gap: 14px; margin-left: auto; }
+.fb-stat { display: flex; align-items: baseline; gap: 4px; border-radius: 6px; padding: 2px 5px; margin: -2px -5px; }
+.fb-stat b { font-family: var(--font-display); font-size: 17px; font-variant-numeric: tabular-nums; }
+.fb-stat span { font-size: 10px; text-transform: uppercase; letter-spacing: 0.09em; color: var(--muted); }
+.fb-stat.flash-kill { animation: killFlash 0.4s ease-out; }
+@keyframes killFlash {
+  0% { background: rgba(255, 255, 255, 0.3); }
+  100% { background: transparent; }
+}
+
+.fb-doing { font-size: 12.5px; color: var(--text); white-space: nowrap; }
+
+/* ------------------------------------------------------------------- boards */
+.board { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; counter-reset: rank; }
+.board li {
+  display: grid;
+  grid-template-columns: 16px 10px 1fr auto;
+  gap: 8px;
+  align-items: center;
+  padding: 5px 8px;
+  border-radius: 7px;
+  background: var(--panel-2);
+  border: 1px solid transparent;
+  font-size: 13px;
+}
+.board li.selected { border-color: var(--accent); }
+.board li.empty { grid-template-columns: 1fr; font-size: 12.5px; background: none; padding: 2px 0; }
+.board .rank {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 11px;
+  color: var(--muted);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.board .dot { width: 10px; height: 10px; border-radius: 50%; }
+.board .name { font-weight: 600; }
+.board .sub { color: var(--muted); font-size: 11px; display: block; }
+.board .tally { font-family: var(--font-mono); font-size: 11px; color: var(--muted); white-space: nowrap; }
+.board .tally b { color: var(--text); font-size: 12.5px; }
+#leaderboard li { cursor: pointer; }
+#leaderboard li:hover { border-color: var(--line); }
+.board.champions li:first-child .rank { color: var(--warn); }
+
 /* The tool reference: a signature column and a plain-language column. */
 .rules.tools { grid-template-columns: 1fr; gap: 9px 0; }
 .rules.tools dt {
@@ -309,7 +453,49 @@ button:focus-visible, .roster li:focus-visible {
   <main>
     <section class="arena-wrap">
       <canvas id="arena" aria-label="Prompt Wars arena"></canvas>
-      <p class="hint">Click a sphere to inspect exactly what it sees and what it decided.</p>
+
+      <section class="focusbar" id="focusbar" aria-live="polite">
+        <p class="focusbar-empty" id="focus-empty">Deploy an agent, or click a sphere, to follow it here.</p>
+
+        <div class="focusbar-body" id="focus-body" hidden>
+          <div class="fb-identity">
+            <span class="fb-dot" id="fb-dot"></span>
+            <span class="fb-name" id="fb-name"></span>
+            <span class="fb-brain" id="fb-brain"></span>
+          </div>
+
+          <div class="fb-block fb-health" id="fb-health">
+            <span class="fb-label">Health</span>
+            <div class="fb-hp"><i id="fb-hp-fill"></i></div>
+            <span class="fb-value" id="fb-hp-value">100</span>
+          </div>
+
+          <div class="fb-block fb-loadout">
+            <span class="fb-label">Loadout</span>
+            <div class="fb-weapons" id="fb-weapons"></div>
+          </div>
+
+          <div class="fb-block fb-ammo">
+            <span class="fb-label" id="fb-ammo-label">Ammo</span>
+            <div class="fb-pips" id="fb-pips"></div>
+            <span class="fb-reload" id="fb-reload" hidden></span>
+          </div>
+
+          <div class="fb-block fb-status">
+            <span class="fb-label">Doing</span>
+            <span class="fb-doing" id="fb-doing">—</span>
+          </div>
+
+          <div class="fb-block fb-score">
+            <span class="fb-stat" id="fb-kills"><b>0</b><span>kills</span></span>
+            <span class="fb-stat" id="fb-assists"><b>0</b><span>assists</span></span>
+            <span class="fb-stat" id="fb-deaths"><b>0</b><span>deaths</span></span>
+          </div>
+
+        </div>
+      </section>
+
+      <p class="hint">Click a sphere to follow it here and inspect exactly what it sees.</p>
     </section>
 
     <aside class="panel">
@@ -360,6 +546,16 @@ button:focus-visible, .roster li:focus-visible {
       <section class="card">
         <h2>Arena <em id="roster-count"></em></h2>
         <ul class="roster" id="roster"></ul>
+      </section>
+
+      <section class="card">
+        <h2>Leaderboard <em>live kills</em></h2>
+        <ol class="board" id="leaderboard"></ol>
+      </section>
+
+      <section class="card">
+        <h2>Champions <em>best lives so far</em></h2>
+        <ol class="board champions" id="champions"></ol>
       </section>
 
       <section class="card" id="inspector-card">
@@ -483,6 +679,24 @@ const LOOT = {
     shotgun: 13,
     assault: 11,
   },
+};
+
+// Speech bubbles over the spheres. A new line replaces the current one and
+// restarts the clock, so an agent that keeps talking keeps its bubble alive.
+const CHAT = {
+  duration: 2,          // seconds a line survives with nothing new said
+  fade: 0.45,           // trailing fade
+  maxLength: 64,        // longer lines are cut - this is a bubble, not a speech
+  maxLines: 2,
+  lineWidth: 22,        // characters per line before wrapping
+  minInterval: 3.5,     // offline brain will not bark more often than this
+};
+
+// How long an action lights up its tile in the focus bar.
+const PULSE = {
+  duration: 0.4,
+  assistWindow: 10,     // damage this recently counts toward an assist
+  championRows: 10,
 };
 const LOBBY = {
   respawnCooldown: 60,          // seconds before a dead agent may rejoin
@@ -1240,6 +1454,7 @@ function stepAction(agent, action, dt, ctx) {
       if (!action.started) {
         action.started = true;
         agent.reloadUntil = ctx.now + weapon.reloadTime;
+        ctx.pulse?.(agent, 'reload');
         return false;
       }
       if (ctx.now >= agent.reloadUntil) {
@@ -1273,6 +1488,7 @@ function createParticipant({ name, prompt, brainKind, colorIndex }) {
     status: 'queued',      // 'live' | 'queued' | 'cooldown'
     readyAt: 0,
     kills: 0,
+    assists: 0,
     deaths: 0,
     damageDealt: 0,
     damageTaken: 0,
@@ -1399,12 +1615,32 @@ class World {
     this.effects = [];                 // short-lived visuals (hits, deaths)
     this.log = [];
     this.lobby = new Lobby(this);
+    this.champions = [];               // best single lives, highest kills first
     this.nextLootAt = randRange(this.rng, ...LOOT.spawnCooldown);
     this.paused = false;
   }
 
   get queue() {
     return this.lobby.queue;
+  }
+
+  /**
+   * Put a line in an agent's bubble. Saying something new replaces whatever is
+   * there and restarts the clock, so continuous chatter reads as one bubble
+   * that never drops rather than a flicker of separate ones.
+   */
+  say(agent, text) {
+    const line = String(text ?? '').replace(/\s+/g, ' ').trim();
+    if (!line) return;
+    agent.chat = {
+      text: line.length > CHAT.maxLength ? `${line.slice(0, CHAT.maxLength - 1)}…` : line,
+      until: this.time + CHAT.duration,
+      saidAt: this.time,
+    };
+  }
+
+  pulse(agent, kind) {
+    agent.pulses[kind] = this.time;
   }
 
   addLog(text, kind = 'info') {
@@ -1451,6 +1687,14 @@ class World {
       blocked: false,
       lastInterruptAt: -Infinity,
       spawnedAt: this.time,
+
+      chat: null,                 // { text, until, saidAt }
+      // Timestamps of the last time each action fired, for the focus bar.
+      pulses: { fire: -Infinity, reload: -Infinity, hurt: -Infinity, heal: -Infinity, kill: -Infinity, pickup: -Infinity },
+      // Who has hurt this agent lately, for assist credit: id -> { damage, at }.
+      recentDamage: new Map(),
+      lifeKills: 0,
+      lifeAssists: 0,
     };
 
     this.agents.push(agent);
@@ -1476,17 +1720,51 @@ class World {
 
     if (killer && killer !== agent) {
       killer.participant.kills += 1;
+      killer.lifeKills += 1;
       killer.pendingEvents.push(`You killed ${agent.name}.`);
+      this.pulse(killer, 'kill');
       this.addLog(`${killer.name} killed ${agent.name}.`, 'kill');
     } else {
       this.addLog(`${agent.name} died.`, 'kill');
     }
+
+    // Anyone else who hurt the victim recently gets an assist.
+    for (const [participantId, record] of agent.recentDamage) {
+      if (killer && participantId === killer.participant.id) continue;
+      if (this.time - record.at > PULSE.assistWindow) continue;
+      const helper = this.lobby.get(participantId);
+      if (!helper) continue;
+      helper.assists = (helper.assists ?? 0) + 1;
+      if (helper.agent) {
+        helper.agent.lifeAssists += 1;
+        helper.agent.pendingEvents.push(`You assisted in killing ${agent.name}.`);
+      }
+    }
+
+    this.recordChampion(agent);
 
     const wait = this.lobby.onDeath(agent.participant, congested);
     agent.participant.agent = null;
     this.agents = this.agents.filter((a) => a !== agent);
     this.addLog(`${agent.name} may rejoin in ${Math.round(wait)}s.`, 'info');
     this.lobby.pump();
+  }
+
+  /** Every life ends with a score; the board keeps the ten best. */
+  recordChampion(agent) {
+    this.champions.push({
+      name: agent.name,
+      color: agent.color,
+      participantId: agent.participant.id,
+      brainKind: agent.participant.brainKind,
+      kills: agent.lifeKills,
+      assists: agent.lifeAssists,
+      survived: this.time - agent.spawnedAt,
+      diedAt: this.time,
+    });
+    // Highest kills first; a tie goes to the life that lasted longer.
+    this.champions.sort((a, b) => b.kills - a.kills || b.assists - a.assists || b.survived - a.survived);
+    this.champions.length = Math.min(this.champions.length, PULSE.championRows);
   }
 
   // ---------------------------------------------------------------- combat
@@ -1498,7 +1776,15 @@ class World {
     const dealt = Math.min(amount, target.hp);
     target.hp -= amount;
     target.participant.damageTaken += dealt;
-    if (attacker) attacker.participant.damageDealt += dealt;
+    this.pulse(target, 'hurt');
+
+    if (attacker) {
+      attacker.participant.damageDealt += dealt;
+      const record = target.recentDamage.get(attacker.participant.id) ?? { damage: 0, at: 0 };
+      record.damage += dealt;
+      record.at = this.time;
+      target.recentDamage.set(attacker.participant.id, record);
+    }
 
     const from = attacker ? bearingTo(target, attacker.x, attacker.y) : 0;
     const side =
@@ -1527,6 +1813,7 @@ class World {
     agent.ammo -= 1;
     agent.nextShotAt = this.time + weapon.timeBetweenShots;
     agent.participant.shotsFired += 1;
+    this.pulse(agent, 'fire');
 
     const baseAngle = agent.facing + agent.aimOffset;
     for (let i = 0; i < weapon.pellets; i++) {
@@ -1685,6 +1972,7 @@ class World {
           const healed = Math.min(item.heal, AGENT.maxHp - agent.hp);
           agent.hp += healed;
           agent.pendingEvents.push(`Picked up a medkit, healed ${Math.round(healed)}. HP now ${Math.round(agent.hp)}.`);
+          this.pulse(agent, 'heal');
           this.addLog(`${agent.name} picked up ${item.label}.`, 'loot');
         } else {
           const weapon = WEAPONS[item.weaponId];
@@ -1695,6 +1983,7 @@ class World {
           agent.pendingEvents.push(
             sameWeapon ? `Restocked ${weapon.name} ammo.` : `Picked up a ${weapon.name}. Magazine ${weapon.magazine}.`,
           );
+          this.pulse(agent, 'pickup');
           this.addLog(`${agent.name} picked up ${weapon.name}.`, 'loot');
         }
         this.effects.push({ kind: 'pickup', x: item.x, y: item.y, color: item.color, until: this.time + 0.3 });
@@ -1754,6 +2043,7 @@ class World {
         agent.participant.lastError = null;
         agent.lastError = null;
         agent.lastNote = decision?.note ?? null;
+        if (decision?.chat) this.say(agent, decision.chat);
 
         const actions = buildQueue(decision?.actions, agent);
         agent.queue = actions;
@@ -1803,6 +2093,7 @@ class World {
       now: this.time,
       tryMove: (a, dx, dy) => this.tryMove(a, dx, dy),
       fireWeapon: (a) => this.fireWeapon(a),
+      pulse: (a, kind) => this.pulse(a, kind),
     };
 
     const finished = stepAction(agent, agent.current, dt, ctx);
@@ -1937,6 +2228,59 @@ function parsePrompt(text = '') {
 
 const nearestEnemy = (s) => (s.enemies.length ? s.enemies[0] : null);
 
+/**
+ * Barks, in two voices. A prompt that reads as aggressive gets the loud set.
+ * Keyed by situation rather than by decision, so agents comment on what just
+ * changed instead of narrating every tick.
+ */
+const BARKS = {
+  bold: {
+    engage: ['Contact — {enemy}!', 'Found you, {enemy}.', 'On {enemy}!', 'Target sighted.'],
+    kill: ['Down!', 'Got {victim}.', 'Next.', 'Too easy.'],
+    reload: ['Reloading!', 'Dry — cover me.', 'Swapping mag.'],
+    retreat: ['Falling back!', 'Not today.', 'Regrouping.'],
+    loot: ['Mine.', 'Grabbing that.', 'Restocking.'],
+    hurt: ['Where was that from?', 'Still up.', 'That stung.'],
+  },
+  wary: {
+    engage: ['Enemy spotted: {enemy}.', 'Contact, {enemy}.', 'Holding on {enemy}.', 'I see something.'],
+    kill: ['Target down.', '{victim} is down.', 'Clear.'],
+    reload: ['Reloading.', 'Magazine empty.', 'Need a second.'],
+    retreat: ['Breaking off.', 'Too exposed.', 'Backing away.'],
+    loot: ['Medkit in reach.', 'Picking that up.', 'Supplies.'],
+    hurt: ['Taking fire.', 'Hit.', 'Under fire.'],
+  },
+};
+
+/**
+ * Choose a line for whatever just changed. Returns null most of the time: an
+ * agent only speaks when its situation actually changes, and never more often
+ * than CHAT.minInterval, so ten agents stay readable instead of shouting.
+ */
+function bark(situation, s, traits, rng, state, fill = {}) {
+  if (!situation) return null;
+  if (situation === state.lastBark && s.time - state.lastBarkAt < CHAT.duration * 3) return null;
+  if (s.time - (state.lastBarkAt ?? -Infinity) < CHAT.minInterval) return null;
+
+  const voice = traits.aggression >= 0.5 ? BARKS.bold : BARKS.wary;
+  const lines = voice[situation];
+  if (!lines) return null;
+
+  state.lastBark = situation;
+  state.lastBarkAt = s.time;
+  return lines[Math.floor(rng() * lines.length)].replace(/\{(\w+)\}/g, (_, key) => fill[key] ?? 'them');
+}
+
+/** Read the events feed for things worth shouting about. */
+function situationFromEvents(events = []) {
+  for (const event of events) {
+    if (/^You killed /.test(event)) return { situation: 'kill', victim: event.replace(/^You killed /, '').replace(/\.$/, '') };
+    if (/^Picked up/.test(event)) return { situation: 'loot' };
+    if (/^Took \d+ damage/.test(event)) return { situation: 'hurt' };
+  }
+  return {};
+}
+
 /** Aim tolerance that actually corresponds to hitting a body of this size. */
 function aimTolerance(distance, weaponId) {
   const angular = toDeg(Math.atan2(WORLD.agentRadius * 0.9, Math.max(40, distance)));
@@ -1997,8 +2341,11 @@ function decideFromTraits(s, traits, rng, state = {}) {
   let note;
 
   // --- housekeeping --------------------------------------------------------
+  const event = situationFromEvents(s.events);
+  const eventLine = bark(event.situation, s, traits, rng, state, { victim: event.victim });
+
   if (s.self.reloading) {
-    return { actions: [{ name: 'hold', input: { seconds: 0.5 } }], note: 'waiting out reload' };
+    return { actions: [{ name: 'hold', input: { seconds: 0.5 } }], note: 'waiting out reload', chat: eventLine };
   }
 
   if (s.self.ammo <= 0) {
@@ -2010,9 +2357,10 @@ function decideFromTraits(s, traits, rng, state = {}) {
           { name: 'reload', input: {} },
         ],
         note: 'dry - backing off to reload',
+        chat: eventLine ?? bark('reload', s, traits, rng, state),
       };
     }
-    return { actions: [{ name: 'reload', input: {} }], note: 'reloading' };
+    return { actions: [{ name: 'reload', input: {} }], note: 'reloading', chat: eventLine ?? bark('reload', s, traits, rng, state) };
   }
 
   const magazine = WEAPONS[s.self.weaponId]?.magazine ?? 3;
@@ -2042,7 +2390,7 @@ function decideFromTraits(s, traits, rng, state = {}) {
         actions.push({ name: 'turn', input: { direction: traits.turnBias, degrees: 130 } });
         actions.push({ name: 'move', input: { direction: 'forward', steps: 6 } });
       }
-      return { actions, note };
+      return { actions, note, chat: eventLine ?? bark('retreat', s, traits, rng, state) };
     }
 
     const align = alignTo(enemy.bearing, s, tolerance);
@@ -2060,6 +2408,10 @@ function decideFromTraits(s, traits, rng, state = {}) {
     // Close or open the gap toward the preferred fighting distance. At the
     // distance it wants, a strafing agent circles instead of standing still -
     // sidestepping is the only move that does not cost it the aim it just set.
+    const newContact = state.lastEnemy !== enemy.name;
+    state.lastEnemy = enemy.name;
+    const engageLine = eventLine ?? (newContact ? bark('engage', s, traits, rng, state, { enemy: enemy.name }) : null);
+
     const gap = enemy.distance - traits.preferredDistance;
     if (gap > 90 && lined) {
       actions.push({ name: 'move', input: { direction: 'forward', steps: clamp(Math.round(gap / MOVE.stepDistance), 1, 5) } });
@@ -2075,8 +2427,10 @@ function decideFromTraits(s, traits, rng, state = {}) {
         note = `${note}, circling ${side}`;
       }
     }
-    return { actions, note };
+    return { actions, note, chat: engageLine };
   }
+
+  state.lastEnemy = null;
 
   // --- loot ----------------------------------------------------------------
   const wantsHealth = hpFraction < 0.95;
@@ -2090,7 +2444,7 @@ function decideFromTraits(s, traits, rng, state = {}) {
     actions.push(...alignTo(target.bearing, s, 4));
     const steps = clamp(Math.round(target.distance / MOVE.stepDistance), 1, 8);
     actions.push({ name: 'move', input: { direction: 'forward', steps } });
-    return { actions, note: `collecting ${target.label}` };
+    return { actions, note: `collecting ${target.label}`, chat: eventLine ?? bark('loot', s, traits, rng, state) };
   }
 
   // --- nothing in sight: search -------------------------------------------
@@ -2104,6 +2458,7 @@ function decideFromTraits(s, traits, rng, state = {}) {
         { name: 'move', input: { direction: 'forward', steps: 3 } },
       ],
       note: 'wall ahead, turning away',
+      chat: eventLine,
     };
   }
 
@@ -2111,6 +2466,7 @@ function decideFromTraits(s, traits, rng, state = {}) {
     return {
       actions: [{ name: 'turn', input: { direction: traits.turnBias, degrees: 60 } }],
       note: 'spinning to scan',
+      chat: eventLine,
     };
   }
 
@@ -2121,6 +2477,7 @@ function decideFromTraits(s, traits, rng, state = {}) {
         { name: 'hold', input: { seconds: 0.8 + rng() * 1.2 } },
       ],
       note: 'holding position, watching',
+      chat: eventLine,
     };
   }
 
@@ -2132,6 +2489,7 @@ function decideFromTraits(s, traits, rng, state = {}) {
       { name: 'move', input: { direction: 'forward', steps: 2 + Math.floor(rng() * 4) } },
     ],
     note: 'searching',
+    chat: eventLine,
   };
 }
 
@@ -2220,7 +2578,7 @@ function createClaudeBrain({ endpoint = '/api/decide', fallback = null } = {}) {
 
         available = true;
         const data = await response.json();
-        return { actions: data.actions ?? [], note: data.note ?? null };
+        return { actions: data.actions ?? [], note: data.note ?? null, chat: data.chat ?? null };
       } catch (error) {
         if (error.name === 'AbortError') throw new Error('model timed out');
         if (fallback && !available) return fallback.decide(snapshot, participant);
@@ -2237,6 +2595,69 @@ function createBrains() {
   const local = createLocalBrain({ thinkTime: BRAIN.localThinkTime });
   const claude = createClaudeBrain({ fallback: local });
   return { local, claude };
+}
+
+// ---- public/src/chat.js ------------------------------------------
+// Speech-bubble text: how a line gets out of a model's reply and into a bubble.
+
+/**
+ * Pull a {"chat": "..."} object out of a model's reply text.
+ *
+ * Riding along in text the model already writes costs one short string - no
+ * extra tool call, no extra round trip, and no slot taken from the four actions
+ * an agent gets per decision. Returns the line plus the text with it removed,
+ * so the bubble does not also appear in the reasoning note.
+ */
+function extractChat(text) {
+  if (!text) return { chat: null, rest: '' };
+
+  const pattern = /\{\s*"chat"\s*:\s*"(?:[^"\\]|\\.)*"\s*\}/g;
+  let chat = null;
+
+  const rest = text.replace(pattern, (match) => {
+    if (chat) return '';                    // only the first line counts
+    try {
+      const value = JSON.parse(match).chat;
+      if (typeof value === 'string' && value.trim()) chat = tidy(value);
+    } catch {
+      // Malformed - drop it rather than showing raw braces over a sphere.
+    }
+    return '';
+  });
+
+  return { chat, rest: rest.replace(/\s+/g, ' ').trim() };
+}
+
+/** Collapse whitespace and cut to bubble length. */
+function tidy(line) {
+  const clean = String(line ?? '').replace(/\s+/g, ' ').trim();
+  return clean.length > CHAT.maxLength ? `${clean.slice(0, CHAT.maxLength - 1)}…` : clean;
+}
+
+/** Greedy wrap into at most CHAT.maxLines lines of about CHAT.lineWidth chars. */
+function wrapChat(text) {
+  const words = tidy(text).split(' ');
+  const lines = [];
+  let current = '';
+
+  for (const word of words) {
+    const candidate = current ? `${current} ${word}` : word;
+    if (candidate.length <= CHAT.lineWidth || !current) {
+      current = candidate;
+    } else {
+      lines.push(current);
+      current = word;
+      if (lines.length === CHAT.maxLines) break;
+    }
+  }
+  if (current && lines.length < CHAT.maxLines) lines.push(current);
+
+  if (lines.length === CHAT.maxLines) {
+    // Anything that did not fit is signalled rather than silently dropped.
+    const used = lines.join(' ').length;
+    if (used < tidy(text).length) lines[CHAT.maxLines - 1] = `${lines[CHAT.maxLines - 1].replace(/.$/, '')}…`;
+  }
+  return lines;
 }
 
 // ---- public/src/render.js ----------------------------------------
@@ -2281,6 +2702,7 @@ class Renderer {
     this.drawProjectiles(ctx, world);
     for (const agent of world.agents) this.drawAgent(ctx, agent, agent.participant.id === selectedId, world.time);
     this.drawEffects(ctx, world);
+    for (const agent of world.agents) this.drawChatBubble(ctx, agent, world.time);
 
     ctx.restore();
   }
@@ -2484,6 +2906,77 @@ class Renderer {
     }
   }
 
+  /**
+   * A speech bubble above the sphere. Drawn last so it is never buried under
+   * another agent's cone, and faded over its final moments so a line that is
+   * about to expire reads as expiring rather than vanishing.
+   */
+  drawChatBubble(ctx, agent, now) {
+    const chat = agent.chat;
+    if (!chat || chat.until <= now) return;
+
+    const remaining = chat.until - now;
+    const age = now - chat.saidAt;
+    // Quick pop in, gentle fade out.
+    const alpha = Math.min(1, age / 0.12) * Math.min(1, remaining / CHAT.fade);
+    if (alpha <= 0.01) return;
+
+    const lines = wrapChat(chat.text);
+    if (!lines.length) return;
+
+    const fontSize = 13;
+    const lineHeight = fontSize * 1.25;
+    ctx.font = `500 ${fontSize}px "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    const padX = 9;
+    const padY = 6;
+    const width = Math.max(...lines.map((line) => ctx.measureText(line).width)) + padX * 2;
+    const height = lines.length * lineHeight + padY * 2;
+
+    const tail = 7;
+    const bottom = agent.y - WORLD.agentRadius - 26;   // clear of the name label
+    const top = bottom - height;
+    const left = agent.x - width / 2;
+
+    ctx.globalAlpha = alpha;
+
+    // Body.
+    ctx.beginPath();
+    ctx.roundRect(left, top, width, height, 7);
+    ctx.fillStyle = 'rgba(12, 15, 23, 0.92)';
+    ctx.fill();
+    ctx.strokeStyle = this.withAlpha(agent.color, 0.85);
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // Tail, pointing back down at whoever said it.
+    ctx.beginPath();
+    ctx.moveTo(agent.x - tail, bottom - 1);
+    ctx.lineTo(agent.x, bottom + tail);
+    ctx.lineTo(agent.x + tail, bottom - 1);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(12, 15, 23, 0.92)';
+    ctx.fill();
+    ctx.strokeStyle = this.withAlpha(agent.color, 0.85);
+    ctx.stroke();
+    // Cover the seam the tail outline leaves across the bubble's bottom edge.
+    ctx.beginPath();
+    ctx.moveTo(agent.x - tail + 1, bottom - 1);
+    ctx.lineTo(agent.x + tail - 1, bottom - 1);
+    ctx.strokeStyle = 'rgba(12, 15, 23, 0.92)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    ctx.fillStyle = '#e6e9f2';
+    lines.forEach((line, i) => {
+      ctx.fillText(line, agent.x, top + padY + lineHeight * (i + 0.5));
+    });
+
+    ctx.globalAlpha = 1;
+  }
+
   drawEffects(ctx, world) {
     for (const effect of world.effects) {
       const remaining = effect.until - world.time;
@@ -2649,7 +3142,30 @@ class UI {
       tools: $('tools'),
       demo: $('btn-demo'),
       clear: $('btn-clear'),
+      leaderboard: $('leaderboard'),
+      champions: $('champions'),
+
+      focusEmpty: $('focus-empty'),
+      focusBody: $('focus-body'),
+      fbDot: $('fb-dot'),
+      fbName: $('fb-name'),
+      fbBrain: $('fb-brain'),
+      fbHealth: $('fb-health'),
+      fbHpFill: $('fb-hp-fill'),
+      fbHpValue: $('fb-hp-value'),
+      fbWeapons: $('fb-weapons'),
+      fbAmmoLabel: $('fb-ammo-label'),
+      fbPips: $('fb-pips'),
+      fbReload: $('fb-reload'),
+      fbKills: $('fb-kills'),
+      fbAssists: $('fb-assists'),
+      fbDeaths: $('fb-deaths'),
+      fbDoing: $('fb-doing'),
     };
+
+    // The focus bar redraws every frame, so it diffs against this.
+    this.barState = {};
+    this.buildWeaponSlots();
 
     this.el.max.textContent = String(WORLD.maxAgents);
     this.fillPresets();
@@ -2688,12 +3204,32 @@ class UI {
       this.el.pause.textContent = paused ? 'Resume' : 'Pause';
     });
 
-    this.el.roster.addEventListener('click', (event) => {
-      const li = event.target.closest('li[data-id]');
-      if (li) this.select(li.dataset.id);
-    });
+    for (const list of [this.el.roster, this.el.leaderboard]) {
+      list.addEventListener('click', (event) => {
+        const li = event.target.closest('li[data-id]');
+        if (li) this.select(li.dataset.id);
+      });
+    }
 
     this.updateCount();
+  }
+
+  /** Three fixed loadout slots; the equipped one lights up. */
+  buildWeaponSlots() {
+    this.weaponSlots = new Map();
+    this.el.fbWeapons.innerHTML = '';
+
+    for (const weapon of Object.values(WEAPONS)) {
+      const slot = document.createElement('span');
+      slot.className = 'fb-weapon';
+      slot.dataset.weapon = weapon.id;
+      slot.style.setProperty('--weapon-color', weapon.color);
+      slot.innerHTML =
+        `<b>${weapon.id === 'pistol' ? 'P' : weapon.id === 'shotgun' ? 'SG' : 'AR'}</b>` +
+        `<span>${escapeHtml(weapon.name)}</span>`;
+      this.el.fbWeapons.append(slot);
+      this.weaponSlots.set(weapon.id, slot);
+    }
   }
 
   fillPresets() {
@@ -2762,8 +3298,15 @@ class UI {
     if (state !== 'ok' && this.el.brain.value === 'claude') this.el.brain.value = 'local';
   }
 
+  /** Clicking toggles: click the focused agent again to let go of it. */
   select(participantId) {
     this.selectedId = this.selectedId === participantId ? null : participantId;
+    this.onSelect?.(this.selectedId);
+  }
+
+  /** Focus outright, without the toggle - used when an agent is deployed. */
+  focus(participantId) {
+    this.selectedId = participantId;
     this.onSelect?.(this.selectedId);
   }
 
@@ -2790,6 +3333,7 @@ class UI {
     this.el.clock.textContent = `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
 
     this.renderRoster(participants);
+    this.renderBoards();
     this.renderInspector();
     this.renderLog();
   }
@@ -2878,6 +3422,129 @@ class UI {
     this.el.inspector.innerHTML = parts.join('');
   }
 
+  /**
+   * The bar under the arena. Called every frame, because the action flashes are
+   * short - so every write is diffed against the previous frame first.
+   */
+  renderFocusBar() {
+    const participant = this.selectedId ? this.world.lobby.get(this.selectedId) : null;
+    const agent = participant?.agent ?? null;
+    const now = this.world.time;
+
+    if (!participant) {
+      if (this.barState.empty !== true) {
+        this.el.focusEmpty.hidden = false;
+        this.el.focusBody.hidden = true;
+        this.barState = { empty: true };
+      }
+      return;
+    }
+    if (this.barState.empty !== false) {
+      this.el.focusEmpty.hidden = true;
+      this.el.focusBody.hidden = false;
+      this.barState = { empty: false };
+    }
+
+    const set = (key, value, apply) => {
+      if (this.barState[key] === value) return;
+      this.barState[key] = value;
+      apply(value);
+    };
+    // A pulse is "live" for PULSE.duration after the world stamped it.
+    const firing = (kind) => Boolean(agent) && now - agent.pulses[kind] < PULSE.duration;
+
+    const color = AGENT_COLORS[participant.colorIndex % AGENT_COLORS.length];
+    set('color', color, (v) => { this.el.fbDot.style.background = v; });
+    set('name', participant.name, (v) => { this.el.fbName.textContent = v; });
+    set('brain', participant.brainKind === 'claude' ? 'live model' : 'offline', (v) => { this.el.fbBrain.textContent = v; });
+
+    const hp = agent ? Math.max(0, Math.round(agent.hp)) : 0;
+    set('hp', hp, (v) => {
+      this.el.fbHpValue.textContent = `${v}`;
+      this.el.fbHpFill.style.width = `${(v / AGENT.maxHp) * 100}%`;
+      this.el.fbHpFill.style.background =
+        v > AGENT.maxHp * 0.5 ? 'var(--good)' : v > AGENT.maxHp * 0.25 ? 'var(--warn)' : 'var(--bad)';
+    });
+    set('hurt', firing('hurt'), (v) => this.el.fbHealth.classList.toggle('flash-hurt', v));
+    set('heal', firing('heal'), (v) => this.el.fbHealth.classList.toggle('flash-heal', v));
+
+    const equipped = agent?.weapon ?? null;
+    set('weapon', equipped, (v) => {
+      for (const [id, slot] of this.weaponSlots) slot.classList.toggle('equipped', id === v);
+    });
+    // The equipped weapon flashes its border on every shot.
+    set('fire', firing('fire') ? equipped : null, (v) => {
+      for (const [id, slot] of this.weaponSlots) slot.classList.toggle('firing', id === v && v !== null);
+    });
+    set('pickup', firing('pickup') ? equipped : null, (v) => {
+      for (const [id, slot] of this.weaponSlots) slot.classList.toggle('picked', id === v && v !== null);
+    });
+
+    const weapon = WEAPONS[equipped] ?? WEAPONS.pistol;
+    const ammo = agent?.ammo ?? 0;
+    set('ammo', `${ammo}/${weapon.magazine}`, () => {
+      this.el.fbAmmoLabel.textContent = `Ammo ${ammo}/${weapon.magazine}`;
+      this.el.fbPips.innerHTML = Array.from({ length: weapon.magazine }, (_, i) =>
+        `<i class="${i < ammo ? 'live' : ''}" style="--weapon-color:${weapon.color}"></i>`).join('');
+    });
+
+    const reloading = agent && agent.reloadUntil > now;
+    set('reload', reloading ? Math.ceil((agent.reloadUntil - now) * 10) : null, (v) => {
+      this.el.fbReload.hidden = v === null;
+      if (v !== null) this.el.fbReload.textContent = `Reloading ${(v / 10).toFixed(1)}s`;
+      this.el.fbPips.classList.toggle('reloading', v !== null);
+    });
+
+    set('kills', participant.kills, (v) => { this.el.fbKills.querySelector('b').textContent = v; });
+    set('assists', participant.assists ?? 0, (v) => { this.el.fbAssists.querySelector('b').textContent = v; });
+    set('deaths', participant.deaths, (v) => { this.el.fbDeaths.querySelector('b').textContent = v; });
+    set('killFlash', firing('kill'), (v) => this.el.fbKills.classList.toggle('flash-kill', v));
+
+    let doing;
+    if (!agent) {
+      doing = participant.status === 'cooldown'
+        ? `Eliminated — rejoins in ${formatClock(participant.readyAt - now)}`
+        : 'Waiting to enter the arena';
+    } else if (agent.thinking) {
+      doing = 'Thinking…';
+    } else {
+      doing = describeCurrent(agent);
+    }
+    set('doing', doing, (v) => { this.el.fbDoing.textContent = v; });
+  }
+
+  renderBoards() {
+    const live = this.world.agents
+      .filter((a) => a.alive)
+      .map((a) => a.participant)
+      .sort((a, b) => b.kills - a.kills || (b.assists ?? 0) - (a.assists ?? 0) || a.name.localeCompare(b.name));
+
+    this.el.leaderboard.innerHTML = live.length
+      ? live.map((p, i) => {
+          const color = AGENT_COLORS[p.colorIndex % AGENT_COLORS.length];
+          return `<li class="${p.id === this.selectedId ? 'selected' : ''}" data-id="${p.id}">
+            <span class="rank">${i + 1}</span>
+            <span class="dot" style="background:${color}"></span>
+            <span class="who"><span class="name">${escapeHtml(p.name)}</span></span>
+            <span class="tally"><b>${p.kills}</b>K <b>${p.assists ?? 0}</b>A</span>
+          </li>`;
+        }).join('')
+      : '<li class="empty muted">Nobody is in the arena.</li>';
+
+    this.el.champions.innerHTML = this.world.champions.length
+      ? this.world.champions.map((c, i) => `
+          <li>
+            <span class="rank">${i + 1}</span>
+            <span class="dot" style="background:${c.color}"></span>
+            <span class="who">
+              <span class="name">${escapeHtml(c.name)}</span>
+              <span class="sub">survived ${formatClock(c.survived)}</span>
+            </span>
+            <span class="tally"><b>${c.kills}</b>K <b>${c.assists}</b>A</span>
+          </li>`).join('')
+      : '<li class="empty muted">No lives have ended yet.</li>';
+  }
+
   renderLog() {
     if (this.world.log.length === this.lastLogLength) return;
     this.lastLogLength = this.world.log.length;
@@ -2889,6 +3556,22 @@ class UI {
         return `<li class="${entry.kind}"><span class="t">${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}</span>${escapeHtml(entry.text)}</li>`;
       })
       .join('');
+  }
+}
+
+/** Plain-language summary of what an agent is doing right now. */
+function describeCurrent(agent) {
+  const action = agent.current;
+  if (!action) return agent.lastActions?.[0] ? `Next: ${agent.lastActions[0]}` : 'Idle';
+  switch (action.type) {
+    case 'turn': return `Turning ${action.direction}`;
+    case 'move': return action.direction === 'left' || action.direction === 'right'
+      ? `Sidestepping ${action.direction}` : `Walking ${action.direction}`;
+    case 'aim': return 'Adjusting aim';
+    case 'fire': return `Firing (${action.remaining} left)`;
+    case 'reload': return 'Reloading';
+    case 'hold': return 'Holding';
+    default: return action.type;
   }
 }
 
@@ -2930,7 +3613,7 @@ function uniqueName(base) {
   return name;
 }
 
-function join({ name, prompt, brainKind }) {
+function join({ name, prompt, brainKind, focus = true }) {
   if (!name) return { ok: false, message: 'Give your agent a name.', tone: 'bad' };
   if (prompt.length < 12) {
     return { ok: false, message: 'Write a real prompt — at least a sentence of tactics.', tone: 'bad' };
@@ -2947,7 +3630,9 @@ function join({ name, prompt, brainKind }) {
   });
 
   const outcome = world.lobby.add(participant);
-  ui.select(participant.id);
+  // Deploying your own agent follows it in the focus bar. Filler agents must
+  // not steal that focus back.
+  if (focus) ui.focus(participant.id);
 
   return outcome === 'spawned'
     ? { ok: true, message: `${participant.name} is in the arena.`, tone: 'ok' }
@@ -2962,7 +3647,7 @@ function addDemoAgents(count = 4) {
   for (let i = 0; i < count; i++) {
     const preset = PRESETS[Math.floor(Math.random() * PRESETS.length)];
     const base = DEMO_NAMES[Math.floor(Math.random() * DEMO_NAMES.length)];
-    join({ name: base, prompt: preset.prompt, brainKind: 'local' });
+    join({ name: base, prompt: preset.prompt, brainKind: 'local', focus: false });
   }
 }
 
@@ -3046,7 +3731,11 @@ function frame(now) {
 
   renderer.draw(world, { selectedId: ui.selectedId });
 
-  // The panel does not need 60 Hz.
+  // The focus bar carries sub-second action flashes, so it tracks the frame
+  // rate; it diffs every field, so an unchanged frame writes no DOM at all.
+  ui.renderFocusBar();
+
+  // The heavier panels do not need 60 Hz.
   uiClock += elapsed;
   if (uiClock >= 0.2) {
     uiClock = 0;

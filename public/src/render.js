@@ -1,6 +1,7 @@
 // Canvas rendering. The arena is drawn in world units and scaled to fit.
 
-import { WORLD, VISION, COLORS, WEAPONS, AGENT } from './config.js';
+import { WORLD, VISION, COLORS, WEAPONS, AGENT, CHAT } from './config.js';
+import { wrapChat } from './chat.js';
 import { WALLS, BORDER_THICKNESS, arenaSize } from './arena.js';
 import { toRad } from './util.js';
 
@@ -44,6 +45,7 @@ export class Renderer {
     this.drawProjectiles(ctx, world);
     for (const agent of world.agents) this.drawAgent(ctx, agent, agent.participant.id === selectedId, world.time);
     this.drawEffects(ctx, world);
+    for (const agent of world.agents) this.drawChatBubble(ctx, agent, world.time);
 
     ctx.restore();
   }
@@ -245,6 +247,77 @@ export class Renderer {
       ctx.textBaseline = 'top';
       ctx.fillText(weapon.id === 'shotgun' ? 'SG' : 'AR', agent.x, agent.y + r + 6);
     }
+  }
+
+  /**
+   * A speech bubble above the sphere. Drawn last so it is never buried under
+   * another agent's cone, and faded over its final moments so a line that is
+   * about to expire reads as expiring rather than vanishing.
+   */
+  drawChatBubble(ctx, agent, now) {
+    const chat = agent.chat;
+    if (!chat || chat.until <= now) return;
+
+    const remaining = chat.until - now;
+    const age = now - chat.saidAt;
+    // Quick pop in, gentle fade out.
+    const alpha = Math.min(1, age / 0.12) * Math.min(1, remaining / CHAT.fade);
+    if (alpha <= 0.01) return;
+
+    const lines = wrapChat(chat.text);
+    if (!lines.length) return;
+
+    const fontSize = 13;
+    const lineHeight = fontSize * 1.25;
+    ctx.font = `500 ${fontSize}px "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    const padX = 9;
+    const padY = 6;
+    const width = Math.max(...lines.map((line) => ctx.measureText(line).width)) + padX * 2;
+    const height = lines.length * lineHeight + padY * 2;
+
+    const tail = 7;
+    const bottom = agent.y - WORLD.agentRadius - 26;   // clear of the name label
+    const top = bottom - height;
+    const left = agent.x - width / 2;
+
+    ctx.globalAlpha = alpha;
+
+    // Body.
+    ctx.beginPath();
+    ctx.roundRect(left, top, width, height, 7);
+    ctx.fillStyle = 'rgba(12, 15, 23, 0.92)';
+    ctx.fill();
+    ctx.strokeStyle = this.withAlpha(agent.color, 0.85);
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // Tail, pointing back down at whoever said it.
+    ctx.beginPath();
+    ctx.moveTo(agent.x - tail, bottom - 1);
+    ctx.lineTo(agent.x, bottom + tail);
+    ctx.lineTo(agent.x + tail, bottom - 1);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(12, 15, 23, 0.92)';
+    ctx.fill();
+    ctx.strokeStyle = this.withAlpha(agent.color, 0.85);
+    ctx.stroke();
+    // Cover the seam the tail outline leaves across the bubble's bottom edge.
+    ctx.beginPath();
+    ctx.moveTo(agent.x - tail + 1, bottom - 1);
+    ctx.lineTo(agent.x + tail - 1, bottom - 1);
+    ctx.strokeStyle = 'rgba(12, 15, 23, 0.92)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    ctx.fillStyle = '#e6e9f2';
+    lines.forEach((line, i) => {
+      ctx.fillText(line, agent.x, top + padY + lineHeight * (i + 0.5));
+    });
+
+    ctx.globalAlpha = 1;
   }
 
   drawEffects(ctx, world) {

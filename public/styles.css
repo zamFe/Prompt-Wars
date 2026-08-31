@@ -98,7 +98,7 @@ main {
 
 #arena {
   width: 100%;
-  max-width: min(calc(100vh - 150px), 100%);
+  max-width: min(calc(100vh - 250px), 100%);
   aspect-ratio: 1 / 1;
   border-radius: var(--radius);
   border: 1px solid var(--line);
@@ -240,6 +240,150 @@ button.ghost:hover { border-color: #394462; }
 .rules { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 5px 12px; font-size: 12.5px; }
 .rules dt { color: var(--muted); }
 .rules dd { margin: 0; }
+
+/* ---------------------------------------------------------------- focus bar */
+.focusbar {
+  width: 100%;
+  max-width: min(calc(100vh - 250px), 100%);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+}
+
+.focusbar-empty { margin: 0; color: var(--muted); font-size: 12.5px; text-align: center; }
+
+.focusbar-body {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  row-gap: 10px;
+}
+
+.fb-identity { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.fb-dot { width: 14px; height: 14px; border-radius: 50%; flex: none; }
+.fb-name { font-family: var(--font-display); font-weight: 700; font-size: 16px; letter-spacing: 0.02em; }
+.fb-brain { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; }
+
+.fb-block { display: flex; align-items: center; gap: 8px; }
+.fb-label {
+  font-family: var(--font-display);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.11em;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* Health ------------------------------------------------------------------ */
+.fb-hp { width: 96px; height: 7px; border-radius: 4px; background: #2a3042; overflow: hidden; }
+.fb-hp i { display: block; height: 100%; background: var(--good); transition: width 0.12s linear; }
+.fb-value { font-family: var(--font-display); font-weight: 600; font-variant-numeric: tabular-nums; min-width: 26px; }
+
+.fb-health { border-radius: 6px; padding: 3px 6px; margin: -3px -6px; }
+.fb-health.flash-hurt { animation: hurt 0.4s ease-out; }
+.fb-health.flash-heal { animation: heal 0.4s ease-out; }
+@keyframes hurt { from { background: rgba(239, 68, 68, 0.45); } to { background: transparent; } }
+@keyframes heal { from { background: rgba(74, 222, 128, 0.4); } to { background: transparent; } }
+
+/* Loadout ----------------------------------------------------------------- */
+.fb-weapons { display: flex; gap: 5px; }
+.fb-weapon {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1.5px solid transparent;
+  background: var(--panel-2);
+  opacity: 0.4;
+}
+.fb-weapon b {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--weapon-color);
+}
+.fb-weapon span { font-size: 11px; color: var(--muted); display: none; }
+.fb-weapon.equipped { opacity: 1; border-color: var(--weapon-color); }
+.fb-weapon.equipped span { display: inline; color: var(--text); }
+/* The white border flash the moment a shot leaves the barrel. */
+.fb-weapon.firing { animation: muzzle 0.4s ease-out; }
+.fb-weapon.picked { animation: picked 0.4s ease-out; }
+@keyframes muzzle {
+  0% { border-color: #fff; background: rgba(255, 255, 255, 0.22); }
+  100% { border-color: var(--weapon-color); background: var(--panel-2); }
+}
+@keyframes picked {
+  0%, 60% { border-color: #fff; }
+  100% { border-color: var(--weapon-color); }
+}
+
+/* Ammo -------------------------------------------------------------------- */
+.fb-pips { display: flex; gap: 3px; }
+.fb-pips i {
+  width: 5px;
+  height: 15px;
+  border-radius: 2px;
+  background: #2a3042;
+}
+.fb-pips i.live { background: var(--weapon-color); }
+.fb-pips.reloading i { animation: reloadPulse 1s ease-in-out infinite; }
+@keyframes reloadPulse { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
+
+.fb-reload {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--warn);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Score ------------------------------------------------------------------- */
+.fb-score { gap: 14px; margin-left: auto; }
+.fb-stat { display: flex; align-items: baseline; gap: 4px; border-radius: 6px; padding: 2px 5px; margin: -2px -5px; }
+.fb-stat b { font-family: var(--font-display); font-size: 17px; font-variant-numeric: tabular-nums; }
+.fb-stat span { font-size: 10px; text-transform: uppercase; letter-spacing: 0.09em; color: var(--muted); }
+.fb-stat.flash-kill { animation: killFlash 0.4s ease-out; }
+@keyframes killFlash {
+  0% { background: rgba(255, 255, 255, 0.3); }
+  100% { background: transparent; }
+}
+
+.fb-doing { font-size: 12.5px; color: var(--text); white-space: nowrap; }
+
+/* ------------------------------------------------------------------- boards */
+.board { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; counter-reset: rank; }
+.board li {
+  display: grid;
+  grid-template-columns: 16px 10px 1fr auto;
+  gap: 8px;
+  align-items: center;
+  padding: 5px 8px;
+  border-radius: 7px;
+  background: var(--panel-2);
+  border: 1px solid transparent;
+  font-size: 13px;
+}
+.board li.selected { border-color: var(--accent); }
+.board li.empty { grid-template-columns: 1fr; font-size: 12.5px; background: none; padding: 2px 0; }
+.board .rank {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 11px;
+  color: var(--muted);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.board .dot { width: 10px; height: 10px; border-radius: 50%; }
+.board .name { font-weight: 600; }
+.board .sub { color: var(--muted); font-size: 11px; display: block; }
+.board .tally { font-family: var(--font-mono); font-size: 11px; color: var(--muted); white-space: nowrap; }
+.board .tally b { color: var(--text); font-size: 12.5px; }
+#leaderboard li { cursor: pointer; }
+#leaderboard li:hover { border-color: var(--line); }
+.board.champions li:first-child .rank { color: var(--warn); }
 
 /* The tool reference: a signature column and a plain-language column. */
 .rules.tools { grid-template-columns: 1fr; gap: 9px 0; }

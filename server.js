@@ -11,7 +11,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { TOOL_SCHEMAS } from './public/src/actions.js';
-import { WEAPONS, MOVE, VISION, AGENT, LOBBY, WORLD, HEALTH_PACKS } from './public/src/config.js';
+import { WEAPONS, MOVE, VISION, AGENT, LOBBY, WORLD, HEALTH_PACKS, CHAT } from './public/src/config.js';
+import { extractChat } from './public/src/chat.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(HERE, 'public');
@@ -113,6 +114,10 @@ Nothing reloads for you. If your magazine is empty, fire does nothing until you 
 ## Loot
 Medkits heal ${Object.values(HEALTH_PACKS).map((h) => h.heal).join(', ')} HP; bigger and brighter on screen means a bigger heal. Loot spawns at random places on a random timer.
 
+## Speaking
+You have a speech bubble over your head. To say something, put a JSON object of the form {"chat": "your line"} anywhere in your reply text - it is stripped out and shown above your sphere for a couple of seconds. It is pure flavour: it costs you nothing, changes nothing, and no other agent can hear it.
+Keep lines under ${CHAT.maxLength} characters, stay in the character your orders describe, and speak only when something actually happens - a first sighting, a kill, a reload, a retreat. An agent that narrates every decision is noise.
+
 ## How to answer
 Return between 1 and 4 tool calls, in the order you want them carried out. They run one after another and the whole plan takes real time, during which the world moves without you. Short plans keep you responsive; long plans commit you.
 Every turn, act. If you have nothing better to do, search: turn to sweep new ground and walk. Standing still forever is how you lose.
@@ -171,9 +176,11 @@ async function decide({ prompt, observation, name }) {
       else if (block.type === 'text' && block.text.trim()) said.push(block.text.trim());
     }
 
+    const { chat, rest } = extractChat(said.join(' '));
     return {
       actions,
-      note: said.join(' ').slice(0, 240) || null,
+      chat,
+      note: rest.slice(0, 240) || null,
       stop_reason: response.stop_reason,
       usage: response.usage,
     };

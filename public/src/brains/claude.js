@@ -54,7 +54,7 @@ export function createClaudeBrain({ endpoint = '/api/decide', fallback = null } 
 
         available = true;
         const data = await response.json();
-        return { actions: data.actions ?? [], note: data.note ?? null };
+        return { actions: data.actions ?? [], note: data.note ?? null, chat: data.chat ?? null };
       } catch (error) {
         if (error.name === 'AbortError') throw new Error('model timed out');
         if (fallback && !available) return fallback.decide(snapshot, participant);

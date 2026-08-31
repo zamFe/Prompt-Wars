@@ -1,6 +1,6 @@
 // The simulation: bodies, bullets, loot, damage and the decision loop.
 
-import { WORLD, MOVE, WEAPONS, AGENT, HEALTH_PACKS, LOOT, VISION, BRAIN, AGENT_COLORS } from './config.js';
+import { WORLD, MOVE, WEAPONS, AGENT, HEALTH_PACKS, LOOT, VISION, BRAIN, AGENT_COLORS, CHAT, PULSE } from './config.js';
 import { makeRng, clamp, dist, toRad, normalizeDeg, randRange, weightedPick, pointSegmentDistance, round0 } from './util.js';
 import { findOpenPosition, resolveCollision, hasLineOfSight, castRay } from './arena.js';
 import { buildSnapshot, bearingTo } from './sensors.js';
@@ -24,12 +24,32 @@ export class World {
     this.effects = [];                 // short-lived visuals (hits, deaths)
     this.log = [];
     this.lobby = new Lobby(this);
+    this.champions = [];               // best single lives, highest kills first
     this.nextLootAt = randRange(this.rng, ...LOOT.spawnCooldown);
     this.paused = false;
   }
 
   get queue() {
     return this.lobby.queue;
+  }
+
+  /**
+   * Put a line in an agent's bubble. Saying something new replaces whatever is
+   * there and restarts the clock, so continuous chatter reads as one bubble
+   * that never drops rather than a flicker of separate ones.
+   */
+  say(agent, text) {
+    const line = String(text ?? '').replace(/\s+/g, ' ').trim();
+    if (!line) return;
+    agent.chat = {
+      text: line.length > CHAT.maxLength ? `${line.slice(0, CHAT.maxLength - 1)}…` : line,
+      until: this.time + CHAT.duration,
+      saidAt: this.time,
+    };
+  }
+
+  pulse(agent, kind) {
+    agent.pulses[kind] = this.time;
   }
 
   addLog(text, kind = 'info') {
@@ -76,6 +96,14 @@ export class World {
       blocked: false,
       lastInterruptAt: -Infinity,
       spawnedAt: this.time,
+
+      chat: null,                 // { text, until, saidAt }
+      // Timestamps of the last time each action fired, for the focus bar.
+      pulses: { fire: -Infinity, reload: -Infinity, hurt: -Infinity, heal: -Infinity, kill: -Infinity, pickup: -Infinity },
+      // Who has hurt this agent lately, for assist credit: id -> { damage, at }.
+      recentDamage: new Map(),
+      lifeKills: 0,
+      lifeAssists: 0,
     };
 
     this.agents.push(agent);
@@ -101,17 +129,51 @@ export class World {
 
     if (killer && killer !== agent) {
       killer.participant.kills += 1;
+      killer.lifeKills += 1;
       killer.pendingEvents.push(`You killed ${agent.name}.`);
+      this.pulse(killer, 'kill');
       this.addLog(`${killer.name} killed ${agent.name}.`, 'kill');
     } else {
       this.addLog(`${agent.name} died.`, 'kill');
     }
+
+    // Anyone else who hurt the victim recently gets an assist.
+    for (const [participantId, record] of agent.recentDamage) {
+      if (killer && participantId === killer.participant.id) continue;
+      if (this.time - record.at > PULSE.assistWindow) continue;
+      const helper = this.lobby.get(participantId);
+      if (!helper) continue;
+      helper.assists = (helper.assists ?? 0) + 1;
+      if (helper.agent) {
+        helper.agent.lifeAssists += 1;
+        helper.agent.pendingEvents.push(`You assisted in killing ${agent.name}.`);
+      }
+    }
+
+    this.recordChampion(agent);
 
     const wait = this.lobby.onDeath(agent.participant, congested);
     agent.participant.agent = null;
     this.agents = this.agents.filter((a) => a !== agent);
     this.addLog(`${agent.name} may rejoin in ${Math.round(wait)}s.`, 'info');
     this.lobby.pump();
+  }
+
+  /** Every life ends with a score; the board keeps the ten best. */
+  recordChampion(agent) {
+    this.champions.push({
+      name: agent.name,
+      color: agent.color,
+      participantId: agent.participant.id,
+      brainKind: agent.participant.brainKind,
+      kills: agent.lifeKills,
+      assists: agent.lifeAssists,
+      survived: this.time - agent.spawnedAt,
+      diedAt: this.time,
+    });
+    // Highest kills first; a tie goes to the life that lasted longer.
+    this.champions.sort((a, b) => b.kills - a.kills || b.assists - a.assists || b.survived - a.survived);
+    this.champions.length = Math.min(this.champions.length, PULSE.championRows);
   }
 
   // ---------------------------------------------------------------- combat
@@ -123,7 +185,15 @@ export class World {
     const dealt = Math.min(amount, target.hp);
     target.hp -= amount;
     target.participant.damageTaken += dealt;
-    if (attacker) attacker.participant.damageDealt += dealt;
+    this.pulse(target, 'hurt');
+
+    if (attacker) {
+      attacker.participant.damageDealt += dealt;
+      const record = target.recentDamage.get(attacker.participant.id) ?? { damage: 0, at: 0 };
+      record.damage += dealt;
+      record.at = this.time;
+      target.recentDamage.set(attacker.participant.id, record);
+    }
 
     const from = attacker ? bearingTo(target, attacker.x, attacker.y) : 0;
     const side =
@@ -152,6 +222,7 @@ export class World {
     agent.ammo -= 1;
     agent.nextShotAt = this.time + weapon.timeBetweenShots;
     agent.participant.shotsFired += 1;
+    this.pulse(agent, 'fire');
 
     const baseAngle = agent.facing + agent.aimOffset;
     for (let i = 0; i < weapon.pellets; i++) {
@@ -310,6 +381,7 @@ export class World {
           const healed = Math.min(item.heal, AGENT.maxHp - agent.hp);
           agent.hp += healed;
           agent.pendingEvents.push(`Picked up a medkit, healed ${Math.round(healed)}. HP now ${Math.round(agent.hp)}.`);
+          this.pulse(agent, 'heal');
           this.addLog(`${agent.name} picked up ${item.label}.`, 'loot');
         } else {
           const weapon = WEAPONS[item.weaponId];
@@ -320,6 +392,7 @@ export class World {
           agent.pendingEvents.push(
             sameWeapon ? `Restocked ${weapon.name} ammo.` : `Picked up a ${weapon.name}. Magazine ${weapon.magazine}.`,
           );
+          this.pulse(agent, 'pickup');
           this.addLog(`${agent.name} picked up ${weapon.name}.`, 'loot');
         }
         this.effects.push({ kind: 'pickup', x: item.x, y: item.y, color: item.color, until: this.time + 0.3 });
@@ -379,6 +452,7 @@ export class World {
         agent.participant.lastError = null;
         agent.lastError = null;
         agent.lastNote = decision?.note ?? null;
+        if (decision?.chat) this.say(agent, decision.chat);
 
         const actions = buildQueue(decision?.actions, agent);
         agent.queue = actions;
@@ -428,6 +502,7 @@ export class World {
       now: this.time,
       tryMove: (a, dx, dy) => this.tryMove(a, dx, dy),
       fireWeapon: (a) => this.fireWeapon(a),
+      pulse: (a, kind) => this.pulse(a, kind),
     };
 
     const finished = stepAction(agent, agent.current, dt, ctx);

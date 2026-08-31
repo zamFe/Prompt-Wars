@@ -106,6 +106,24 @@ export const LOOT = {
   },
 };
 
+// Speech bubbles over the spheres. A new line replaces the current one and
+// restarts the clock, so an agent that keeps talking keeps its bubble alive.
+export const CHAT = {
+  duration: 2,          // seconds a line survives with nothing new said
+  fade: 0.45,           // trailing fade
+  maxLength: 64,        // longer lines are cut - this is a bubble, not a speech
+  maxLines: 2,
+  lineWidth: 22,        // characters per line before wrapping
+  minInterval: 3.5,     // offline brain will not bark more often than this
+};
+
+// How long an action lights up its tile in the focus bar.
+export const PULSE = {
+  duration: 0.4,
+  assistWindow: 10,     // damage this recently counts toward an assist
+  championRows: 10,
+};
+
 export const LOBBY = {
   respawnCooldown: 60,          // seconds before a dead agent may rejoin
   congestedCooldown: 600,       // when the arena is full and the queue is long

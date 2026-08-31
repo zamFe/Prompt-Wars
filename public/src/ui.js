@@ -1,6 +1,6 @@
 // DOM wiring: the join form, roster, inspector, feed and rules panel.
 
-import { WORLD, LOBBY, WEAPONS, HEALTH_PACKS, LOOT, VISION, MOVE, AGENT, AGENT_COLORS } from './config.js';
+import { WORLD, LOBBY, WEAPONS, HEALTH_PACKS, LOOT, VISION, MOVE, AGENT, AGENT_COLORS, PULSE } from './config.js';
 import { renderSnapshotText } from './sensors.js';
 import { TOOL_SCHEMAS, TOOL_SUMMARIES } from './actions.js';
 import { formatClock, round0 } from './util.js';
@@ -39,7 +39,30 @@ export class UI {
       tools: $('tools'),
       demo: $('btn-demo'),
       clear: $('btn-clear'),
+      leaderboard: $('leaderboard'),
+      champions: $('champions'),
+
+      focusEmpty: $('focus-empty'),
+      focusBody: $('focus-body'),
+      fbDot: $('fb-dot'),
+      fbName: $('fb-name'),
+      fbBrain: $('fb-brain'),
+      fbHealth: $('fb-health'),
+      fbHpFill: $('fb-hp-fill'),
+      fbHpValue: $('fb-hp-value'),
+      fbWeapons: $('fb-weapons'),
+      fbAmmoLabel: $('fb-ammo-label'),
+      fbPips: $('fb-pips'),
+      fbReload: $('fb-reload'),
+      fbKills: $('fb-kills'),
+      fbAssists: $('fb-assists'),
+      fbDeaths: $('fb-deaths'),
+      fbDoing: $('fb-doing'),
     };
+
+    // The focus bar redraws every frame, so it diffs against this.
+    this.barState = {};
+    this.buildWeaponSlots();
 
     this.el.max.textContent = String(WORLD.maxAgents);
     this.fillPresets();
@@ -78,12 +101,32 @@ export class UI {
       this.el.pause.textContent = paused ? 'Resume' : 'Pause';
     });
 
-    this.el.roster.addEventListener('click', (event) => {
-      const li = event.target.closest('li[data-id]');
-      if (li) this.select(li.dataset.id);
-    });
+    for (const list of [this.el.roster, this.el.leaderboard]) {
+      list.addEventListener('click', (event) => {
+        const li = event.target.closest('li[data-id]');
+        if (li) this.select(li.dataset.id);
+      });
+    }
 
     this.updateCount();
+  }
+
+  /** Three fixed loadout slots; the equipped one lights up. */
+  buildWeaponSlots() {
+    this.weaponSlots = new Map();
+    this.el.fbWeapons.innerHTML = '';
+
+    for (const weapon of Object.values(WEAPONS)) {
+      const slot = document.createElement('span');
+      slot.className = 'fb-weapon';
+      slot.dataset.weapon = weapon.id;
+      slot.style.setProperty('--weapon-color', weapon.color);
+      slot.innerHTML =
+        `<b>${weapon.id === 'pistol' ? 'P' : weapon.id === 'shotgun' ? 'SG' : 'AR'}</b>` +
+        `<span>${escapeHtml(weapon.name)}</span>`;
+      this.el.fbWeapons.append(slot);
+      this.weaponSlots.set(weapon.id, slot);
+    }
   }
 
   fillPresets() {
@@ -152,8 +195,15 @@ export class UI {
     if (state !== 'ok' && this.el.brain.value === 'claude') this.el.brain.value = 'local';
   }
 
+  /** Clicking toggles: click the focused agent again to let go of it. */
   select(participantId) {
     this.selectedId = this.selectedId === participantId ? null : participantId;
+    this.onSelect?.(this.selectedId);
+  }
+
+  /** Focus outright, without the toggle - used when an agent is deployed. */
+  focus(participantId) {
+    this.selectedId = participantId;
     this.onSelect?.(this.selectedId);
   }
 
@@ -180,6 +230,7 @@ export class UI {
     this.el.clock.textContent = `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
 
     this.renderRoster(participants);
+    this.renderBoards();
     this.renderInspector();
     this.renderLog();
   }
@@ -268,6 +319,129 @@ export class UI {
     this.el.inspector.innerHTML = parts.join('');
   }
 
+  /**
+   * The bar under the arena. Called every frame, because the action flashes are
+   * short - so every write is diffed against the previous frame first.
+   */
+  renderFocusBar() {
+    const participant = this.selectedId ? this.world.lobby.get(this.selectedId) : null;
+    const agent = participant?.agent ?? null;
+    const now = this.world.time;
+
+    if (!participant) {
+      if (this.barState.empty !== true) {
+        this.el.focusEmpty.hidden = false;
+        this.el.focusBody.hidden = true;
+        this.barState = { empty: true };
+      }
+      return;
+    }
+    if (this.barState.empty !== false) {
+      this.el.focusEmpty.hidden = true;
+      this.el.focusBody.hidden = false;
+      this.barState = { empty: false };
+    }
+
+    const set = (key, value, apply) => {
+      if (this.barState[key] === value) return;
+      this.barState[key] = value;
+      apply(value);
+    };
+    // A pulse is "live" for PULSE.duration after the world stamped it.
+    const firing = (kind) => Boolean(agent) && now - agent.pulses[kind] < PULSE.duration;
+
+    const color = AGENT_COLORS[participant.colorIndex % AGENT_COLORS.length];
+    set('color', color, (v) => { this.el.fbDot.style.background = v; });
+    set('name', participant.name, (v) => { this.el.fbName.textContent = v; });
+    set('brain', participant.brainKind === 'claude' ? 'live model' : 'offline', (v) => { this.el.fbBrain.textContent = v; });
+
+    const hp = agent ? Math.max(0, Math.round(agent.hp)) : 0;
+    set('hp', hp, (v) => {
+      this.el.fbHpValue.textContent = `${v}`;
+      this.el.fbHpFill.style.width = `${(v / AGENT.maxHp) * 100}%`;
+      this.el.fbHpFill.style.background =
+        v > AGENT.maxHp * 0.5 ? 'var(--good)' : v > AGENT.maxHp * 0.25 ? 'var(--warn)' : 'var(--bad)';
+    });
+    set('hurt', firing('hurt'), (v) => this.el.fbHealth.classList.toggle('flash-hurt', v));
+    set('heal', firing('heal'), (v) => this.el.fbHealth.classList.toggle('flash-heal', v));
+
+    const equipped = agent?.weapon ?? null;
+    set('weapon', equipped, (v) => {
+      for (const [id, slot] of this.weaponSlots) slot.classList.toggle('equipped', id === v);
+    });
+    // The equipped weapon flashes its border on every shot.
+    set('fire', firing('fire') ? equipped : null, (v) => {
+      for (const [id, slot] of this.weaponSlots) slot.classList.toggle('firing', id === v && v !== null);
+    });
+    set('pickup', firing('pickup') ? equipped : null, (v) => {
+      for (const [id, slot] of this.weaponSlots) slot.classList.toggle('picked', id === v && v !== null);
+    });
+
+    const weapon = WEAPONS[equipped] ?? WEAPONS.pistol;
+    const ammo = agent?.ammo ?? 0;
+    set('ammo', `${ammo}/${weapon.magazine}`, () => {
+      this.el.fbAmmoLabel.textContent = `Ammo ${ammo}/${weapon.magazine}`;
+      this.el.fbPips.innerHTML = Array.from({ length: weapon.magazine }, (_, i) =>
+        `<i class="${i < ammo ? 'live' : ''}" style="--weapon-color:${weapon.color}"></i>`).join('');
+    });
+
+    const reloading = agent && agent.reloadUntil > now;
+    set('reload', reloading ? Math.ceil((agent.reloadUntil - now) * 10) : null, (v) => {
+      this.el.fbReload.hidden = v === null;
+      if (v !== null) this.el.fbReload.textContent = `Reloading ${(v / 10).toFixed(1)}s`;
+      this.el.fbPips.classList.toggle('reloading', v !== null);
+    });
+
+    set('kills', participant.kills, (v) => { this.el.fbKills.querySelector('b').textContent = v; });
+    set('assists', participant.assists ?? 0, (v) => { this.el.fbAssists.querySelector('b').textContent = v; });
+    set('deaths', participant.deaths, (v) => { this.el.fbDeaths.querySelector('b').textContent = v; });
+    set('killFlash', firing('kill'), (v) => this.el.fbKills.classList.toggle('flash-kill', v));
+
+    let doing;
+    if (!agent) {
+      doing = participant.status === 'cooldown'
+        ? `Eliminated — rejoins in ${formatClock(participant.readyAt - now)}`
+        : 'Waiting to enter the arena';
+    } else if (agent.thinking) {
+      doing = 'Thinking…';
+    } else {
+      doing = describeCurrent(agent);
+    }
+    set('doing', doing, (v) => { this.el.fbDoing.textContent = v; });
+  }
+
+  renderBoards() {
+    const live = this.world.agents
+      .filter((a) => a.alive)
+      .map((a) => a.participant)
+      .sort((a, b) => b.kills - a.kills || (b.assists ?? 0) - (a.assists ?? 0) || a.name.localeCompare(b.name));
+
+    this.el.leaderboard.innerHTML = live.length
+      ? live.map((p, i) => {
+          const color = AGENT_COLORS[p.colorIndex % AGENT_COLORS.length];
+          return `<li class="${p.id === this.selectedId ? 'selected' : ''}" data-id="${p.id}">
+            <span class="rank">${i + 1}</span>
+            <span class="dot" style="background:${color}"></span>
+            <span class="who"><span class="name">${escapeHtml(p.name)}</span></span>
+            <span class="tally"><b>${p.kills}</b>K <b>${p.assists ?? 0}</b>A</span>
+          </li>`;
+        }).join('')
+      : '<li class="empty muted">Nobody is in the arena.</li>';
+
+    this.el.champions.innerHTML = this.world.champions.length
+      ? this.world.champions.map((c, i) => `
+          <li>
+            <span class="rank">${i + 1}</span>
+            <span class="dot" style="background:${c.color}"></span>
+            <span class="who">
+              <span class="name">${escapeHtml(c.name)}</span>
+              <span class="sub">survived ${formatClock(c.survived)}</span>
+            </span>
+            <span class="tally"><b>${c.kills}</b>K <b>${c.assists}</b>A</span>
+          </li>`).join('')
+      : '<li class="empty muted">No lives have ended yet.</li>';
+  }
+
   renderLog() {
     if (this.world.log.length === this.lastLogLength) return;
     this.lastLogLength = this.world.log.length;
@@ -279,6 +453,22 @@ export class UI {
         return `<li class="${entry.kind}"><span class="t">${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}</span>${escapeHtml(entry.text)}</li>`;
       })
       .join('');
+  }
+}
+
+/** Plain-language summary of what an agent is doing right now. */
+function describeCurrent(agent) {
+  const action = agent.current;
+  if (!action) return agent.lastActions?.[0] ? `Next: ${agent.lastActions[0]}` : 'Idle';
+  switch (action.type) {
+    case 'turn': return `Turning ${action.direction}`;
+    case 'move': return action.direction === 'left' || action.direction === 'right'
+      ? `Sidestepping ${action.direction}` : `Walking ${action.direction}`;
+    case 'aim': return 'Adjusting aim';
+    case 'fire': return `Firing (${action.remaining} left)`;
+    case 'reload': return 'Reloading';
+    case 'hold': return 'Holding';
+    default: return action.type;
   }
 }
 

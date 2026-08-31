@@ -5,7 +5,7 @@
 // machine from those traits. It is not a language model, but it is driven
 // entirely by the prompt text, so writing a better prompt still wins games.
 
-import { MOVE, WEAPONS, AGENT, WORLD } from '../config.js';
+import { MOVE, WEAPONS, AGENT, WORLD, CHAT } from '../config.js';
 import { clamp, toDeg, makeRng } from '../util.js';
 
 /** Keyword -> trait nudges. Each entry may push several traits at once. */
@@ -108,6 +108,59 @@ export function parsePrompt(text = '') {
 
 const nearestEnemy = (s) => (s.enemies.length ? s.enemies[0] : null);
 
+/**
+ * Barks, in two voices. A prompt that reads as aggressive gets the loud set.
+ * Keyed by situation rather than by decision, so agents comment on what just
+ * changed instead of narrating every tick.
+ */
+const BARKS = {
+  bold: {
+    engage: ['Contact — {enemy}!', 'Found you, {enemy}.', 'On {enemy}!', 'Target sighted.'],
+    kill: ['Down!', 'Got {victim}.', 'Next.', 'Too easy.'],
+    reload: ['Reloading!', 'Dry — cover me.', 'Swapping mag.'],
+    retreat: ['Falling back!', 'Not today.', 'Regrouping.'],
+    loot: ['Mine.', 'Grabbing that.', 'Restocking.'],
+    hurt: ['Where was that from?', 'Still up.', 'That stung.'],
+  },
+  wary: {
+    engage: ['Enemy spotted: {enemy}.', 'Contact, {enemy}.', 'Holding on {enemy}.', 'I see something.'],
+    kill: ['Target down.', '{victim} is down.', 'Clear.'],
+    reload: ['Reloading.', 'Magazine empty.', 'Need a second.'],
+    retreat: ['Breaking off.', 'Too exposed.', 'Backing away.'],
+    loot: ['Medkit in reach.', 'Picking that up.', 'Supplies.'],
+    hurt: ['Taking fire.', 'Hit.', 'Under fire.'],
+  },
+};
+
+/**
+ * Choose a line for whatever just changed. Returns null most of the time: an
+ * agent only speaks when its situation actually changes, and never more often
+ * than CHAT.minInterval, so ten agents stay readable instead of shouting.
+ */
+function bark(situation, s, traits, rng, state, fill = {}) {
+  if (!situation) return null;
+  if (situation === state.lastBark && s.time - state.lastBarkAt < CHAT.duration * 3) return null;
+  if (s.time - (state.lastBarkAt ?? -Infinity) < CHAT.minInterval) return null;
+
+  const voice = traits.aggression >= 0.5 ? BARKS.bold : BARKS.wary;
+  const lines = voice[situation];
+  if (!lines) return null;
+
+  state.lastBark = situation;
+  state.lastBarkAt = s.time;
+  return lines[Math.floor(rng() * lines.length)].replace(/\{(\w+)\}/g, (_, key) => fill[key] ?? 'them');
+}
+
+/** Read the events feed for things worth shouting about. */
+function situationFromEvents(events = []) {
+  for (const event of events) {
+    if (/^You killed /.test(event)) return { situation: 'kill', victim: event.replace(/^You killed /, '').replace(/\.$/, '') };
+    if (/^Picked up/.test(event)) return { situation: 'loot' };
+    if (/^Took \d+ damage/.test(event)) return { situation: 'hurt' };
+  }
+  return {};
+}
+
 /** Aim tolerance that actually corresponds to hitting a body of this size. */
 function aimTolerance(distance, weaponId) {
   const angular = toDeg(Math.atan2(WORLD.agentRadius * 0.9, Math.max(40, distance)));
@@ -169,8 +222,11 @@ export function decideFromTraits(s, traits, rng, state = {}) {
   let note;
 
   // --- housekeeping --------------------------------------------------------
+  const event = situationFromEvents(s.events);
+  const eventLine = bark(event.situation, s, traits, rng, state, { victim: event.victim });
+
   if (s.self.reloading) {
-    return { actions: [{ name: 'hold', input: { seconds: 0.5 } }], note: 'waiting out reload' };
+    return { actions: [{ name: 'hold', input: { seconds: 0.5 } }], note: 'waiting out reload', chat: eventLine };
   }
 
   if (s.self.ammo <= 0) {
@@ -182,9 +238,10 @@ export function decideFromTraits(s, traits, rng, state = {}) {
           { name: 'reload', input: {} },
         ],
         note: 'dry - backing off to reload',
+        chat: eventLine ?? bark('reload', s, traits, rng, state),
       };
     }
-    return { actions: [{ name: 'reload', input: {} }], note: 'reloading' };
+    return { actions: [{ name: 'reload', input: {} }], note: 'reloading', chat: eventLine ?? bark('reload', s, traits, rng, state) };
   }
 
   const magazine = WEAPONS[s.self.weaponId]?.magazine ?? 3;
@@ -214,7 +271,7 @@ export function decideFromTraits(s, traits, rng, state = {}) {
         actions.push({ name: 'turn', input: { direction: traits.turnBias, degrees: 130 } });
         actions.push({ name: 'move', input: { direction: 'forward', steps: 6 } });
       }
-      return { actions, note };
+      return { actions, note, chat: eventLine ?? bark('retreat', s, traits, rng, state) };
     }
 
     const align = alignTo(enemy.bearing, s, tolerance);
@@ -232,6 +289,10 @@ export function decideFromTraits(s, traits, rng, state = {}) {
     // Close or open the gap toward the preferred fighting distance. At the
     // distance it wants, a strafing agent circles instead of standing still -
     // sidestepping is the only move that does not cost it the aim it just set.
+    const newContact = state.lastEnemy !== enemy.name;
+    state.lastEnemy = enemy.name;
+    const engageLine = eventLine ?? (newContact ? bark('engage', s, traits, rng, state, { enemy: enemy.name }) : null);
+
     const gap = enemy.distance - traits.preferredDistance;
     if (gap > 90 && lined) {
       actions.push({ name: 'move', input: { direction: 'forward', steps: clamp(Math.round(gap / MOVE.stepDistance), 1, 5) } });
@@ -247,8 +308,10 @@ export function decideFromTraits(s, traits, rng, state = {}) {
         note = `${note}, circling ${side}`;
       }
     }
-    return { actions, note };
+    return { actions, note, chat: engageLine };
   }
+
+  state.lastEnemy = null;
 
   // --- loot ----------------------------------------------------------------
   const wantsHealth = hpFraction < 0.95;
@@ -262,7 +325,7 @@ export function decideFromTraits(s, traits, rng, state = {}) {
     actions.push(...alignTo(target.bearing, s, 4));
     const steps = clamp(Math.round(target.distance / MOVE.stepDistance), 1, 8);
     actions.push({ name: 'move', input: { direction: 'forward', steps } });
-    return { actions, note: `collecting ${target.label}` };
+    return { actions, note: `collecting ${target.label}`, chat: eventLine ?? bark('loot', s, traits, rng, state) };
   }
 
   // --- nothing in sight: search -------------------------------------------
@@ -276,6 +339,7 @@ export function decideFromTraits(s, traits, rng, state = {}) {
         { name: 'move', input: { direction: 'forward', steps: 3 } },
       ],
       note: 'wall ahead, turning away',
+      chat: eventLine,
     };
   }
 
@@ -283,6 +347,7 @@ export function decideFromTraits(s, traits, rng, state = {}) {
     return {
       actions: [{ name: 'turn', input: { direction: traits.turnBias, degrees: 60 } }],
       note: 'spinning to scan',
+      chat: eventLine,
     };
   }
 
@@ -293,6 +358,7 @@ export function decideFromTraits(s, traits, rng, state = {}) {
         { name: 'hold', input: { seconds: 0.8 + rng() * 1.2 } },
       ],
       note: 'holding position, watching',
+      chat: eventLine,
     };
   }
 
@@ -304,6 +370,7 @@ export function decideFromTraits(s, traits, rng, state = {}) {
       { name: 'move', input: { direction: 'forward', steps: 2 + Math.floor(rng() * 4) } },
     ],
     note: 'searching',
+    chat: eventLine,
   };
 }
 

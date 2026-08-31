@@ -14,6 +14,7 @@ export function createParticipant({ name, prompt, brainKind, colorIndex }) {
     status: 'queued',      // 'live' | 'queued' | 'cooldown'
     readyAt: 0,
     kills: 0,
+    assists: 0,
     deaths: 0,
     damageDealt: 0,
     damageTaken: 0,
