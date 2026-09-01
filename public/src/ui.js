@@ -3,14 +3,16 @@
 import { WORLD, LOBBY, WEAPONS, HEALTH_PACKS, LOOT, VISION, MOVE, AGENT, AGENT_COLORS, PULSE } from './config.js';
 import { renderSnapshotText } from './sensors.js';
 import { TOOL_SCHEMAS, TOOL_SUMMARIES } from './actions.js';
+import { hasConstraints } from './constraints.js';
 import { formatClock, round0 } from './util.js';
 import { PRESETS } from './presets.js';
 
 const $ = (id) => document.getElementById(id);
 
 export class UI {
-  constructor({ world, onJoin, onDemo, onClear, onSelect, onTogglePause }) {
+  constructor({ world, chatLog, onJoin, onDemo, onClear, onSelect, onTogglePause }) {
     this.world = world;
+    this.chatLog = chatLog;
     this.onJoin = onJoin;
     this.onSelect = onSelect;
     this.selectedId = null;
@@ -41,6 +43,10 @@ export class UI {
       demo: $('btn-demo'),
       clear: $('btn-clear'),
       leaderboard: $('leaderboard'),
+      chatlog: $('chatlog'),
+      commsCount: $('comms-count'),
+      commsStore: $('comms-store'),
+      commsEmpty: $('comms-empty'),
       champions: $('champions'),
 
       focusEmpty: $('focus-empty'),
@@ -64,6 +70,18 @@ export class UI {
     // The focus bar redraws every frame, so it diffs against this.
     this.barState = {};
     this.buildWeaponSlots();
+
+    // One stylesheet rule decides which side of the comms panel a message sits
+    // on. Swapping its text restyles every matching message at once - no
+    // per-row DOM work, however long the history gets.
+    this.focusStyle = document.createElement('style');
+    document.head.append(this.focusStyle);
+    this.renderedChat = 0;
+
+    if (this.chatLog) {
+      this.chatLog.onChange(() => this.renderChat());
+      this.renderChat();
+    }
 
     this.el.max.textContent = String(WORLD.maxAgents);
     this.fillPresets();
@@ -213,6 +231,20 @@ export class UI {
     this.onSelect?.(this.selectedId);
   }
 
+  /** Point the single "mine" rule at whoever is focused. */
+  applyChatFocus() {
+    const id = this.selectedId;
+    // Participant ids are generated as p<number>, so they need no escaping.
+    this.focusStyle.textContent = id
+      ? `.chatlog li[data-agent="${id}"] { align-self: flex-end; }
+         .chatlog li[data-agent="${id}"] .who { text-align: right; }
+         .chatlog li[data-agent="${id}"] .bubble {
+           background: var(--accent); border-color: var(--accent);
+           color: #05202e; border-radius: 12px 12px 3px 12px;
+         }`
+      : '';
+  }
+
   selectByPoint(x, y) {
     let hit = null;
     for (const agent of this.world.agents) {
@@ -303,6 +335,22 @@ export class UI {
         </span></div>`,
       `<blockquote class="prompt-quote">${escapeHtml(participant.prompt)}</blockquote>`,
     ];
+
+    if (hasConstraints(participant.constraints)) {
+      parts.push(
+        `<div><span class="label">Hard rules from your prompt</span><div class="chips">` +
+          participant.constraints.rules.map((r) => `<span class="chip rule">${escapeHtml(r)}</span>`).join('') +
+          `</div></div>`,
+      );
+    }
+
+    if (agent?.lastRefused?.length) {
+      parts.push(
+        `<div><span class="label">Refused last decision</span><div class="chips">` +
+          agent.lastRefused.map((r) => `<span class="chip err">${escapeHtml(r)}</span>`).join('') +
+          `</div></div>`,
+      );
+    }
 
     if (participant.lastError) {
       parts.push(`<div class="chips"><span class="chip err">${escapeHtml(participant.lastError)}</span></div>`);
@@ -446,6 +494,39 @@ export class UI {
             <span class="tally"><b>${c.kills}</b>K <b>${c.assists}</b>A</span>
           </li>`).join('')
       : '<li class="empty muted">No lives have ended yet.</li>';
+  }
+
+  /**
+   * Append-only: existing messages are never re-rendered, and a history that
+   * scrolled off the ring is trimmed from the front.
+   */
+  renderChat() {
+    const messages = this.chatLog.messages;
+    this.el.commsEmpty.hidden = messages.length > 0;
+    this.el.commsCount.textContent = messages.length ? `${messages.length}` : '';
+    this.el.commsStore.textContent = this.chatLog.serverBacked
+      ? `server · max ${this.chatLog.capacity}`
+      : `this tab · max ${this.chatLog.capacity}`;
+
+    // The store drops from the front when full; mirror that in the DOM.
+    while (this.el.chatlog.children.length > messages.length) {
+      this.el.chatlog.firstElementChild.remove();
+    }
+
+    const nearBottom =
+      this.el.chatlog.scrollHeight - this.el.chatlog.scrollTop - this.el.chatlog.clientHeight < 60;
+
+    for (let i = this.el.chatlog.children.length; i < messages.length; i++) {
+      const message = messages[i];
+      const row = document.createElement('li');
+      row.dataset.agent = message.agentId;
+      row.innerHTML =
+        `<span class="who" style="color:${escapeHtml(message.color)}">${escapeHtml(message.name)}</span>` +
+        `<span class="bubble">${escapeHtml(message.text)}</span>`;
+      this.el.chatlog.append(row);
+    }
+
+    if (nearBottom) this.el.chatlog.scrollTop = this.el.chatlog.scrollHeight;
   }
 
   renderLog() {

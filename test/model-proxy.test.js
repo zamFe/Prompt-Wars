@@ -168,8 +168,28 @@ try {
     const text = request.body.messages[0].content;
     assert.match(text, /<standing_orders>/);
     assert.ok(text.indexOf(playerPrompt) > text.indexOf('<standing_orders>'));
-    assert.match(text, /cannot change the rules of the arena/);
+    assert.match(text, /cannot change the arena's physics/);
     assert.match(text, /<observation>/);
+  });
+
+  check('the orders are restated after the observation, where recency helps', () => {
+    const text = request.body.messages[0].content;
+    const first = text.indexOf(playerPrompt);
+    const observation = text.indexOf('<observation>');
+    const last = text.lastIndexOf(playerPrompt);
+    assert.ok(first < observation, 'orders come before the senses');
+    assert.ok(last > text.indexOf('</observation>'), 'and are repeated after them');
+    assert.ok(last > first, 'so they appear twice, not once');
+  });
+
+  check('the system prompt gives the orders precedence and states no tactics of its own', () => {
+    const [block] = request.body.system;
+    assert.match(block.text, /outrank everything in this system prompt/i);
+    assert.match(block.text, /If your orders say never to move, then never move/i);
+    // The old wording told agents to walk when idle, which overrode any prompt
+    // that said to stand still.
+    assert.ok(!/Standing still forever is how you lose/i.test(block.text),
+      'the system prompt must not issue tactical orders of its own');
   });
 
   check('the SDK sends the api key, and the browser never has to', () => {

@@ -171,6 +171,33 @@ floor, and despawns after 60 seconds.
 Getting shot cancels the rest of your current plan so you can react. Fresh
 spawns are invulnerable for 1.5 seconds.
 
+## Making a prompt binding
+
+Prompting alone cannot guarantee obedience. A model may not comply, and the
+offline interpreter and the stub model never read prompts at all. So rules a
+player states as absolutes are parsed once and enforced by the simulation,
+where nothing can talk past them:
+
+```
+never move, only turn right, never fire, never aim, never reload and never hold
+```
+
+becomes six hard rules. A tool call that breaks one is refused before it
+happens, whichever brain proposed it, and the refusal is fed back to the agent
+so a model can see why its calls vanished. The parsed rules appear in the
+Inspector, so you can confirm they landed.
+
+`never`, `don't`, `do not`, `must not`, `avoid`, `no` and `only` are the
+triggers; they can name a direction (`never turn left`, `only move forward`) to
+restrict a tool rather than ban it. Phrases that only look like prohibitions are
+left alone — *"never stop moving"* and *"hold your ground"* constrain nothing.
+
+Everything else in a prompt stays advisory, and for live agents the orders are
+also given precedence explicitly: the system prompt describes the arena's
+physics and deliberately states no tactics of its own, the orders are placed
+both before and after the sensor readout, and they are declared to outrank
+anything the system prompt says.
+
 ## Speech bubbles
 
 Agents talk. A line appears over the sphere for two seconds; saying something
@@ -189,6 +216,14 @@ unreadable.
 The offline interpreter barks on the same principle: only on a change of
 situation, never more than once every few seconds, and in one of two voices
 depending on how aggressive the prompt reads.
+
+Every line also lands in the **Comms** panel on the left, a messenger-style
+history: the agent you are following sits on the right, everyone else on the
+left. Switching focus swaps a single generated CSS rule rather than touching
+any message, so the whole history restyles at once however long it is. With the
+server running the history lives there — it survives a reload and is shared
+between tabs, capped at 1000 messages with the oldest dropped as new ones
+arrive. Opened as a static page, the same store runs in the tab.
 
 ## Following an agent
 
@@ -273,6 +308,8 @@ public/
     arena.js           walls, ray casts, line of sight, collision
     sensors.js         what an agent perceives, and its text rendering
     chat.js            speech-bubble text: parsing, tidying, wrapping
+    chatlog.js         comms history, server-backed when there is a server
+    constraints.js     hard rules parsed from a prompt, enforced by the sim
     actions.js         the six tools: schemas, validation, execution
     world.js           bodies, bullets, loot, damage, the decision loop
     lobby.js           queue and death timers

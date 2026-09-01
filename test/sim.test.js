@@ -13,6 +13,7 @@ import { normalizeAction, buildQueue, stepAction, describeAction, MOVE_DIRECTION
 import { hasLineOfSight, castRay, clearance, resolveCollision } from '../public/src/arena.js';
 import { WEAPONS, AGENT, WORLD, LOBBY, VISION, MOVE, CHAT, PULSE } from '../public/src/config.js';
 import { extractChat, wrapChat, tidy } from '../public/src/chat.js';
+import { parseConstraints, enforce, violation, hasConstraints, describeConstraints } from '../public/src/constraints.js';
 
 let passed = 0;
 let failed = 0;
@@ -554,6 +555,98 @@ test('the offline brain speaks when something happens, not every tick', async ()
     'the same bark must not repeat just because the interval elapsed');
   assert.ok((await brain.decide(snapshot(50 + CHAT.duration * 3 + 0.5, ['You killed C.']), fresh)).chat,
     'after the longer repeat window it may say it again');
+});
+
+console.log('\n-- hard rules from the prompt ------------------------------------');
+
+test('an absolute prompt is parsed into rules the arena can enforce', () => {
+  const c = parseConstraints(
+    'follow these rules exactly: never move, only turn right, never fire, never aim, never reload and never hold');
+  assert.ok(hasConstraints(c));
+  for (const tool of ['move', 'fire', 'aim', 'reload', 'hold']) {
+    assert.ok(c.banned.has(tool), `${tool} should be banned`);
+  }
+  assert.deepEqual([...c.directions.turn.allow], ['right']);
+});
+
+test('rules bind a brain that never reads the prompt at all', async () => {
+  // Exactly the stub model's behaviour: sensible tactics, prompt ignored.
+  const ignorant = {
+    decide: async () => ({
+      actions: [
+        { name: 'move', input: { direction: 'forward', steps: 3 } },
+        { name: 'turn', input: { direction: 'left', degrees: 40 } },
+        { name: 'fire', input: { shots: 2 } },
+        { name: 'turn', input: { direction: 'right', degrees: 30 } },
+      ],
+    }),
+  };
+  const world = new World({ seed: 4, brains: { local: ignorant, claude: ignorant } });
+  const participant = createParticipant({
+    name: 'Rules', prompt: 'never move, only turn right, never fire, never aim, never reload and never hold',
+    brainKind: 'local', colorIndex: 0,
+  });
+  world.lobby.add(participant);
+
+  const startX = participant.agent.x;
+  const startY = participant.agent.y;
+  for (let i = 0; i < 60 * 6; i++) {
+    world.update(1 / 60);
+    if (i % 30 === 0) await new Promise((r) => setImmediate(r));
+  }
+
+  assert.deepEqual(participant.agent.lastActions, ['turn right 30°'], 'only the legal call survives');
+  assert.equal(participant.shotsFired, 0, 'never fire must mean no shots');
+  assert.ok(Math.hypot(participant.agent.x - startX, participant.agent.y - startY) < 1,
+    'never move must mean it has not moved');
+  assert.ok(participant.agent.lastRefused.length > 0, 'and it is told what was refused');
+});
+
+test('a refusal names the rule so a model can adapt', () => {
+  const c = parseConstraints('never fire, only turn right');
+  assert.match(violation({ type: 'fire' }, c), /forbid fire/);
+  assert.match(violation({ type: 'turn', direction: 'left' }, c), /only right/);
+  assert.equal(violation({ type: 'turn', direction: 'right' }, c), null);
+  assert.equal(violation({ type: 'move', direction: 'forward' }, c), null, 'unmentioned tools stay free');
+});
+
+test('the idle beat is exempt, so a fully bound agent does not deadlock', () => {
+  const c = parseConstraints('never move, never turn, never fire, never aim, never reload, never hold');
+  assert.equal(violation({ type: 'hold', forced: true }, c), null, 'the forced idle must survive');
+  assert.match(violation({ type: 'hold' }, c), /forbid hold/, 'but a hold the brain chose does not');
+});
+
+test('direction-specific rules restrict without banning the whole tool', () => {
+  const c = parseConstraints('do not move backward. never turn left.');
+  assert.equal(c.banned.has('move'), false, 'moving is still allowed');
+  assert.match(violation({ type: 'move', direction: 'backward' }, c), /forbid move backward/);
+  assert.equal(violation({ type: 'move', direction: 'forward' }, c), null);
+  assert.match(violation({ type: 'turn', direction: 'left' }, c), /forbid turn left/);
+});
+
+test('phrases that only look like prohibitions are left alone', () => {
+  // "never stop moving" is the opposite of a ban on moving.
+  assert.equal(hasConstraints(parseConstraints('Be aggressive. Never stop moving.')), false);
+  assert.equal(hasConstraints(parseConstraints('Never retreat. Hunt them down and shoot.')), false);
+  assert.equal(hasConstraints(parseConstraints('Camp in a corner and hold your ground.')), false);
+  assert.equal(hasConstraints(parseConstraints('Circle your target while firing.')), false);
+});
+
+test('enforce keeps legal actions and reports the rest once each', () => {
+  const c = parseConstraints('never fire');
+  const { actions, refused } = enforce(
+    [{ type: 'turn', direction: 'left' }, { type: 'fire' }, { type: 'fire' }], c);
+  assert.equal(actions.length, 1);
+  assert.deepEqual(refused, ['your orders forbid fire'], 'duplicates collapse');
+  assert.match(describeConstraints(c), /never fire/);
+});
+
+test('a prompt with no absolutes constrains nothing', () => {
+  const { actions, refused } = enforce(
+    [{ type: 'fire' }, { type: 'move', direction: 'forward' }],
+    parseConstraints('Be aggressive and hunt the nearest enemy.'));
+  assert.equal(actions.length, 2);
+  assert.equal(refused.length, 0);
 });
 
 console.log('\n-- assists, pulses and champions ---------------------------------');

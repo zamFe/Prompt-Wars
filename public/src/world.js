@@ -5,6 +5,7 @@ import { makeRng, clamp, dist, toRad, normalizeDeg, randRange, weightedPick, poi
 import { findOpenPosition, resolveCollision, hasLineOfSight, castRay } from './arena.js';
 import { buildSnapshot, bearingTo } from './sensors.js';
 import { buildQueue, stepAction, describeAction } from './actions.js';
+import { enforce, hasConstraints, describeConstraints } from './constraints.js';
 import { Lobby } from './lobby.js';
 
 const SPAWN_PROTECTION = 1.5;
@@ -25,6 +26,7 @@ export class World {
     this.log = [];
     this.lobby = new Lobby(this);
     this.champions = [];               // best single lives, highest kills first
+    this.onSay = null;                 // set by the client to mirror bubbles into the comms log
     this.nextLootAt = randRange(this.rng, ...LOOT.spawnCooldown);
     this.paused = false;
   }
@@ -46,6 +48,7 @@ export class World {
       until: this.time + CHAT.duration,
       saidAt: this.time,
     };
+    this.onSay?.(agent, agent.chat.text);
   }
 
   pulse(agent, kind) {
@@ -89,10 +92,13 @@ export class World {
       thinkToken: 0,
       nextDecisionAt: 0,
       lastActions: [],
+      lastRefused: [],
       lastSnapshot: null,
       lastNote: null,
       lastError: null,
-      pendingEvents: ['You have entered the arena.'],
+      pendingEvents: hasConstraints(participant.constraints)
+        ? [`You have entered the arena. Your orders bind you: ${describeConstraints(participant.constraints)}.`]
+        : ['You have entered the arena.'],
       blocked: false,
       lastInterruptAt: -Infinity,
       spawnedAt: this.time,
@@ -454,13 +460,25 @@ export class World {
         agent.lastNote = decision?.note ?? null;
         if (decision?.chat) this.say(agent, decision.chat);
 
-        const actions = buildQueue(decision?.actions, agent);
+        const proposed = buildQueue(decision?.actions, agent);
+
+        // The prompt's hard rules are applied here rather than trusted to the
+        // brain, so they hold for every brain including ones that never read
+        // the prompt at all.
+        const { actions, refused } = enforce(proposed, agent.participant.constraints);
         agent.queue = actions;
         agent.lastActions = actions.map(describeAction);
+        agent.lastRefused = refused;
+
+        for (const reason of refused) {
+          agent.pendingEvents.push(`Refused: ${reason}. That action did not happen.`);
+        }
+
         if (!actions.length) {
-          // A brain that returned nothing usable should not spin the CPU.
-          agent.queue = [{ type: 'hold', remaining: 0.4, total: 0.4 }];
-          agent.lastActions = ['hold 0.4s (no action returned)'];
+          // Nothing usable came back, or the rules forbade all of it. `forced`
+          // keeps this idle beat itself exempt from the rules.
+          agent.queue = [{ type: 'hold', remaining: 0.4, total: 0.4, forced: true }];
+          agent.lastActions = [refused.length ? 'idle (all actions refused)' : 'hold 0.4s (no action returned)'];
         }
         agent.pendingEvents.splice(0, consumedEvents);
       })

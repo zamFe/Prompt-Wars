@@ -35,6 +35,12 @@
 
 * { box-sizing: border-box; }
 
+/*
+ * A component's own `display` beats the browser's [hidden] rule, so anything
+ * laid out with flex or grid stays on screen when hidden. Settle it once.
+ */
+[hidden] { display: none !important; }
+
 html, body {
   margin: 0;
   height: 100%;
@@ -94,10 +100,95 @@ html, body {
 /* ------------------------------------------------------------------ layout */
 main {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 400px;
+  grid-template-columns: 310px minmax(0, 1fr) 400px;
+  grid-template-areas: "comms arena panel";
   gap: 16px;
   padding: 16px;
   align-items: start;
+}
+
+.arena-wrap { grid-area: arena; }
+.panel { grid-area: panel; }
+.comms { grid-area: comms; }
+
+/* ------------------------------------------------------------------- comms */
+.comms {
+  position: sticky;
+  top: 16px;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 14px;
+  max-height: calc(100vh - 90px);
+  min-height: 0;
+}
+
+.comms-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.comms h2 { margin: 0 0 10px; }
+.comms-store { font-size: 10.5px; color: var(--muted); font-family: var(--font-mono); }
+
+.chatlog {
+  list-style: none;
+  margin: 0;
+  padding: 0 2px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  min-height: 0;
+  flex: 1;
+}
+
+.chatlog li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: 88%;
+  align-self: flex-start;
+}
+
+.chatlog .who {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 0 3px;
+}
+
+.chatlog .bubble {
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 12px 12px 12px 3px;
+  padding: 6px 10px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--text);
+  word-break: break-word;
+}
+
+/*
+ * The focused agent's messages move to the right. Which agent that is comes
+ * from a single generated rule swapped on focus change (see ui.js), so
+ * switching focus restyles every message at once without touching the DOM.
+ */
+.chatlog li.mine { align-self: flex-end; }
+.chatlog li.mine .who { text-align: right; }
+.chatlog li.mine .bubble {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #05202e;
+  border-radius: 12px 12px 3px 12px;
+}
+
+.comms-empty { margin: 0; color: var(--muted); font-size: 12.5px; }
+
+@media (max-width: 1439px) {
+  main {
+    grid-template-columns: minmax(0, 1fr) 400px;
+    grid-template-areas: "arena panel" "comms panel";
+  }
+  .comms { position: static; max-height: 340px; }
 }
 
 .arena-wrap {
@@ -233,6 +324,7 @@ button.ghost:hover { border-color: #394462; }
 .chips { display: flex; flex-wrap: wrap; gap: 5px; }
 .chip { background: var(--panel-2); border: 1px solid var(--line); border-radius: 999px; padding: 2px 9px; font-size: 11.5px; font-family: var(--font-mono); }
 .chip.err { border-color: rgba(239, 68, 68, 0.5); color: #fca5a5; }
+.chip.rule { border-color: rgba(250, 204, 21, 0.45); color: #facc15; font-family: var(--font-mono); }
 .muted { color: var(--muted); }
 .prompt-quote {
   margin: 0; padding: 8px 10px; border-left: 2px solid var(--line);
@@ -439,7 +531,7 @@ button.ghost:hover { border-color: #394462; }
 }
 
 @media (max-width: 1080px) {
-  main { grid-template-columns: 1fr; }
+  main { grid-template-columns: 1fr; grid-template-areas: "arena" "comms" "panel"; }
   .arena-wrap { position: static; }
   #arena { max-width: 100%; }
 }
@@ -472,6 +564,15 @@ button:focus-visible, .roster li:focus-visible {
   </header>
 
   <main>
+    <aside class="comms">
+      <div class="comms-head">
+        <h2>Comms <em id="comms-count"></em></h2>
+        <span class="comms-store" id="comms-store"></span>
+      </div>
+      <ol class="chatlog" id="chatlog"></ol>
+      <p class="comms-empty" id="comms-empty">Agents talk when something happens. Nothing yet.</p>
+    </aside>
+
     <section class="arena-wrap">
       <canvas id="arena" aria-label="Prompt Wars arena"></canvas>
 
@@ -1496,8 +1597,151 @@ function stepAction(agent, action, dt, ctx) {
   }
 }
 
+// ---- public/src/constraints.js -----------------------------------
+// Hard rules read out of a player's prompt.
+//
+// Prompting alone cannot guarantee obedience - a model may simply not comply,
+// and the offline interpreter and the stub model do not read prompts at all.
+// So explicit prohibitions are parsed once and enforced in the simulation,
+// where nothing can talk its way past them. "never fire" means the fire tool
+// stops working, whichever brain is driving.
+
+const NEGATION = String.raw`(?:never|do\s+not|don['’]?t|must\s+not|mustn['’]?t|refuse\s+to|avoid|no)`;
+
+/** Words that flip a negation into its opposite: "never stop moving" is not a ban on moving. */
+const INVERTERS = /\b(?:stop|stopping|cease|ceasing|quit|hesitate|slow)\b/;
+
+const VERBS = {
+  turn: /turn(?:ing)?|rotat(?:e|ing)|pivot(?:ing)?/.source,
+  move: /mov(?:e|ing)|walk(?:ing)?|advanc(?:e|ing)|step(?:ping)?|strafe|strafing|sidestep(?:ping)?|run(?:ning)?/.source,
+  aim: /aim(?:ing)?/.source,
+  fire: /fir(?:e|ing)|shoot(?:ing)?|shot/.source,
+  reload: /reload(?:ing)?/.source,
+  hold: /hold(?:ing)?|wait(?:ing)?/.source,
+};
+
+const DIRECTIONS = {
+  left: 'left',
+  right: 'right',
+  forward: 'forward',
+  forwards: 'forward',
+  ahead: 'forward',
+  backward: 'backward',
+  backwards: 'backward',
+  back: 'backward',
+  center: 'center',
+  centre: 'center',
+};
+
+const DIRECTION_WORDS = Object.keys(DIRECTIONS).join('|');
+const TOOLS_WITH_DIRECTIONS = ['turn', 'move', 'aim'];
+
+function emptyConstraints() {
+  return {
+    banned: new Set(),
+    // Per tool: `allow` is a whitelist when present, `deny` always wins.
+    directions: {
+      turn: { allow: null, deny: new Set() },
+      move: { allow: null, deny: new Set() },
+      aim: { allow: null, deny: new Set() },
+    },
+    rules: [],          // human-readable, for the UI
+  };
+}
+
+/**
+ * Parse the hard rules out of a prompt. Everything else in a prompt stays
+ * advisory - this only picks up statements a player clearly meant as absolute.
+ */
+function parseConstraints(text = '') {
+  const lower = ` ${String(text).toLowerCase().replace(/\s+/g, ' ')} `;
+  const constraints = emptyConstraints();
+
+  for (const [tool, verb] of Object.entries(VERBS)) {
+    // "never fire", "do not move backward", "never turn left"
+    const banPattern = new RegExp(
+      `${NEGATION}\\s+((?:\\w+\\s+){0,2}?)(?:${verb})(?:\\s+(${DIRECTION_WORDS}))?\\b`,
+      'g',
+    );
+    for (const match of lower.matchAll(banPattern)) {
+      const filler = match[1] ?? '';
+      if (INVERTERS.test(filler)) continue;                 // "never stop moving"
+      if (tool === 'hold' && /\bback\b/.test(lower.slice(match.index + match[0].length, match.index + match[0].length + 6))) continue;
+
+      const direction = match[2] ? DIRECTIONS[match[2]] : null;
+      if (direction && constraints.directions[tool]) {
+        constraints.directions[tool].deny.add(direction);
+        constraints.rules.push(`never ${tool} ${direction}`);
+      } else {
+        constraints.banned.add(tool);
+        constraints.rules.push(`never ${tool}`);
+      }
+    }
+
+    // "only turn right", "only move forward"
+    if (!constraints.directions[tool]) continue;
+    const onlyPattern = new RegExp(`\\bonly\\s+((?:\\w+\\s+){0,2}?)(?:${verb})\\s+(${DIRECTION_WORDS})\\b`, 'g');
+    for (const match of lower.matchAll(onlyPattern)) {
+      const direction = DIRECTIONS[match[2]];
+      constraints.directions[tool].allow ??= new Set();
+      constraints.directions[tool].allow.add(direction);
+      constraints.rules.push(`only ${tool} ${direction}`);
+    }
+  }
+
+  constraints.rules = [...new Set(constraints.rules)];
+  return constraints;
+}
+const hasConstraints = (c) =>
+  Boolean(c) && (c.banned.size > 0 || TOOLS_WITH_DIRECTIONS.some((t) => c.directions[t].allow || c.directions[t].deny.size));
+
+/** Would this action be refused? Returns the reason, or null when it is allowed. */
+function violation(action, constraints) {
+  if (!action || !constraints || action.forced) return null;
+
+  if (constraints.banned.has(action.type)) return `your orders forbid ${action.type}`;
+
+  const rule = constraints.directions[action.type];
+  if (!rule) return null;
+
+  const direction = action.type === 'aim'
+    ? (action.target === 0 ? 'center' : action.target < 0 ? 'left' : 'right')
+    : action.direction;
+  if (!direction) return null;
+
+  if (rule.deny.has(direction)) return `your orders forbid ${action.type} ${direction}`;
+  if (rule.allow && !rule.allow.has(direction)) {
+    return `your orders allow ${action.type} only ${[...rule.allow].join(' or ')}`;
+  }
+  return null;
+}
+
+/**
+ * Drop every action the prompt forbids. Returns the surviving actions plus the
+ * reasons, which are fed back to the agent so a model can see why its calls
+ * vanished rather than silently repeating them.
+ */
+function enforce(actions, constraints) {
+  if (!hasConstraints(constraints)) return { actions, refused: [] };
+
+  const kept = [];
+  const refused = [];
+  for (const action of actions) {
+    const reason = violation(action, constraints);
+    if (reason) refused.push(reason);
+    else kept.push(action);
+  }
+  return { actions: kept, refused: [...new Set(refused)] };
+}
+
+/** One line summarising the rules, for the system prompt and the UI. */
+function describeConstraints(constraints) {
+  return hasConstraints(constraints) ? constraints.rules.join('; ') : '';
+}
+
 // ---- public/src/lobby.js -----------------------------------------
 // Who is in the arena, who is waiting, and who is sitting out a death timer.
+
 
 let nextId = 1;
 function createParticipant({ name, prompt, brainKind, colorIndex }) {
@@ -1507,6 +1751,8 @@ function createParticipant({ name, prompt, brainKind, colorIndex }) {
     prompt,
     brainKind,
     colorIndex,
+    // Hard rules the prompt stated outright, enforced by the simulation.
+    constraints: parseConstraints(prompt),
     status: 'queued',      // 'live' | 'queued' | 'cooldown'
     readyAt: 0,
     kills: 0,
@@ -1621,6 +1867,7 @@ class Lobby {
 
 
 
+
 const SPAWN_PROTECTION = 1.5;
 let nextAgentId = 1;
 let nextPickupId = 1;
@@ -1638,6 +1885,7 @@ class World {
     this.log = [];
     this.lobby = new Lobby(this);
     this.champions = [];               // best single lives, highest kills first
+    this.onSay = null;                 // set by the client to mirror bubbles into the comms log
     this.nextLootAt = randRange(this.rng, ...LOOT.spawnCooldown);
     this.paused = false;
   }
@@ -1659,6 +1907,7 @@ class World {
       until: this.time + CHAT.duration,
       saidAt: this.time,
     };
+    this.onSay?.(agent, agent.chat.text);
   }
 
   pulse(agent, kind) {
@@ -1702,10 +1951,13 @@ class World {
       thinkToken: 0,
       nextDecisionAt: 0,
       lastActions: [],
+      lastRefused: [],
       lastSnapshot: null,
       lastNote: null,
       lastError: null,
-      pendingEvents: ['You have entered the arena.'],
+      pendingEvents: hasConstraints(participant.constraints)
+        ? [`You have entered the arena. Your orders bind you: ${describeConstraints(participant.constraints)}.`]
+        : ['You have entered the arena.'],
       blocked: false,
       lastInterruptAt: -Infinity,
       spawnedAt: this.time,
@@ -2067,13 +2319,25 @@ class World {
         agent.lastNote = decision?.note ?? null;
         if (decision?.chat) this.say(agent, decision.chat);
 
-        const actions = buildQueue(decision?.actions, agent);
+        const proposed = buildQueue(decision?.actions, agent);
+
+        // The prompt's hard rules are applied here rather than trusted to the
+        // brain, so they hold for every brain including ones that never read
+        // the prompt at all.
+        const { actions, refused } = enforce(proposed, agent.participant.constraints);
         agent.queue = actions;
         agent.lastActions = actions.map(describeAction);
+        agent.lastRefused = refused;
+
+        for (const reason of refused) {
+          agent.pendingEvents.push(`Refused: ${reason}. That action did not happen.`);
+        }
+
         if (!actions.length) {
-          // A brain that returned nothing usable should not spin the CPU.
-          agent.queue = [{ type: 'hold', remaining: 0.4, total: 0.4 }];
-          agent.lastActions = ['hold 0.4s (no action returned)'];
+          // Nothing usable came back, or the rules forbade all of it. `forced`
+          // keeps this idle beat itself exempt from the rules.
+          agent.queue = [{ type: 'hold', remaining: 0.4, total: 0.4, forced: true }];
+          agent.lastActions = [refused.length ? 'idle (all actions refused)' : 'hold 0.4s (no action returned)'];
         }
         agent.pendingEvents.splice(0, consumedEvents);
       })
@@ -3132,10 +3396,12 @@ const DEMO_NAMES = [
 
 
 
+
 const $ = (id) => document.getElementById(id);
 class UI {
-  constructor({ world, onJoin, onDemo, onClear, onSelect, onTogglePause }) {
+  constructor({ world, chatLog, onJoin, onDemo, onClear, onSelect, onTogglePause }) {
     this.world = world;
+    this.chatLog = chatLog;
     this.onJoin = onJoin;
     this.onSelect = onSelect;
     this.selectedId = null;
@@ -3166,6 +3432,10 @@ class UI {
       demo: $('btn-demo'),
       clear: $('btn-clear'),
       leaderboard: $('leaderboard'),
+      chatlog: $('chatlog'),
+      commsCount: $('comms-count'),
+      commsStore: $('comms-store'),
+      commsEmpty: $('comms-empty'),
       champions: $('champions'),
 
       focusEmpty: $('focus-empty'),
@@ -3189,6 +3459,18 @@ class UI {
     // The focus bar redraws every frame, so it diffs against this.
     this.barState = {};
     this.buildWeaponSlots();
+
+    // One stylesheet rule decides which side of the comms panel a message sits
+    // on. Swapping its text restyles every matching message at once - no
+    // per-row DOM work, however long the history gets.
+    this.focusStyle = document.createElement('style');
+    document.head.append(this.focusStyle);
+    this.renderedChat = 0;
+
+    if (this.chatLog) {
+      this.chatLog.onChange(() => this.renderChat());
+      this.renderChat();
+    }
 
     this.el.max.textContent = String(WORLD.maxAgents);
     this.fillPresets();
@@ -3338,6 +3620,20 @@ class UI {
     this.onSelect?.(this.selectedId);
   }
 
+  /** Point the single "mine" rule at whoever is focused. */
+  applyChatFocus() {
+    const id = this.selectedId;
+    // Participant ids are generated as p<number>, so they need no escaping.
+    this.focusStyle.textContent = id
+      ? `.chatlog li[data-agent="${id}"] { align-self: flex-end; }
+         .chatlog li[data-agent="${id}"] .who { text-align: right; }
+         .chatlog li[data-agent="${id}"] .bubble {
+           background: var(--accent); border-color: var(--accent);
+           color: #05202e; border-radius: 12px 12px 3px 12px;
+         }`
+      : '';
+  }
+
   selectByPoint(x, y) {
     let hit = null;
     for (const agent of this.world.agents) {
@@ -3428,6 +3724,22 @@ class UI {
         </span></div>`,
       `<blockquote class="prompt-quote">${escapeHtml(participant.prompt)}</blockquote>`,
     ];
+
+    if (hasConstraints(participant.constraints)) {
+      parts.push(
+        `<div><span class="label">Hard rules from your prompt</span><div class="chips">` +
+          participant.constraints.rules.map((r) => `<span class="chip rule">${escapeHtml(r)}</span>`).join('') +
+          `</div></div>`,
+      );
+    }
+
+    if (agent?.lastRefused?.length) {
+      parts.push(
+        `<div><span class="label">Refused last decision</span><div class="chips">` +
+          agent.lastRefused.map((r) => `<span class="chip err">${escapeHtml(r)}</span>`).join('') +
+          `</div></div>`,
+      );
+    }
 
     if (participant.lastError) {
       parts.push(`<div class="chips"><span class="chip err">${escapeHtml(participant.lastError)}</span></div>`);
@@ -3573,6 +3885,39 @@ class UI {
       : '<li class="empty muted">No lives have ended yet.</li>';
   }
 
+  /**
+   * Append-only: existing messages are never re-rendered, and a history that
+   * scrolled off the ring is trimmed from the front.
+   */
+  renderChat() {
+    const messages = this.chatLog.messages;
+    this.el.commsEmpty.hidden = messages.length > 0;
+    this.el.commsCount.textContent = messages.length ? `${messages.length}` : '';
+    this.el.commsStore.textContent = this.chatLog.serverBacked
+      ? `server · max ${this.chatLog.capacity}`
+      : `this tab · max ${this.chatLog.capacity}`;
+
+    // The store drops from the front when full; mirror that in the DOM.
+    while (this.el.chatlog.children.length > messages.length) {
+      this.el.chatlog.firstElementChild.remove();
+    }
+
+    const nearBottom =
+      this.el.chatlog.scrollHeight - this.el.chatlog.scrollTop - this.el.chatlog.clientHeight < 60;
+
+    for (let i = this.el.chatlog.children.length; i < messages.length; i++) {
+      const message = messages[i];
+      const row = document.createElement('li');
+      row.dataset.agent = message.agentId;
+      row.innerHTML =
+        `<span class="who" style="color:${escapeHtml(message.color)}">${escapeHtml(message.name)}</span>` +
+        `<span class="bubble">${escapeHtml(message.text)}</span>`;
+      this.el.chatlog.append(row);
+    }
+
+    if (nearBottom) this.el.chatlog.scrollTop = this.el.chatlog.scrollHeight;
+  }
+
   renderLog() {
     if (this.world.log.length === this.lastLogLength) return;
     this.lastLogLength = this.world.log.length;
@@ -3608,8 +3953,127 @@ function escapeHtml(value) {
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
+// ---- public/src/chatlog.js ---------------------------------------
+// Arena comms: every line an agent says, kept as a running history.
+//
+// When the server is reachable it owns the log - the client posts lines and
+// polls for the authoritative order, so the history survives a page reload and
+// is shared between tabs. With no server (the single-file build) the same store
+// runs purely in memory with the same cap.
+function createChatLog({ endpoint = '/api/chat', max = 1000, pollInterval = 600 } = {}) {
+  const local = [];
+  let serverBacked = false;
+  let lastSeq = 0;
+  let localId = 0;
+  let syncing = false;
+  let onChange = () => {};
+
+  const trim = () => {
+    while (local.length > max) local.shift();
+  };
+
+  return {
+    get messages() {
+      return local;
+    },
+    get serverBacked() {
+      return serverBacked;
+    },
+    get capacity() {
+      return max;
+    },
+
+    onChange(handler) {
+      onChange = handler;
+    },
+
+    /** Probe once at startup; a static page simply stays local. */
+    async connect() {
+      if (!location.protocol.startsWith('http')) return false;
+      try {
+        const response = await fetch(`${endpoint}?since=0`);
+        if (!response.ok) return false;
+        const data = await response.json();
+        serverBacked = true;
+        max = data.capacity ?? max;
+        this.merge(data);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+
+    /** A line an agent just said. */
+    record(agent, text) {
+      const line = String(text ?? '').trim().slice(0, CHAT.maxLength);
+      if (!line) return;
+
+      const message = {
+        agentId: agent.participant.id,
+        name: agent.name,
+        color: agent.color,
+        text: line,
+      };
+
+      if (!serverBacked) {
+        // No server: this store is the record.
+        local.push({ ...message, seq: `local-${++localId}`, at: Date.now() });
+        trim();
+        onChange();
+        return;
+      }
+
+      // Server-backed: post only, and let the poll bring it back. One writer
+      // means no duplicate-merging and no ordering guesswork.
+      fetch(endpoint, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(message),
+      }).catch(() => {
+        // A dropped post is a lost line, not a broken game.
+      });
+    },
+
+    merge(data) {
+      if (!Array.isArray(data?.messages) || !data.messages.length) return;
+      for (const message of data.messages) {
+        if (message.seq > lastSeq) local.push(message);
+      }
+      lastSeq = Math.max(lastSeq, data.seq ?? lastSeq);
+      trim();
+      onChange();
+    },
+
+    async sync() {
+      if (!serverBacked || syncing) return;
+      syncing = true;
+      try {
+        const response = await fetch(`${endpoint}?since=${lastSeq}`);
+        if (response.ok) this.merge(await response.json());
+      } catch {
+        // Transient: the next tick tries again.
+      } finally {
+        syncing = false;
+      }
+    },
+
+    /** Poll while the page is visible; there is nothing to see when it is not. */
+    startPolling() {
+      setInterval(() => {
+        if (serverBacked && !document.hidden) this.sync();
+      }, pollInterval);
+    },
+
+    clear() {
+      local.length = 0;
+      onChange();
+    },
+  };
+}
+
 // ---- public/src/main.js ------------------------------------------
 // Entry point: builds the world, wires the UI, runs the loop.
+
 
 
 
@@ -3620,6 +4084,10 @@ function escapeHtml(value) {
 const brains = createBrains();
 const world = new World({ brains });
 const renderer = new Renderer(document.getElementById('arena'));
+const chatLog = createChatLog();
+
+// Every bubble the world raises is mirrored into the comms history.
+world.onSay = (agent, text) => chatLog.record(agent, text);
 
 let usedColors = new Set();
 let usedNames = new Set();
@@ -3685,6 +4153,7 @@ function clearArena() {
   world.pickups = [];
   world.effects = [];
   world.log = [];
+  world.champions = [];
   usedColors = new Set();
   usedNames = new Set();
   ui.selectedId = null;
@@ -3693,10 +4162,14 @@ function clearArena() {
 
 const ui = new UI({
   world,
+  chatLog,
   onJoin: join,
   onDemo: () => addDemoAgents(4),
   onClear: clearArena,
-  onSelect: () => ui.update(),
+  onSelect: () => {
+    ui.applyChatFocus();
+    ui.update();
+  },
   onTogglePause: () => {
     world.paused = !world.paused;
     return world.paused;
@@ -3747,6 +4220,13 @@ async function checkModelBackend() {
   }
 }
 checkModelBackend();
+
+// The comms history lives on the server when there is one, so it survives a
+// reload; a static page keeps the same store in memory instead.
+chatLog.connect().then(() => {
+  chatLog.startPolling();
+  ui.renderChat();
+});
 
 // ---------------------------------------------------------------- input
 renderer.canvas.addEventListener('click', (event) => {

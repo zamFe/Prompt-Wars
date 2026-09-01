@@ -7,10 +7,15 @@ import { Renderer } from './render.js';
 import { UI } from './ui.js';
 import { PRESETS, DEMO_NAMES } from './presets.js';
 import { AGENT_COLORS, WORLD } from './config.js';
+import { createChatLog } from './chatlog.js';
 
 const brains = createBrains();
 const world = new World({ brains });
 const renderer = new Renderer(document.getElementById('arena'));
+const chatLog = createChatLog();
+
+// Every bubble the world raises is mirrored into the comms history.
+world.onSay = (agent, text) => chatLog.record(agent, text);
 
 let usedColors = new Set();
 let usedNames = new Set();
@@ -76,6 +81,7 @@ function clearArena() {
   world.pickups = [];
   world.effects = [];
   world.log = [];
+  world.champions = [];
   usedColors = new Set();
   usedNames = new Set();
   ui.selectedId = null;
@@ -84,10 +90,14 @@ function clearArena() {
 
 const ui = new UI({
   world,
+  chatLog,
   onJoin: join,
   onDemo: () => addDemoAgents(4),
   onClear: clearArena,
-  onSelect: () => ui.update(),
+  onSelect: () => {
+    ui.applyChatFocus();
+    ui.update();
+  },
   onTogglePause: () => {
     world.paused = !world.paused;
     return world.paused;
@@ -138,6 +148,13 @@ async function checkModelBackend() {
   }
 }
 checkModelBackend();
+
+// The comms history lives on the server when there is one, so it survives a
+// reload; a static page keeps the same store in memory instead.
+chatLog.connect().then(() => {
+  chatLog.startPolling();
+  ui.renderChat();
+});
 
 // ---------------------------------------------------------------- input
 renderer.canvas.addEventListener('click', (event) => {

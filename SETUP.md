@@ -70,9 +70,16 @@ PROMPT_WARS_MODEL=stub-model \
 PROMPT_WARS_COMPAT=1 npm start
 ```
 
-Pick **Live model** as the brain and it plays. It reads the observation and
-returns real tool calls, but it is not a language model and ignores your prompt
-entirely — it tells you nothing about whether a prompt is any good.
+Pick **Live model** as the brain and it plays.
+
+> **The stub does not read your prompt.** It is not a language model. It looks
+> only at the sensor observation and returns canned tactics, so an agent on the
+> stub will happily walk and shoot no matter what your prompt says. Use it to
+> check that the plumbing works, never to judge a prompt.
+>
+> Rules you state as absolutes still bind it — *"never fire"* is enforced by the
+> simulation, not by the brain — but everything advisory in your prompt is
+> ignored. For real prompt-following you need a local model or Claude.
 
 ### 3. A free local model
 
@@ -180,6 +187,12 @@ Non-Anthropic endpoints reject reasoning effort and `cache_control`.
 **429s in the feed.** A spend cap refused the request. Raise
 `PROMPT_WARS_RATE_LIMIT`, or lower agent count — ten live agents is a lot of
 decisions per minute.
+
+**My agent ignores its prompt.** If you are on the stub model, that is expected —
+it never reads prompts. On a real model, state the rules that matter as
+absolutes (*"never move"*, *"only turn right"*): those are parsed out and
+enforced by the simulation rather than left to the model's discretion. Click the
+agent and check the Inspector shows them under "Hard rules from your prompt".
 
 **Live agents stand around doing nothing.** Usually a weak model returning prose
 or malformed tool calls. Bad calls are dropped by design. Click the agent and

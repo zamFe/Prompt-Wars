@@ -1,6 +1,7 @@
 // Who is in the arena, who is waiting, and who is sitting out a death timer.
 
 import { WORLD, LOBBY } from './config.js';
+import { parseConstraints } from './constraints.js';
 
 let nextId = 1;
 
@@ -11,6 +12,8 @@ export function createParticipant({ name, prompt, brainKind, colorIndex }) {
     prompt,
     brainKind,
     colorIndex,
+    // Hard rules the prompt stated outright, enforced by the simulation.
+    constraints: parseConstraints(prompt),
     status: 'queued',      // 'live' | 'queued' | 'cooldown'
     readyAt: 0,
     kills: 0,

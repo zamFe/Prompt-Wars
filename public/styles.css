@@ -22,6 +22,12 @@
 
 * { box-sizing: border-box; }
 
+/*
+ * A component's own `display` beats the browser's [hidden] rule, so anything
+ * laid out with flex or grid stays on screen when hidden. Settle it once.
+ */
+[hidden] { display: none !important; }
+
 html, body {
   margin: 0;
   height: 100%;
@@ -81,10 +87,95 @@ html, body {
 /* ------------------------------------------------------------------ layout */
 main {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 400px;
+  grid-template-columns: 310px minmax(0, 1fr) 400px;
+  grid-template-areas: "comms arena panel";
   gap: 16px;
   padding: 16px;
   align-items: start;
+}
+
+.arena-wrap { grid-area: arena; }
+.panel { grid-area: panel; }
+.comms { grid-area: comms; }
+
+/* ------------------------------------------------------------------- comms */
+.comms {
+  position: sticky;
+  top: 16px;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 14px;
+  max-height: calc(100vh - 90px);
+  min-height: 0;
+}
+
+.comms-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.comms h2 { margin: 0 0 10px; }
+.comms-store { font-size: 10.5px; color: var(--muted); font-family: var(--font-mono); }
+
+.chatlog {
+  list-style: none;
+  margin: 0;
+  padding: 0 2px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  min-height: 0;
+  flex: 1;
+}
+
+.chatlog li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: 88%;
+  align-self: flex-start;
+}
+
+.chatlog .who {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 0 3px;
+}
+
+.chatlog .bubble {
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 12px 12px 12px 3px;
+  padding: 6px 10px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--text);
+  word-break: break-word;
+}
+
+/*
+ * The focused agent's messages move to the right. Which agent that is comes
+ * from a single generated rule swapped on focus change (see ui.js), so
+ * switching focus restyles every message at once without touching the DOM.
+ */
+.chatlog li.mine { align-self: flex-end; }
+.chatlog li.mine .who { text-align: right; }
+.chatlog li.mine .bubble {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #05202e;
+  border-radius: 12px 12px 3px 12px;
+}
+
+.comms-empty { margin: 0; color: var(--muted); font-size: 12.5px; }
+
+@media (max-width: 1439px) {
+  main {
+    grid-template-columns: minmax(0, 1fr) 400px;
+    grid-template-areas: "arena panel" "comms panel";
+  }
+  .comms { position: static; max-height: 340px; }
 }
 
 .arena-wrap {
@@ -220,6 +311,7 @@ button.ghost:hover { border-color: #394462; }
 .chips { display: flex; flex-wrap: wrap; gap: 5px; }
 .chip { background: var(--panel-2); border: 1px solid var(--line); border-radius: 999px; padding: 2px 9px; font-size: 11.5px; font-family: var(--font-mono); }
 .chip.err { border-color: rgba(239, 68, 68, 0.5); color: #fca5a5; }
+.chip.rule { border-color: rgba(250, 204, 21, 0.45); color: #facc15; font-family: var(--font-mono); }
 .muted { color: var(--muted); }
 .prompt-quote {
   margin: 0; padding: 8px 10px; border-left: 2px solid var(--line);
@@ -426,7 +518,7 @@ button.ghost:hover { border-color: #394462; }
 }
 
 @media (max-width: 1080px) {
-  main { grid-template-columns: 1fr; }
+  main { grid-template-columns: 1fr; grid-template-areas: "arena" "comms" "panel"; }
   .arena-wrap { position: static; }
   #arena { max-width: 100%; }
 }
