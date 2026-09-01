@@ -8,7 +8,8 @@
     "start": "node server.js",
     "build": "node build.js",
     "test": "node test/sim.test.js && node test/model-proxy.test.js",
-    "stub-model": "node tools/stub-model.js"
+    "stub-model": "node tools/stub-model.js",
+    "doctor": "node tools/doctor.js"
   },
   "engines": {
     "node": ">=18"

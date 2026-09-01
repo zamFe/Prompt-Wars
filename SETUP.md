@@ -209,6 +209,32 @@ are per-process. Use a normal long-running container or VM.
 
 ## Troubleshooting
 
+**Start here.** One command walks the same path the server does and says which
+step failed:
+
+```bash
+npm run doctor
+```
+
+It reports where it looked for your env file and what it parsed, the settings
+that actually resolved, whether the model endpoint answers, the real credential
+probe, and whether something else is already holding the port — then lists each
+problem with the fix.
+
+```
+4. Reaching the model endpoint
+  FAIL  could not reach http://127.0.0.1:8790 (ECONNREFUSED)
+
+Verdict
+  1. could not reach http://127.0.0.1:8790 (ECONNREFUSED)
+     -> Nothing is listening there. Start it first: npm run stub-model
+```
+
+
+**The stub is configured but the brain is still off.** The stub is a separate
+process: `npm run stub-model` has to be running in its own terminal *before*
+`npm start`. `npm run doctor` says so outright when nothing is listening.
+
 **The badge says "Claude off".** Expected without credentials. The note under
 the brain selector says which case you are in. The offline interpreter still
 runs the full game.
@@ -250,8 +276,9 @@ Fonts. Blocked networks fall back to system stacks; nothing breaks.
 ## Working on it
 
 ```bash
-npm test          # 73 tests, no credentials needed
+npm test          # 100 tests, no credentials needed
 npm run build     # bundles everything into dist/ as one HTML file
+npm run doctor    # diagnose an offline model brain
 ```
 
 `test/sim.test.js` runs the arena headlessly in Node — weapon balance, cone

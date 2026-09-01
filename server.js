@@ -590,11 +590,15 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, async () => {
   console.log(`Prompt Wars running at http://localhost:${PORT}`);
 
+  // Never silent about this: a .env that was not found, or was found and did
+  // nothing, is the single most confusing way to end up offline.
   if (dotenv.loaded) {
-    console.log(`.env: loaded ${dotenv.count} variable${dotenv.count === 1 ? '' : 's'}.`);
+    console.log(`.env: loaded ${dotenv.count} variable${dotenv.count === 1 ? '' : 's'} from ${ENV_FILE}.`);
     for (const { key, was, now } of dotenv.overridden) {
       console.log(`.env: ${key} overrides the value from your shell (${maskValue(key, was)} -> ${maskValue(key, now)}).`);
     }
+  } else if (ENV_FILE) {
+    console.log(`.env: none found at ${ENV_FILE} — using the environment as-is.`);
   }
   if (process.env.ANTHROPIC_BASE_URL && process.env.ANTHROPIC_BASE_URL !== 'https://api.anthropic.com') {
     console.log(`Model endpoint: ${process.env.ANTHROPIC_BASE_URL}`);
@@ -602,6 +606,7 @@ server.listen(PORT, async () => {
   await credentialProbe;
   if (!modelReady()) {
     console.log(`Model brain disabled (${clientError ?? 'no credentials'}). The offline prompt interpreter still works.`);
+    console.log('Run `npm run doctor` to find out why.');
   } else if (COMPAT) {
     console.log(`Model brain enabled — ${MODEL} via ${process.env.ANTHROPIC_BASE_URL ?? 'the Claude API'}`);
     console.log('Compatibility mode: effort and prompt caching are omitted.');

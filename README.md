@@ -349,7 +349,8 @@ the server imports the same schemas it sends to the API.
 ## Tests
 
 ```bash
-npm test
+npm test          # the full suite, no credentials needed
+npm run doctor    # why is the model brain offline?
 ```
 
 `sim.test.js` runs the arena headlessly in Node — weapon balance, cone geometry,
