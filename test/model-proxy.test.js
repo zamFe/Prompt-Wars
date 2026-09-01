@@ -7,12 +7,14 @@
 //   node test/model-proxy.test.js
 
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import http from 'node:http';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { buildQueue, describeAction, TOOL_NAMES } from '../public/src/actions.js';
+import { parseEnvFile, loadDotEnv, maskValue } from '../tools/env.js';
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const STUB_PORT = 8791;
@@ -69,6 +71,7 @@ const game = spawn(process.execPath, ['server.js'], {
   env: {
     ...process.env,
     PORT: String(GAME_PORT),
+    PROMPT_WARS_ENV_FILE: '',
     ANTHROPIC_BASE_URL: `http://127.0.0.1:${STUB_PORT}`,
     ANTHROPIC_API_KEY: 'sk-ant-test-key',
     NO_PROXY: '*',
@@ -95,6 +98,80 @@ for (let i = 0; i < 60; i++) {
 }
 
 try {
+  console.log('\n-- .env loading --------------------------------------------------');
+
+  check('a .env is parsed the way a shell would read it', () => {
+    const parsed = parseEnvFile([
+      '# a comment',
+      '',
+      'ANTHROPIC_BASE_URL=http://127.0.0.1:8790',
+      'ANTHROPIC_API_KEY=stub',
+      'export PROMPT_WARS_MODEL=stub-model',
+      'QUOTED="spaced value"',
+      "SINGLE='other'",
+      'TRAILING=value   # inline comment',
+      'not a variable line',
+    ].join('\n'));
+
+    assert.equal(parsed.get('ANTHROPIC_BASE_URL'), 'http://127.0.0.1:8790');
+    assert.equal(parsed.get('ANTHROPIC_API_KEY'), 'stub');
+    assert.equal(parsed.get('PROMPT_WARS_MODEL'), 'stub-model', 'export prefix is allowed');
+    assert.equal(parsed.get('QUOTED'), 'spaced value');
+    assert.equal(parsed.get('SINGLE'), 'other');
+    assert.equal(parsed.get('TRAILING'), 'value');
+    assert.equal(parsed.size, 6, 'comments and junk lines are skipped');
+  });
+
+  check('the file beats a stale shell variable, and says so', () => {
+    // The exact failure this guards: a shell ANTHROPIC_BASE_URL silently
+    // beating the .env, sending a stub key to the real API.
+    const file = path.join(ROOT, '.env.test-fixture');
+    fs.writeFileSync(file, 'ANTHROPIC_BASE_URL=http://127.0.0.1:8790\nNEWVAR=fresh\n');
+    try {
+      const env = { ANTHROPIC_BASE_URL: 'https://api.anthropic.com' };
+      const report = loadDotEnv(file, env);
+
+      assert.equal(env.ANTHROPIC_BASE_URL, 'http://127.0.0.1:8790', 'the file wins');
+      assert.equal(env.NEWVAR, 'fresh');
+      assert.deepEqual(report.overridden.map((o) => o.key), ['ANTHROPIC_BASE_URL']);
+      assert.deepEqual(report.set, ['NEWVAR']);
+      assert.equal(report.loaded, true);
+    } finally {
+      fs.unlinkSync(file);
+    }
+  });
+
+  check('a matching value is not reported as an override', () => {
+    const file = path.join(ROOT, '.env.test-fixture2');
+    fs.writeFileSync(file, 'SAME=value\n');
+    try {
+      const report = loadDotEnv(file, { SAME: 'value' });
+      assert.deepEqual(report.overridden, [], 'nothing actually changed');
+    } finally {
+      fs.unlinkSync(file);
+    }
+  });
+
+  check('a missing file is a no-op, not an error', () => {
+    const report = loadDotEnv(path.join(ROOT, 'definitely-not-here.env'), {});
+    assert.equal(report.loaded, false);
+  });
+
+  check('secrets are masked when the override is reported', () => {
+    assert.equal(maskValue('ANTHROPIC_API_KEY', 'sk-ant-secret'), 'sk-a…');
+    assert.equal(maskValue('ANTHROPIC_BASE_URL', 'http://x'), 'http://x', 'a URL is safe to print');
+  });
+
+  check('the .env is loaded before any setting reads the environment', () => {
+    // The ordering bug this guards: PORT and every PROMPT_WARS_* constant was
+    // captured above the loader, so those keys were silently ignored.
+    const source = fs.readFileSync(path.join(ROOT, 'server.js'), 'utf8');
+    const loadedAt = source.indexOf('loadDotEnv(ENV_FILE)');
+    const firstRead = source.indexOf('process.env.PORT');
+    assert.ok(loadedAt > 0 && firstRead > 0);
+    assert.ok(loadedAt < firstRead, 'loadDotEnv must run before the settings are read');
+  });
+
   console.log('\n-- model backend readiness ---------------------------------------');
   const status = await (await fetch(`${base}/api/status`)).json();
   check('the server reports the Claude brain as ready once credentials work', () => {
@@ -362,6 +439,7 @@ try {
     env: {
       ...process.env,
       PORT: String(GAME_PORT + 2),
+      PROMPT_WARS_ENV_FILE: '',
       ANTHROPIC_BASE_URL: `http://127.0.0.1:${STUB_PORT}`,
       ANTHROPIC_API_KEY: 'sk-ant-test-key',
       PROMPT_WARS_RATE_LIMIT: '3',
@@ -423,6 +501,7 @@ try {
     env: {
       ...process.env,
       PORT: String(GAME_PORT + 1),
+      PROMPT_WARS_ENV_FILE: '',
       ANTHROPIC_BASE_URL: `http://127.0.0.1:${STUB_PORT}`,
       ANTHROPIC_API_KEY: 'sk-ant-test-key',
       PROMPT_WARS_COMPAT: '1',

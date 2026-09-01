@@ -13,9 +13,21 @@ import { fileURLToPath } from 'node:url';
 import { TOOL_SCHEMAS } from './public/src/actions.js';
 import { WEAPONS, MOVE, VISION, AGENT, LOBBY, WORLD, HEALTH_PACKS, CHAT, BRAIN } from './public/src/config.js';
 import { extractChat } from './public/src/chat.js';
+import { loadDotEnv, maskValue } from './tools/env.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(HERE, 'public');
+
+// Before anything reads process.env: every constant below is captured once, so
+// a .env loaded after this point would be silently ignored.
+//
+// The file wins over the ambient shell, because a stale shell variable quietly
+// beating a .env written by hand for this project is the worse failure. Set
+// PROMPT_WARS_ENV_FILE to another path to point somewhere else, or to an empty
+// string to skip it entirely - which is what automation passing explicit
+// variables should do.
+const ENV_FILE = process.env.PROMPT_WARS_ENV_FILE ?? path.join(HERE, '.env');
+const dotenv = ENV_FILE ? loadDotEnv(ENV_FILE) : { loaded: false, set: [], overridden: [] };
 
 const PORT = Number(process.env.PORT ?? 8080);
 const MODEL = process.env.PROMPT_WARS_MODEL ?? 'claude-opus-5';
@@ -36,19 +48,6 @@ const CHAT_MAX = Number(process.env.PROMPT_WARS_CHAT_MAX ?? 1000);
 const MEMORY_TURNS = Number(process.env.PROMPT_WARS_MEMORY_TURNS ?? BRAIN.memoryTurns);
 const MAX_SESSIONS = Number(process.env.PROMPT_WARS_MAX_SESSIONS ?? 200);
 const SESSION_IDLE_MS = 5 * 60_000;
-
-// --------------------------------------------------------------- minimal .env
-function loadDotEnv() {
-  const file = path.join(HERE, '.env');
-  if (!fs.existsSync(file)) return;
-  for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
-    const match = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/i);
-    if (!match) continue;
-    const value = match[2].replace(/^["']|["']$/g, '');
-    if (!(match[1] in process.env)) process.env[match[1]] = value;
-  }
-}
-loadDotEnv();
 
 // ------------------------------------------------------------------- the model
 let client = null;
@@ -80,10 +79,14 @@ async function probeCredentials() {
   } catch (error) {
     credentials = 'missing';
     const message = error?.message ?? String(error);
+    const endpoint = process.env.ANTHROPIC_BASE_URL ?? 'https://api.anthropic.com';
+
     clientError =
-      error?.status === 401 || /Could not resolve authentication/i.test(message)
-        ? 'no credentials — set ANTHROPIC_API_KEY or run `ant auth login`'
-        : `API unreachable (${message.slice(0, 120)})`;
+      error?.status === 401
+        ? `credentials rejected by ${endpoint}${endpoint === 'https://api.anthropic.com' ? ' — check ANTHROPIC_API_KEY' : ' — is that the endpoint you meant?'}`
+        : /Could not resolve authentication/i.test(message)
+          ? 'no credentials — set ANTHROPIC_API_KEY or run `ant auth login`'
+          : `could not reach ${endpoint} (${message.slice(0, 100)})`;
   }
 }
 const credentialProbe = probeCredentials();
@@ -586,6 +589,16 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, async () => {
   console.log(`Prompt Wars running at http://localhost:${PORT}`);
+
+  if (dotenv.loaded) {
+    console.log(`.env: loaded ${dotenv.count} variable${dotenv.count === 1 ? '' : 's'}.`);
+    for (const { key, was, now } of dotenv.overridden) {
+      console.log(`.env: ${key} overrides the value from your shell (${maskValue(key, was)} -> ${maskValue(key, now)}).`);
+    }
+  }
+  if (process.env.ANTHROPIC_BASE_URL && process.env.ANTHROPIC_BASE_URL !== 'https://api.anthropic.com') {
+    console.log(`Model endpoint: ${process.env.ANTHROPIC_BASE_URL}`);
+  }
   await credentialProbe;
   if (!modelReady()) {
     console.log(`Model brain disabled (${clientError ?? 'no credentials'}). The offline prompt interpreter still works.`);

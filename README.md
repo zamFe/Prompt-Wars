@@ -46,7 +46,9 @@ the page posts its sensor readings to `/api/decide` and gets tool calls back.
 | `PROMPT_WARS_COMPAT` | off | Drop effort and prompt caching, for non-Anthropic gateways |
 | `ANTHROPIC_BASE_URL` | Claude API | Point the SDK at any Messages-compatible endpoint |
 
-A `.env` file in the project root is read if present.
+A `.env` in the project root is read before any setting is applied, and it wins
+over your shell — every override is printed at boot. See
+[SETUP.md](SETUP.md#the-env-file).
 
 ## Testing without paying for anything
 

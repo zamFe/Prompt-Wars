@@ -146,7 +146,38 @@ Environment variables, or a `.env` file in the project root.
 | `PROMPT_WARS_RATE_LIMIT` | `90` | Decisions per minute per caller; `0` disables |
 | `PROMPT_WARS_DAILY_LIMIT` | none | Hard ceiling on decisions per UTC day, all callers |
 | `PROMPT_WARS_TRUST_PROXY` | off | Read the caller IP from `X-Forwarded-For` — only behind a proxy you control |
+| `PROMPT_WARS_ENV_FILE` | `./.env` | Where to read the env file; empty string skips it |
 | `STUB_LATENCY_MS` | `900` | Fake think time for the stub model |
+
+### The `.env` file
+
+A `.env` in the project root is read **before any setting is applied**, and
+**it wins over your shell**. That is deliberate: a stale `ANTHROPIC_BASE_URL`
+left in a shell profile quietly beating a `.env` you wrote by hand is exactly
+how a stub key ends up pointed at the real API. Every override is printed at
+boot, so nothing about it is silent:
+
+```
+.env: loaded 2 variables.
+.env: ANTHROPIC_BASE_URL overrides the value from your shell (https://api.anthropic.com -> http://127.0.0.1:8790).
+Model endpoint: http://127.0.0.1:8790
+```
+
+Set `PROMPT_WARS_ENV_FILE` to another path to read a different file, or to an
+empty string to skip it — which is what CI and anything passing explicit
+variables should do.
+
+A complete `.env` for the free stub model:
+
+```bash
+ANTHROPIC_BASE_URL=http://127.0.0.1:8790
+ANTHROPIC_API_KEY=stub
+PROMPT_WARS_MODEL=stub-model
+PROMPT_WARS_COMPAT=1
+```
+
+Then `npm run stub-model` in one terminal and `npm start` in another, with no
+inline variables at all.
 
 ## Putting it online
 
@@ -182,8 +213,14 @@ are per-process. Use a normal long-running container or VM.
 the brain selector says which case you are in. The offline interpreter still
 runs the full game.
 
-**"no credentials — set ANTHROPIC_API_KEY".** The boot probe could not
-authenticate. Check `ant auth status`, or that the key is exported in the shell
+**"credentials rejected by …".** The probe reached an endpoint but was turned
+away. The message names the endpoint it actually used — if that reads
+`https://api.anthropic.com` when you meant your local stub, your
+`ANTHROPIC_BASE_URL` never took effect. The `.env:` lines printed at boot show
+exactly what was loaded and what it overrode.
+
+**"no credentials — set ANTHROPIC_API_KEY".** Nothing resolved at all. Check
+`ant auth status`, or that the key is in your `.env` or exported in the shell
 that started the server — not just your profile.
 
 **Live agents error with a 4xx from a gateway.** Add `PROMPT_WARS_COMPAT=1`.
