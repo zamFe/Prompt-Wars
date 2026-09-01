@@ -77,9 +77,11 @@ Pick **Live model** as the brain and it plays.
 > stub will happily walk and shoot no matter what your prompt says. Use it to
 > check that the plumbing works, never to judge a prompt.
 >
-> Rules you state as absolutes still bind it — *"never fire"* is enforced by the
-> simulation, not by the brain — but everything advisory in your prompt is
-> ignored. For real prompt-following you need a local model or Claude.
+> For real prompt-following you need a local model or Claude, which get the
+> orders in a system prompt and their own conversation memory. If you want the
+> stub bound to your rules anyway, set `HARD_RULES.enforce` in
+> `public/src/config.js` — the simulation will then refuse calls that break
+> absolutes like *"never fire"*, whichever brain made them.
 
 ### 3. A free local model
 
@@ -137,6 +139,9 @@ Environment variables, or a `.env` file in the project root.
 | `PROMPT_WARS_MODEL` | `claude-opus-5` | Model driving live agents |
 | `PROMPT_WARS_EFFORT` | `low` | Reasoning effort — agents are a reflex loop, not a research task |
 | `PROMPT_WARS_CONCURRENCY` | `4` | Simultaneous model calls |
+| `PROMPT_WARS_MEMORY_TURNS` | `12` | Past exchanges each character carries |
+| `PROMPT_WARS_MAX_SESSIONS` | `200` | Live conversations held before the oldest is evicted |
+| `PROMPT_WARS_CHAT_MAX` | `1000` | Comms messages kept before the oldest is dropped |
 | `PROMPT_WARS_COMPAT` | off | Drop effort and caching, for non-Anthropic gateways |
 | `PROMPT_WARS_RATE_LIMIT` | `90` | Decisions per minute per caller; `0` disables |
 | `PROMPT_WARS_DAILY_LIMIT` | none | Hard ceiling on decisions per UTC day, all callers |
@@ -189,10 +194,12 @@ Non-Anthropic endpoints reject reasoning effort and `cache_control`.
 decisions per minute.
 
 **My agent ignores its prompt.** If you are on the stub model, that is expected —
-it never reads prompts. On a real model, state the rules that matter as
-absolutes (*"never move"*, *"only turn right"*): those are parsed out and
-enforced by the simulation rather than left to the model's discretion. Click the
-agent and check the Inspector shows them under "Hard rules from your prompt".
+it never reads prompts. On a real model, each character carries its orders in a
+cached system block and remembers its own past turns; click the agent and the
+Inspector shows the turn count and what its last moves achieved. If a model
+still will not obey an absolute rule, `HARD_RULES.enforce` in
+`public/src/config.js` makes the simulation refuse the offending calls
+outright.
 
 **Live agents stand around doing nothing.** Usually a weak model returning prose
 or malformed tool calls. Bad calls are dropped by design. Click the agent and

@@ -357,6 +357,20 @@ export class UI {
     }
 
     if (agent) {
+      if (agent.turn) {
+        parts.push(
+          `<div><span class="label">Its own memory</span><div>` +
+            `Turn ${agent.turn} of this life · carrying ${agent.memoryDepth ?? 0} past exchange` +
+            `${agent.memoryDepth === 1 ? '' : 's'}</div></div>`,
+        );
+      }
+      if (agent.planResults?.length) {
+        parts.push(
+          `<div><span class="label">What its last moves achieved</span><div class="chips">` +
+            agent.planResults.map((r) => `<span class="chip">${escapeHtml(r.outcome)}</span>`).join('') +
+            `</div></div>`,
+        );
+      }
       if (agent.lastNote) parts.push(`<div><span class="label">Reasoning</span><div>${escapeHtml(agent.lastNote)}</div></div>`);
       const chips = (agent.lastActions ?? []).map((a) => `<span class="chip">${escapeHtml(a)}</span>`).join('');
       parts.push(`<div><span class="label">Last plan${agent.thinking ? ' (thinking…)' : ''}</span><div class="chips">${chips || '<span class="muted">—</span>'}</div></div>`);

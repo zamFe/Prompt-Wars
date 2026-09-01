@@ -171,32 +171,42 @@ floor, and despawns after 60 seconds.
 Getting shot cancels the rest of your current plan so you can react. Fresh
 spawns are invulnerable for 1.5 seconds.
 
-## Making a prompt binding
+## Each character has its own memory
 
-Prompting alone cannot guarantee obedience. A model may not comply, and the
-offline interpreter and the stub model never read prompts at all. So rules a
-player states as absolutes are parsed once and enforced by the simulation,
-where nothing can talk past them:
+A live agent is not answering a fresh question every few seconds. Each
+character runs **one continuous conversation for the length of its life**,
+held server-side and keyed to that character alone. It sees every decision it
+has already made and what each one actually achieved — whether a turn
+completed, how far a walk got before a wall stopped it, how many shots left the
+barrel — because outcomes come back as tool results against the very tool calls
+the model made.
 
 ```
-never move, only turn right, never fire, never aim, never reload and never hold
+turn 1   user      what you can see
+         assistant aim right 12°, fire x2
+turn 2   user      aim: now 12° from your body facing.
+                   fire: fired 1 of 2 shots, then ran dry.
+                   what you can see now …
 ```
 
-becomes six hard rules. A tool call that breaks one is refused before it
-happens, whichever brain proposed it, and the refusal is fed back to the agent
-so a model can see why its calls vanished. The parsed rules appear in the
-Inspector, so you can confirm they landed.
+No character can see another's context. Dying ends the conversation; the next
+life starts blank. History is trimmed to the last dozen exchanges, always in
+whole pairs, so a long life never grows without bound and never leaves a tool
+call unanswered.
 
-`never`, `don't`, `do not`, `must not`, `avoid`, `no` and `only` are the
-triggers; they can name a direction (`never turn left`, `only move forward`) to
-restrict a tool rather than ban it. Phrases that only look like prohibitions are
-left alone — *"never stop moving"* and *"hold your ground"* constrain nothing.
+**Obedience comes from the model, not from a parser.** The character's standing
+orders live in a cached system block of their own — the highest-authority
+position, present on every single turn, and impossible for a long sensor
+readout to crowd out. The arena rules occupy a second block that is
+byte-identical for every agent, so all of them share one cache entry. The rules
+describe the arena's physics and deliberately state no tactics: an earlier
+version told agents to walk when idle, which quietly overrode any prompt that
+said to stand still.
 
-Everything else in a prompt stays advisory, and for live agents the orders are
-also given precedence explicitly: the system prompt describes the arena's
-physics and deliberately states no tactics of its own, the orders are placed
-both before and after the sensor readout, and they are declared to outrank
-anything the system prompt says.
+A mechanical backstop still exists for the brains that cannot read a prompt at
+all — `parseConstraints` turns *"never move, only turn right"* into rules the
+simulation refuses to break. It is **off by default**; set `HARD_RULES.enforce`
+in `public/src/config.js` to switch it on.
 
 ## Speech bubbles
 
@@ -276,6 +286,11 @@ rules of the arena, the tool set, or the output format.
 Live agents think asynchronously — an agent keeps executing its previous plan
 while the next one is in flight, so latency shows up as commitment rather than
 as a freeze.
+
+Because the conversation only ever grows by appending, the whole request is
+cached: measured over a life, the shared rules and the character's orders come
+to about 2,300 tokens read from cache, and the conversation itself plateaus at
+roughly 2,150 once the memory window fills.
 
 ## Writing a prompt that wins
 

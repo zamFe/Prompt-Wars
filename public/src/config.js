@@ -130,9 +130,18 @@ export const LOBBY = {
   congestedQueueLength: 10,     // "queue > 10" triggers the long cooldown
 };
 
+// Whether the simulation refuses tool calls that break rules a prompt stated
+// as absolutes. Off by default: an agent driven by a model is responsible for
+// obeying its own orders, and it now has the memory to do so. Turn it on for
+// the brains that cannot read a prompt at all.
+export const HARD_RULES = {
+  enforce: false,
+};
+
 export const BRAIN = {
   maxActionsPerDecision: 4,
-  decisionTimeout: 12,          // seconds before a pending decision is abandoned
+  decisionTimeout: 25,          // seconds before a pending decision is abandoned
+  memoryTurns: 12,              // how many past exchanges an agent carries
   localThinkTime: [0.25, 0.6],  // simulated deliberation for the offline brain
   damageInterruptCooldown: 0.6, // getting shot flushes the action queue, at most this often
 };

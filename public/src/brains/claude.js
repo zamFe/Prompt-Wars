@@ -25,9 +25,15 @@ export function createClaudeBrain({ endpoint = '/api/decide', fallback = null } 
       lastFailureAt = Date.now();
     },
 
-    async decide(snapshot, participant) {
+    /** Tell the server a life is over so its conversation can be dropped. */
+    endSession(agentId) {
+      if (!agentId) return;
+      fetch(`/api/session?agentId=${encodeURIComponent(agentId)}`, { method: 'DELETE' }).catch(() => {});
+    },
+
+    async decide(snapshot, participant, memory) {
       if (!available && Date.now() - lastFailureAt < 60_000) {
-        if (fallback) return fallback.decide(snapshot, participant);
+        if (fallback) return fallback.decide(snapshot, participant, memory);
         throw new Error('model backend unavailable');
       }
 
@@ -39,9 +45,12 @@ export function createClaudeBrain({ endpoint = '/api/decide', fallback = null } 
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({
+            // The agent id is per life, so each character gets its own context.
+            agentId: memory?.agentId,
             prompt: participant.prompt,
             name: participant.name,
             observation: renderSnapshotText(snapshot),
+            results: memory?.results ?? [],
           }),
           signal: controller.signal,
         });
@@ -54,10 +63,16 @@ export function createClaudeBrain({ endpoint = '/api/decide', fallback = null } 
 
         available = true;
         const data = await response.json();
-        return { actions: data.actions ?? [], note: data.note ?? null, chat: data.chat ?? null };
+        return {
+          actions: data.actions ?? [],
+          note: data.note ?? null,
+          chat: data.chat ?? null,
+          turn: data.turn ?? null,
+          memory: data.memory ?? null,
+        };
       } catch (error) {
         if (error.name === 'AbortError') throw new Error('model timed out');
-        if (fallback && !available) return fallback.decide(snapshot, participant);
+        if (fallback && !available) return fallback.decide(snapshot, participant, memory);
         throw error;
       } finally {
         clearTimeout(timer);

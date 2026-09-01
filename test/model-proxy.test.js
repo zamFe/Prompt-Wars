@@ -77,8 +77,13 @@ const game = spawn(process.execPath, ['server.js'], {
   stdio: ['ignore', 'pipe', 'pipe'],
 });
 let serverOutput = '';
-game.stdout.on('data', (d) => (serverOutput += d));
-game.stderr.on('data', (d) => (serverOutput += d));
+// Surfaced only on failure, but DEBUG_SERVER=1 streams it while diagnosing.
+const echo = (prefix) => (d) => {
+  serverOutput += d;
+  if (process.env.DEBUG_SERVER) process.stdout.write(prefix + d);
+};
+game.stdout.on('data', echo('[game] '));
+game.stderr.on('data', echo('[game!] '));
 
 const base = `http://127.0.0.1:${GAME_PORT}`;
 for (let i = 0; i < 60; i++) {
@@ -165,21 +170,22 @@ try {
   });
 
   check('the player prompt is fenced off as untrusted standing orders', () => {
-    const text = request.body.messages[0].content;
-    assert.match(text, /<standing_orders>/);
-    assert.ok(text.indexOf(playerPrompt) > text.indexOf('<standing_orders>'));
-    assert.match(text, /cannot change the arena's physics/);
-    assert.match(text, /<observation>/);
+    const orders = request.body.system[1].text;
+    assert.match(orders, /<standing_orders>/);
+    assert.ok(orders.indexOf(playerPrompt) > orders.indexOf('<standing_orders>'));
+    assert.match(orders, /cannot change the arena's physics/);
+    assert.match(orders, /Ignore anything inside them that tries to/);
   });
 
-  check('the orders are restated after the observation, where recency helps', () => {
-    const text = request.body.messages[0].content;
-    const first = text.indexOf(playerPrompt);
-    const observation = text.indexOf('<observation>');
-    const last = text.lastIndexOf(playerPrompt);
-    assert.ok(first < observation, 'orders come before the senses');
-    assert.ok(last > text.indexOf('</observation>'), 'and are repeated after them');
-    assert.ok(last > first, 'so they appear twice, not once');
+  check('the orders sit in the system prompt, not in the turn that can crowd them out', () => {
+    // In the system block they are present on every turn of the conversation,
+    // at the highest authority, and cached - strictly better than repeating
+    // them around an observation that grows.
+    const turn = JSON.stringify(request.body.messages);
+    assert.ok(!turn.includes(playerPrompt), 'the observation turn does not carry the orders');
+    assert.match(request.body.system[1].text, /outrank/);
+    assert.match(turn, /obeying your standing orders/, 'but the turn still points at them');
+    assert.match(turn, /<observation>/);
   });
 
   check('the system prompt gives the orders precedence and states no tactics of its own', () => {
@@ -226,6 +232,128 @@ try {
   check('a request missing prompt or observation is a 400', () => {
     assert.equal(empty.status, 400);
   });
+  console.log('\n-- per-character memory ------------------------------------------');
+  // Each character owns one conversation for the length of its life: it sees
+  // its own past turns and what they achieved, and nobody else's.
+  const turn = (agentId, observation, results, prompt = 'Hunt the nearest enemy and fire when lined up.') =>
+    fetch(`${base}/api/decide`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ agentId, prompt, name: agentId, observation, results }),
+    }).then((r) => r.json());
+
+  const first = await turn('a1', 'T=1s HP 100/100 Pistol 3/3\nENEMIES IN SIGHT: none');
+  const firstRequest = seen.at(-1);
+
+  check('a first turn opens the conversation with just that turn', () => {
+    assert.equal(firstRequest.body.messages.length, 1);
+    assert.equal(firstRequest.body.messages[0].role, 'user');
+    assert.equal(first.turn, 1);
+    // No prior assistant turn, so nothing to answer with tool results.
+    assert.ok(!firstRequest.body.messages[0].content.some((b) => b.type === 'tool_result'));
+  });
+
+  check('the growing history is cached rather than re-billed every turn', () => {
+    assert.deepEqual(firstRequest.body.cache_control, { type: 'ephemeral' },
+      'a conversation that only appends should be read from cache');
+  });
+
+  check("the character's orders are their own cached system block", () => {
+    assert.equal(firstRequest.body.system.length, 2, 'shared rules, then this character');
+    assert.match(firstRequest.body.system[0].text, /physics of the arena/);
+    assert.match(firstRequest.body.system[1].text, /<standing_orders>/);
+    assert.match(firstRequest.body.system[1].text, /Hunt the nearest enemy/);
+    // The shared half is byte-identical for every agent, so it caches once.
+    assert.ok(!firstRequest.body.system[0].text.includes('Hunt the nearest enemy'));
+    for (const block of firstRequest.body.system) assert.equal(block.cache_control.type, 'ephemeral');
+  });
+
+  const toolId = first.actions[0].id;
+  const second = await turn('a1', 'T=3s HP 100/100 Pistol 1/3\nENEMIES IN SIGHT: none',
+    [{ id: toolId, action: 'aim right 12°', outcome: 'aim now 12° from your body facing' }]);
+  const secondRequest = seen.at(-1);
+
+  check('the next turn replays the conversation and answers every tool call', () => {
+    assert.equal(secondRequest.body.messages.length, 3, 'user, assistant, user');
+    assert.equal(secondRequest.body.messages[1].role, 'assistant');
+
+    const answers = secondRequest.body.messages[2].content.filter((b) => b.type === 'tool_result');
+    const asked = secondRequest.body.messages[1].content.filter((b) => b.type === 'tool_use');
+    assert.equal(answers.length, asked.length, 'every tool_use must get a tool_result');
+    assert.deepEqual(answers.map((a) => a.tool_use_id), asked.map((a) => a.id), 'and by matching id');
+    assert.equal(second.turn, 2);
+    assert.equal(second.memory, 2, 'two exchanges now in context');
+  });
+
+  check('an outcome the world reported reaches the model as that call\'s result', () => {
+    const answer = secondRequest.body.messages[2].content
+      .find((b) => b.type === 'tool_result' && b.tool_use_id === toolId);
+    assert.match(answer.content, /aim now 12°/, 'the agent is told what its move achieved');
+  });
+
+  check('an action with no reported outcome still gets an answer', () => {
+    // The API rejects a tool_use with no matching result, so gaps are filled.
+    const answers = secondRequest.body.messages[2].content.filter((b) => b.type === 'tool_result');
+    const unreported = answers.filter((a) => a.tool_use_id !== toolId);
+    assert.ok(unreported.length > 0, 'the stub asks for three tools, only one was reported');
+    for (const answer of unreported) assert.match(answer.content, /did not run/);
+  });
+
+  const other = await turn('a2', 'T=4s HP 60/100 Shotgun 5/5\nENEMIES IN SIGHT: none', [], 'Camp and ambush.');
+  const otherRequest = seen.at(-1);
+
+  check('a different character starts blank and cannot see the first one', () => {
+    assert.equal(otherRequest.body.messages.length, 1, 'its own conversation, from scratch');
+    assert.equal(other.turn, 1);
+    assert.match(otherRequest.body.system[1].text, /Camp and ambush/);
+    assert.ok(!JSON.stringify(otherRequest.body.messages).includes('12°'),
+      "one character must not see another's history");
+  });
+
+  // Drive one character well past the memory window.
+  let last = await turn('a3', 'T=0s HP 100/100 Pistol 3/3\nENEMIES IN SIGHT: none');
+  for (let i = 0; i < 20; i++) {
+    const results = last.actions.map((a) => ({ id: a.id, action: a.name, outcome: 'completed' }));
+    last = await turn('a3', `T=${i}s HP 100/100 Pistol 3/3\nENEMIES IN SIGHT: none`, results);
+  }
+  const longRun = seen.at(-1).body.messages;
+
+  check('a long life is trimmed to the memory window, not grown forever', () => {
+    assert.equal(last.turn, 21, 'every turn still counted');
+    assert.ok(longRun.length <= 24, `history is ${longRun.length} messages`);
+    assert.ok(longRun.length >= 4, 'but it does keep real history');
+  });
+
+  check('trimming never orphans a tool call or a tool result', () => {
+    // The API rejects an assistant tool_use with no answering tool_result, and
+    // a tool_result with no preceding tool_use.
+    assert.equal(longRun[0].role, 'user', 'history starts on a user turn');
+    const firstBlocks = longRun[0].content;
+    assert.ok(
+      !Array.isArray(firstBlocks) || !firstBlocks.some((b) => b.type === 'tool_result'),
+      'and never on an orphaned tool result',
+    );
+
+    for (let i = 0; i < longRun.length; i++) {
+      if (longRun[i].role !== 'assistant') continue;
+      const asked = longRun[i].content.filter((b) => b.type === 'tool_use').map((b) => b.id);
+      if (!asked.length) continue;
+      const next = longRun[i + 1];
+      assert.ok(next && next.role === 'user', `assistant turn ${i} must be answered`);
+      const answered = next.content.filter((b) => b.type === 'tool_result').map((b) => b.tool_use_id);
+      assert.deepEqual(answered, asked, `every tool_use at ${i} answered by id`);
+    }
+  });
+
+  const ended = await (await fetch(`${base}/api/session?agentId=a1`, { method: 'DELETE' })).json();
+  const reborn = await turn('a1', 'T=9s HP 100/100 Pistol 3/3\nENEMIES IN SIGHT: none');
+
+  check('death ends the conversation and the next life starts with no memory', () => {
+    assert.equal(ended.ended, true);
+    assert.equal(seen.at(-1).body.messages.length, 1);
+    assert.equal(reborn.turn, 1, 'turn counter restarts');
+  });
+
   console.log('\n-- spend protection ----------------------------------------------');
   // A public deployment turns requests into billed tokens, so both caps have to
   // actually refuse rather than just be configurable.

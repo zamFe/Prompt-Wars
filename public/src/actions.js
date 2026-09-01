@@ -148,7 +148,14 @@ const clampRange = (value, [lo, hi], fallback) => {
 export function normalizeAction(call, agent) {
   if (!call || typeof call.name !== 'string') return null;
   const input = call.input && typeof call.input === 'object' ? call.input : {};
+  const built = buildAction(call, input, agent);
+  // The id ties an action back to the tool call that asked for it, so what
+  // actually happened can be reported against that call next turn.
+  if (built && call.id) built.id = call.id;
+  return built;
+}
 
+function buildAction(call, input, agent) {
   switch (call.name) {
     case 'turn': {
       const direction = input.direction === 'left' ? 'left' : 'right';
@@ -159,7 +166,7 @@ export function normalizeAction(call, agent) {
       const direction = MOVE_DIRECTIONS[input.direction] ? input.direction : 'forward';
       const steps = Math.round(clampRange(input.steps, ACTION_LIMITS.moveSteps, 2));
       const distance = steps * MOVE.stepDistance;
-      return { type: 'move', direction, remaining: distance, total: distance, steps };
+      return { type: 'move', direction, remaining: distance, total: distance, steps, travelled: 0 };
     }
     case 'aim': {
       if (input.direction === 'center') return { type: 'aim', target: 0 };
@@ -172,7 +179,7 @@ export function normalizeAction(call, agent) {
       const shots = Math.round(
         clampRange(input.shots, [1, Math.max(1, weapon.magazine)], 1),
       );
-      return { type: 'fire', remaining: shots, total: shots };
+      return { type: 'fire', remaining: shots, total: shots, fired: 0 };
     }
     case 'reload':
       return { type: 'reload', started: false };
@@ -211,6 +218,45 @@ export function describeAction(action) {
 }
 
 /**
+ * What actually became of an action. This is what an agent is told about its
+ * own previous moves, so it is written in terms of consequences, not internals.
+ */
+export function describeOutcome(action, { interrupted = false } = {}) {
+  if (!action) return 'nothing happened';
+  const stopped = interrupted ? ', then you were interrupted' : '';
+
+  switch (action.type) {
+    case 'turn': {
+      const done = Math.round(action.total - action.remaining);
+      return action.remaining > 1
+        ? `turned ${action.direction} ${done}° of ${Math.round(action.total)}° before stopping${stopped}`
+        : `turned ${action.direction} ${Math.round(action.total)}°${stopped}`;
+    }
+    case 'move': {
+      const steps = action.travelled / MOVE.stepDistance;
+      if (action.blocked) return `blocked by a wall after ${steps.toFixed(1)} of ${action.steps} steps ${action.direction}`;
+      return steps + 0.05 >= action.steps
+        ? `moved ${action.steps} steps ${action.direction}${stopped}`
+        : `moved ${steps.toFixed(1)} of ${action.steps} steps ${action.direction}${stopped}`;
+    }
+    case 'aim':
+      return `aim now ${Math.round(action.target)}° from your body facing${stopped}`;
+    case 'fire': {
+      if (action.fired === 0) return 'fired nothing - the magazine was empty or the weapon was not ready';
+      return action.fired < action.total
+        ? `fired ${action.fired} of ${action.total} shots, then ran dry`
+        : `fired ${action.fired} shot${action.fired === 1 ? '' : 's'}${stopped}`;
+    }
+    case 'reload':
+      return action.started && !interrupted ? 'reloaded, magazine full' : 'reload started but did not finish';
+    case 'hold':
+      return `held position${stopped}`;
+    default:
+      return 'done';
+  }
+}
+
+/**
  * Advance one action by `dt`. Returns true when the action is finished.
  * Movement and shooting are delegated back to the world through `ctx`, which
  * owns collision and projectiles.
@@ -231,9 +277,11 @@ export function stepAction(agent, action, dt, ctx) {
       const rad = toRad(agent.facing + spec.angle);
       const moved = ctx.tryMove(agent, Math.cos(rad) * amount, Math.sin(rad) * amount);
       action.remaining -= amount;
+      if (moved) action.travelled += amount;
       // Bumping a wall ends the move so the agent is not stuck grinding into it.
       if (!moved) {
         agent.blocked = true;
+        action.blocked = true;
         return true;
       }
       return action.remaining <= 1e-6;
@@ -255,6 +303,7 @@ export function stepAction(agent, action, dt, ctx) {
       if (agent.nextShotAt > ctx.now) return false;       // weapon still cycling
       if (agent.ammo <= 0) return true;                   // dry: caller must reload
       ctx.fireWeapon(agent);
+      action.fired += 1;
       action.remaining -= 1;
       return action.remaining <= 0;
     }

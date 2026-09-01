@@ -1,10 +1,10 @@
 // The simulation: bodies, bullets, loot, damage and the decision loop.
 
-import { WORLD, MOVE, WEAPONS, AGENT, HEALTH_PACKS, LOOT, VISION, BRAIN, AGENT_COLORS, CHAT, PULSE } from './config.js';
+import { WORLD, MOVE, WEAPONS, AGENT, HEALTH_PACKS, LOOT, VISION, BRAIN, AGENT_COLORS, CHAT, PULSE, HARD_RULES } from './config.js';
 import { makeRng, clamp, dist, toRad, normalizeDeg, randRange, weightedPick, pointSegmentDistance, round0 } from './util.js';
 import { findOpenPosition, resolveCollision, hasLineOfSight, castRay } from './arena.js';
 import { buildSnapshot, bearingTo } from './sensors.js';
-import { buildQueue, stepAction, describeAction } from './actions.js';
+import { buildQueue, stepAction, describeAction, describeOutcome } from './actions.js';
 import { enforce, hasConstraints, describeConstraints } from './constraints.js';
 import { Lobby } from './lobby.js';
 
@@ -93,6 +93,10 @@ export class World {
       nextDecisionAt: 0,
       lastActions: [],
       lastRefused: [],
+      // What became of the last plan, reported back on the next decision.
+      planResults: [],
+      turn: 0,
+      memoryDepth: 0,
       lastSnapshot: null,
       lastNote: null,
       lastError: null,
@@ -158,6 +162,9 @@ export class World {
 
     this.recordChampion(agent);
 
+    // A life's conversation dies with it: the next life starts with no memory.
+    for (const brain of Object.values(this.brains ?? {})) brain.endSession?.(agent.id);
+
     const wait = this.lobby.onDeath(agent.participant, congested);
     agent.participant.agent = null;
     this.agents = this.agents.filter((a) => a !== agent);
@@ -213,6 +220,14 @@ export class World {
     if (this.time - target.lastInterruptAt > BRAIN.damageInterruptCooldown) {
       target.lastInterruptAt = this.time;
       if (target.current?.type !== 'reload') {
+        this.recordOutcome(target, target.current, { interrupted: true });
+        for (const pending of target.queue) {
+          target.planResults.push({
+            id: pending.id ?? null,
+            action: describeAction(pending),
+            outcome: 'never ran - you broke off the plan when you were hit',
+          });
+        }
         target.queue = [];
         target.current = null;
       }
@@ -450,7 +465,12 @@ export class World {
     const token = ++agent.thinkToken;
     agent.thinking = true;
 
-    Promise.resolve(brain.decide(snapshot, agent.participant))
+    // The agent's own history of the last plan, handed back so it can see what
+    // its previous moves actually achieved.
+    const memory = { agentId: agent.id, results: agent.planResults.slice() };
+    agent.planResults = [];
+
+    Promise.resolve(brain.decide(snapshot, agent.participant, memory))
       .then((decision) => {
         if (token !== agent.thinkToken || !agent.alive) return;
         agent.thinking = false;
@@ -458,14 +478,18 @@ export class World {
         agent.participant.lastError = null;
         agent.lastError = null;
         agent.lastNote = decision?.note ?? null;
+        agent.turn = decision?.turn ?? agent.turn;
+        agent.memoryDepth = decision?.memory ?? agent.memoryDepth;
         if (decision?.chat) this.say(agent, decision.chat);
 
         const proposed = buildQueue(decision?.actions, agent);
 
-        // The prompt's hard rules are applied here rather than trusted to the
-        // brain, so they hold for every brain including ones that never read
-        // the prompt at all.
-        const { actions, refused } = enforce(proposed, agent.participant.constraints);
+        // Obedience is the model's job: it holds its orders in a cached system
+        // prompt and remembers its own past turns. HARD_RULES.enforce brings back a
+        // mechanical backstop for brains that cannot read a prompt at all.
+        const { actions, refused } = HARD_RULES.enforce
+          ? enforce(proposed, agent.participant.constraints)
+          : { actions: proposed, refused: [] };
         agent.queue = actions;
         agent.lastActions = actions.map(describeAction);
         agent.lastRefused = refused;
@@ -525,7 +549,21 @@ export class World {
 
     const finished = stepAction(agent, agent.current, dt, ctx);
     if (agent.blocked) agent.pendingEvents.push('Your walk was blocked by a wall.');
-    if (finished) agent.current = null;
+    if (finished) {
+      this.recordOutcome(agent, agent.current);
+      agent.current = null;
+    }
+  }
+
+  /** Note what an action actually achieved, for the agent's own memory. */
+  recordOutcome(agent, action, options) {
+    if (!action || action.forced) return;
+    agent.planResults.push({
+      id: action.id ?? null,
+      action: describeAction(action),
+      outcome: describeOutcome(action, options),
+    });
+    if (agent.planResults.length > 12) agent.planResults.shift();
   }
 
   // ---------------------------------------------------------------- main tick

@@ -818,9 +818,18 @@ const LOBBY = {
   congestedCooldown: 600,       // when the arena is full and the queue is long
   congestedQueueLength: 10,     // "queue > 10" triggers the long cooldown
 };
+
+// Whether the simulation refuses tool calls that break rules a prompt stated
+// as absolutes. Off by default: an agent driven by a model is responsible for
+// obeying its own orders, and it now has the memory to do so. Turn it on for
+// the brains that cannot read a prompt at all.
+const HARD_RULES = {
+  enforce: false,
+};
 const BRAIN = {
   maxActionsPerDecision: 4,
-  decisionTimeout: 12,          // seconds before a pending decision is abandoned
+  decisionTimeout: 25,          // seconds before a pending decision is abandoned
+  memoryTurns: 12,              // how many past exchanges an agent carries
   localThinkTime: [0.25, 0.6],  // simulated deliberation for the offline brain
   damageInterruptCooldown: 0.6, // getting shot flushes the action queue, at most this often
 };
@@ -1453,7 +1462,14 @@ const clampRange = (value, [lo, hi], fallback) => {
 function normalizeAction(call, agent) {
   if (!call || typeof call.name !== 'string') return null;
   const input = call.input && typeof call.input === 'object' ? call.input : {};
+  const built = buildAction(call, input, agent);
+  // The id ties an action back to the tool call that asked for it, so what
+  // actually happened can be reported against that call next turn.
+  if (built && call.id) built.id = call.id;
+  return built;
+}
 
+function buildAction(call, input, agent) {
   switch (call.name) {
     case 'turn': {
       const direction = input.direction === 'left' ? 'left' : 'right';
@@ -1464,7 +1480,7 @@ function normalizeAction(call, agent) {
       const direction = MOVE_DIRECTIONS[input.direction] ? input.direction : 'forward';
       const steps = Math.round(clampRange(input.steps, ACTION_LIMITS.moveSteps, 2));
       const distance = steps * MOVE.stepDistance;
-      return { type: 'move', direction, remaining: distance, total: distance, steps };
+      return { type: 'move', direction, remaining: distance, total: distance, steps, travelled: 0 };
     }
     case 'aim': {
       if (input.direction === 'center') return { type: 'aim', target: 0 };
@@ -1477,7 +1493,7 @@ function normalizeAction(call, agent) {
       const shots = Math.round(
         clampRange(input.shots, [1, Math.max(1, weapon.magazine)], 1),
       );
-      return { type: 'fire', remaining: shots, total: shots };
+      return { type: 'fire', remaining: shots, total: shots, fired: 0 };
     }
     case 'reload':
       return { type: 'reload', started: false };
@@ -1516,6 +1532,45 @@ function describeAction(action) {
 }
 
 /**
+ * What actually became of an action. This is what an agent is told about its
+ * own previous moves, so it is written in terms of consequences, not internals.
+ */
+function describeOutcome(action, { interrupted = false } = {}) {
+  if (!action) return 'nothing happened';
+  const stopped = interrupted ? ', then you were interrupted' : '';
+
+  switch (action.type) {
+    case 'turn': {
+      const done = Math.round(action.total - action.remaining);
+      return action.remaining > 1
+        ? `turned ${action.direction} ${done}° of ${Math.round(action.total)}° before stopping${stopped}`
+        : `turned ${action.direction} ${Math.round(action.total)}°${stopped}`;
+    }
+    case 'move': {
+      const steps = action.travelled / MOVE.stepDistance;
+      if (action.blocked) return `blocked by a wall after ${steps.toFixed(1)} of ${action.steps} steps ${action.direction}`;
+      return steps + 0.05 >= action.steps
+        ? `moved ${action.steps} steps ${action.direction}${stopped}`
+        : `moved ${steps.toFixed(1)} of ${action.steps} steps ${action.direction}${stopped}`;
+    }
+    case 'aim':
+      return `aim now ${Math.round(action.target)}° from your body facing${stopped}`;
+    case 'fire': {
+      if (action.fired === 0) return 'fired nothing - the magazine was empty or the weapon was not ready';
+      return action.fired < action.total
+        ? `fired ${action.fired} of ${action.total} shots, then ran dry`
+        : `fired ${action.fired} shot${action.fired === 1 ? '' : 's'}${stopped}`;
+    }
+    case 'reload':
+      return action.started && !interrupted ? 'reloaded, magazine full' : 'reload started but did not finish';
+    case 'hold':
+      return `held position${stopped}`;
+    default:
+      return 'done';
+  }
+}
+
+/**
  * Advance one action by `dt`. Returns true when the action is finished.
  * Movement and shooting are delegated back to the world through `ctx`, which
  * owns collision and projectiles.
@@ -1536,9 +1591,11 @@ function stepAction(agent, action, dt, ctx) {
       const rad = toRad(agent.facing + spec.angle);
       const moved = ctx.tryMove(agent, Math.cos(rad) * amount, Math.sin(rad) * amount);
       action.remaining -= amount;
+      if (moved) action.travelled += amount;
       // Bumping a wall ends the move so the agent is not stuck grinding into it.
       if (!moved) {
         agent.blocked = true;
+        action.blocked = true;
         return true;
       }
       return action.remaining <= 1e-6;
@@ -1560,6 +1617,7 @@ function stepAction(agent, action, dt, ctx) {
       if (agent.nextShotAt > ctx.now) return false;       // weapon still cycling
       if (agent.ammo <= 0) return true;                   // dry: caller must reload
       ctx.fireWeapon(agent);
+      action.fired += 1;
       action.remaining -= 1;
       return action.remaining <= 0;
     }
@@ -1944,6 +2002,10 @@ class World {
       nextDecisionAt: 0,
       lastActions: [],
       lastRefused: [],
+      // What became of the last plan, reported back on the next decision.
+      planResults: [],
+      turn: 0,
+      memoryDepth: 0,
       lastSnapshot: null,
       lastNote: null,
       lastError: null,
@@ -2009,6 +2071,9 @@ class World {
 
     this.recordChampion(agent);
 
+    // A life's conversation dies with it: the next life starts with no memory.
+    for (const brain of Object.values(this.brains ?? {})) brain.endSession?.(agent.id);
+
     const wait = this.lobby.onDeath(agent.participant, congested);
     agent.participant.agent = null;
     this.agents = this.agents.filter((a) => a !== agent);
@@ -2064,6 +2129,14 @@ class World {
     if (this.time - target.lastInterruptAt > BRAIN.damageInterruptCooldown) {
       target.lastInterruptAt = this.time;
       if (target.current?.type !== 'reload') {
+        this.recordOutcome(target, target.current, { interrupted: true });
+        for (const pending of target.queue) {
+          target.planResults.push({
+            id: pending.id ?? null,
+            action: describeAction(pending),
+            outcome: 'never ran - you broke off the plan when you were hit',
+          });
+        }
         target.queue = [];
         target.current = null;
       }
@@ -2301,7 +2374,12 @@ class World {
     const token = ++agent.thinkToken;
     agent.thinking = true;
 
-    Promise.resolve(brain.decide(snapshot, agent.participant))
+    // The agent's own history of the last plan, handed back so it can see what
+    // its previous moves actually achieved.
+    const memory = { agentId: agent.id, results: agent.planResults.slice() };
+    agent.planResults = [];
+
+    Promise.resolve(brain.decide(snapshot, agent.participant, memory))
       .then((decision) => {
         if (token !== agent.thinkToken || !agent.alive) return;
         agent.thinking = false;
@@ -2309,14 +2387,18 @@ class World {
         agent.participant.lastError = null;
         agent.lastError = null;
         agent.lastNote = decision?.note ?? null;
+        agent.turn = decision?.turn ?? agent.turn;
+        agent.memoryDepth = decision?.memory ?? agent.memoryDepth;
         if (decision?.chat) this.say(agent, decision.chat);
 
         const proposed = buildQueue(decision?.actions, agent);
 
-        // The prompt's hard rules are applied here rather than trusted to the
-        // brain, so they hold for every brain including ones that never read
-        // the prompt at all.
-        const { actions, refused } = enforce(proposed, agent.participant.constraints);
+        // Obedience is the model's job: it holds its orders in a cached system
+        // prompt and remembers its own past turns. HARD_RULES.enforce brings back a
+        // mechanical backstop for brains that cannot read a prompt at all.
+        const { actions, refused } = HARD_RULES.enforce
+          ? enforce(proposed, agent.participant.constraints)
+          : { actions: proposed, refused: [] };
         agent.queue = actions;
         agent.lastActions = actions.map(describeAction);
         agent.lastRefused = refused;
@@ -2376,7 +2458,21 @@ class World {
 
     const finished = stepAction(agent, agent.current, dt, ctx);
     if (agent.blocked) agent.pendingEvents.push('Your walk was blocked by a wall.');
-    if (finished) agent.current = null;
+    if (finished) {
+      this.recordOutcome(agent, agent.current);
+      agent.current = null;
+    }
+  }
+
+  /** Note what an action actually achieved, for the agent's own memory. */
+  recordOutcome(agent, action, options) {
+    if (!action || action.forced) return;
+    agent.planResults.push({
+      id: action.id ?? null,
+      action: describeAction(action),
+      outcome: describeOutcome(action, options),
+    });
+    if (agent.planResults.length > 12) agent.planResults.shift();
   }
 
   // ---------------------------------------------------------------- main tick
@@ -2827,9 +2923,15 @@ function createClaudeBrain({ endpoint = '/api/decide', fallback = null } = {}) {
       lastFailureAt = Date.now();
     },
 
-    async decide(snapshot, participant) {
+    /** Tell the server a life is over so its conversation can be dropped. */
+    endSession(agentId) {
+      if (!agentId) return;
+      fetch(`/api/session?agentId=${encodeURIComponent(agentId)}`, { method: 'DELETE' }).catch(() => {});
+    },
+
+    async decide(snapshot, participant, memory) {
       if (!available && Date.now() - lastFailureAt < 60_000) {
-        if (fallback) return fallback.decide(snapshot, participant);
+        if (fallback) return fallback.decide(snapshot, participant, memory);
         throw new Error('model backend unavailable');
       }
 
@@ -2841,9 +2943,12 @@ function createClaudeBrain({ endpoint = '/api/decide', fallback = null } = {}) {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({
+            // The agent id is per life, so each character gets its own context.
+            agentId: memory?.agentId,
             prompt: participant.prompt,
             name: participant.name,
             observation: renderSnapshotText(snapshot),
+            results: memory?.results ?? [],
           }),
           signal: controller.signal,
         });
@@ -2856,10 +2961,16 @@ function createClaudeBrain({ endpoint = '/api/decide', fallback = null } = {}) {
 
         available = true;
         const data = await response.json();
-        return { actions: data.actions ?? [], note: data.note ?? null, chat: data.chat ?? null };
+        return {
+          actions: data.actions ?? [],
+          note: data.note ?? null,
+          chat: data.chat ?? null,
+          turn: data.turn ?? null,
+          memory: data.memory ?? null,
+        };
       } catch (error) {
         if (error.name === 'AbortError') throw new Error('model timed out');
-        if (fallback && !available) return fallback.decide(snapshot, participant);
+        if (fallback && !available) return fallback.decide(snapshot, participant, memory);
         throw error;
       } finally {
         clearTimeout(timer);
@@ -3738,6 +3849,20 @@ class UI {
     }
 
     if (agent) {
+      if (agent.turn) {
+        parts.push(
+          `<div><span class="label">Its own memory</span><div>` +
+            `Turn ${agent.turn} of this life · carrying ${agent.memoryDepth ?? 0} past exchange` +
+            `${agent.memoryDepth === 1 ? '' : 's'}</div></div>`,
+        );
+      }
+      if (agent.planResults?.length) {
+        parts.push(
+          `<div><span class="label">What its last moves achieved</span><div class="chips">` +
+            agent.planResults.map((r) => `<span class="chip">${escapeHtml(r.outcome)}</span>`).join('') +
+            `</div></div>`,
+        );
+      }
       if (agent.lastNote) parts.push(`<div><span class="label">Reasoning</span><div>${escapeHtml(agent.lastNote)}</div></div>`);
       const chips = (agent.lastActions ?? []).map((a) => `<span class="chip">${escapeHtml(a)}</span>`).join('');
       parts.push(`<div><span class="label">Last plan${agent.thinking ? ' (thinking…)' : ''}</span><div class="chips">${chips || '<span class="muted">—</span>'}</div></div>`);

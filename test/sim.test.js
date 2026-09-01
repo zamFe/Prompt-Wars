@@ -11,7 +11,7 @@ import { createLocalBrain, parsePrompt } from '../public/src/brains/local.js';
 import { buildSnapshot } from '../public/src/sensors.js';
 import { normalizeAction, buildQueue, stepAction, describeAction, MOVE_DIRECTIONS, TOOL_SCHEMAS, TOOL_NAMES, TOOL_SUMMARIES } from '../public/src/actions.js';
 import { hasLineOfSight, castRay, clearance, resolveCollision } from '../public/src/arena.js';
-import { WEAPONS, AGENT, WORLD, LOBBY, VISION, MOVE, CHAT, PULSE } from '../public/src/config.js';
+import { WEAPONS, AGENT, WORLD, LOBBY, VISION, MOVE, CHAT, PULSE, HARD_RULES } from '../public/src/config.js';
 import { extractChat, wrapChat, tidy } from '../public/src/chat.js';
 import { parseConstraints, enforce, violation, hasConstraints, describeConstraints } from '../public/src/constraints.js';
 
@@ -569,8 +569,14 @@ test('an absolute prompt is parsed into rules the arena can enforce', () => {
   assert.deepEqual([...c.directions.turn.allow], ['right']);
 });
 
-test('rules bind a brain that never reads the prompt at all', async () => {
+test('obedience is left to the model by default', () => {
+  assert.equal(HARD_RULES.enforce, false,
+    'an agent with memory and its orders in a cached system prompt owns its own obedience');
+});
+
+test('the mechanical backstop, when switched on, binds a prompt-blind brain', async () => {
   // Exactly the stub model's behaviour: sensible tactics, prompt ignored.
+  HARD_RULES.enforce = true;
   const ignorant = {
     decide: async () => ({
       actions: [
@@ -600,6 +606,7 @@ test('rules bind a brain that never reads the prompt at all', async () => {
   assert.ok(Math.hypot(participant.agent.x - startX, participant.agent.y - startY) < 1,
     'never move must mean it has not moved');
   assert.ok(participant.agent.lastRefused.length > 0, 'and it is told what was refused');
+  HARD_RULES.enforce = false;
 });
 
 test('a refusal names the rule so a model can adapt', () => {
