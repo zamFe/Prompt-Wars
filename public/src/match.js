@@ -65,9 +65,38 @@ export const MODES = {
       'team returns it by touching it, the enemy picks it up and runs. Killing still matters, but only because a ' +
       'dead carrier drops what they were carrying.',
   },
+  commander: {
+    id: 'commander',
+    name: 'Commander',
+    short: 'CMD',
+    teams: true,
+    squad: 4,
+    // The only mode where speech is the mechanic rather than the flavour, so
+    // the global chat is split into one channel per side.
+    teamChat: true,
+    blurb: 'One agent a side, each commanding four bots. Your voice is the only thing they hear.',
+    scoreWord: 'kills',
+    commanderBounty: 5,
+    briefing:
+      'You are a COMMANDER. Four bots fight for you, listed below with their codenames and where they started. ' +
+      'They are not clever and they cannot see what you see - but they do what they are told, and the only way ' +
+      'to tell them anything is to SAY IT OUT LOUD. Your "say" line is your radio.\n' +
+      'Address one of them by codename ("HAWK, hold the left wall") and only that one acts on it. Say it without ' +
+      'a codename and the whole squad takes it. They only hear you within earshot, and so does the enemy ' +
+      'commander if they are close enough - talking gives your position away.\n' +
+      'Orders they understand are plain tactics: push, hold, fall back, regroup, go left, go right, watch the ' +
+      'flanks, spread out, conserve ammo, open fire. Keep each order to one short line.\n' +
+      'A kill scores for your side. Killing the enemy commander is worth five.',
+  },
 };
 
 export const MODE_LIST = Object.values(MODES);
+
+/** Squad codenames, one set a side, so a call-sign is never ambiguous. */
+export const CODENAMES = {
+  a: ['HAWK', 'BISHOP', 'EMBER', 'RUST'],
+  b: ['FROST', 'MARLIN', 'COBALT', 'DRIFT'],
+};
 
 /**
  * What a fighter is told about the round before it starts: what game this is,
@@ -93,6 +122,15 @@ export function missionBriefing(mission) {
       ? `You have ${mission.lives} ${mission.lives === 1 ? 'life' : 'lives'}. When they are gone you are out of the round and you watch the rest of it from the sidelines.`
       : 'You come back indefinitely, so dying costs you time and nothing else.',
   );
+  if (mission.squad?.length) {
+    lines.push('');
+    lines.push('YOUR SQUAD, as they stood when the round began (direction is relative to your own facing):');
+    for (const member of mission.squad) {
+      lines.push(`- ${member.codename}: ${member.distance} units to your ${member.direction}`);
+    }
+    lines.push('Those are their starting positions, not where they are now. They move when you tell them to.');
+  }
+
   lines.push('Your standing orders are written for this round. Where they are silent, play the mode.');
   return lines.join('\n');
 }
@@ -109,7 +147,7 @@ export function defaultSettings() {
  * Scores, flags and the clock. `world` is the simulation it drives; it is
  * deliberately the only thing in here that knows about bodies.
  */
-export function createMatch({ world, onPhase = () => {}, onEvent = () => {} } = {}) {
+export function createMatch({ world, onPhase = () => {}, onEvent = () => {}, onFormUp = null } = {}) {
   let phase = PHASES.landing;
   let settings = defaultSettings();
   let clock = 0;              // seconds spent in the current phase
@@ -265,7 +303,49 @@ export function createMatch({ world, onPhase = () => {}, onEvent = () => {} } = 
       if (phase === PHASES.landing) this.toLobby();
     },
 
+    /**
+     * Commander mode is one agent a side, and the arena holds exactly ten: two
+     * commanders and their eight. So switching into it trims the lobby to one
+     * commander per side, and switching out of it clears the squads, which are
+     * round furniture rather than players.
+     */
+    trimToCommanders() {
+      const kept = { a: null, b: null };
+      const other = (team) => (team === 'a' ? 'b' : 'a');
+      const ordered = [...world.lobby.list()].sort((x, y) => x.joinedAt - y.joinedAt);
+
+      for (const participant of ordered) {
+        if (participant.role === 'squad') {
+          world.lobby.remove(participant.id);
+          continue;
+        }
+        const want = participant.team === 'b' ? 'b' : 'a';
+        const side = !kept[want] ? want : !kept[other(want)] ? other(want) : null;
+        if (!side) {
+          world.lobby.remove(participant.id);
+          continue;
+        }
+        kept[side] = participant;
+        participant.team = side;
+        participant.role = 'commander';
+      }
+      return kept;
+    },
+
+    /** Which sides still have room for a commander. */
+    freeCommandSlot() {
+      const taken = (team) => world.lobby.list().some((p) => p.team === team && p.role === 'commander');
+      return !taken('a') ? 'a' : !taken('b') ? 'b' : null;
+    },
+
+    dropSquads() {
+      for (const participant of world.lobby.list()) {
+        if (participant.role === 'squad') world.lobby.remove(participant.id);
+      }
+    },
+
     configure(patch = {}) {
+      const before = settings.mode;
       const next = { ...settings, ...patch };
       next.mode = MODES[next.mode] ? next.mode : 'ffa';
       next.map = MAPS.some((m) => m.id === next.map) ? next.map : MAPS[0].id;
@@ -273,6 +353,14 @@ export function createMatch({ world, onPhase = () => {}, onEvent = () => {} } = 
       next.briefSeconds = clampNumber(next.briefSeconds, MATCH.limits.briefSeconds, settings.briefSeconds);
       next.lives = clampNumber(next.lives, MATCH.limits.lives, settings.lives);
       settings = next;
+
+      if (next.mode !== before) {
+        // Squads belong to the mode that raised them.
+        api.dropSquads();
+        if (MODES[next.mode].squad) api.trimToCommanders();
+        else for (const p of world.lobby.list()) p.role = null;
+      }
+
       if (phase === PHASES.lobby) setMap(settings.map);
       onPhase(api.state);
       return settings;
@@ -291,6 +379,7 @@ export function createMatch({ world, onPhase = () => {}, onEvent = () => {} } = 
     /** The owner has started the round: everyone gets the clock to write. */
     openBriefing() {
       if (phase !== PHASES.lobby) return false;
+      if (mode().squad) api.trimToCommanders();
       world.clearArena?.({ keepParticipants: true });
       scores = { a: 0, b: 0 };
       results = null;
@@ -302,6 +391,8 @@ export function createMatch({ world, onPhase = () => {}, onEvent = () => {} } = 
     /** The writing time is up (or the owner skipped it): fight. */
     goLive() {
       if (phase !== PHASES.briefing) return false;
+      // Squads are raised before the round, so they spawn with everyone else.
+      if (mode().squad) onFormUp?.(mode());
       resetFlags();
       startedAt = Date.now();
       world.beginRound?.(settings, mode());
@@ -319,7 +410,18 @@ export function createMatch({ world, onPhase = () => {}, onEvent = () => {} } = 
     /** A kill happened. Only the mode decides whether that is worth anything. */
     onKill(victim, killer) {
       if (phase !== PHASES.live || !killer || killer === victim) return;
-      if (mode().id === 'tdm' && killer.team && killer.team !== victim.team) scores[killer.team] += 1;
+      const m = mode();
+      if (!killer.team || killer.team === victim.team) return;
+
+      if (m.id === 'tdm') scores[killer.team] += 1;
+      if (m.id === 'commander') {
+        // A squad fighter is worth a point; the mind running them is worth five.
+        const worth = victim.participant.role === 'commander' ? m.commanderBounty : 1;
+        scores[killer.team] += worth;
+        if (worth > 1) {
+          onEvent(`${killer.name} killed the enemy commander. ${TEAMS[killer.team].name} +${worth}.`, 'kill');
+        }
+      }
     },
 
     /**

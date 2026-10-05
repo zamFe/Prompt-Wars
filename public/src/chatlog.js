@@ -63,6 +63,9 @@ export function createChatLog({ endpoint = '/api/chat', max = 1000, pollInterval
         agentId: agent.participant.id,
         name: agent.name,
         color: agent.color,
+        // Which side said it. A mode with team channels shows you only your
+        // own; everything else ignores this.
+        team: agent.team ?? null,
         text: line,
       };
 

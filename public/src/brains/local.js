@@ -433,6 +433,33 @@ export function decideFromTraits(s, traits, rng, state = {}) {
 }
 
 /**
+ * Which of the lines this fighter just heard were orders FOR IT.
+ *
+ * One voice counts - its own commander's. A line naming call-signs is for the
+ * fighters it names; a line naming none is for the whole squad. Everything else
+ * in earshot, including the enemy commander shouting at their own people, is
+ * just noise that tells you where they are.
+ */
+export function ordersHeard(snapshot, participant) {
+  if (participant?.role !== 'squad' || !participant.commanderName) return [];
+
+  const orders = [];
+  for (const sound of snapshot?.heard ?? []) {
+    if (sound.kind !== 'speech' || sound.name !== participant.commanderName) continue;
+
+    const text = String(sound.text ?? '').trim();
+    if (!text) continue;
+
+    const spoken = text.toUpperCase();
+    const named = (participant.squadCodenames ?? []).filter((call) => spoken.includes(call));
+    if (named.length && !named.includes(participant.codename)) continue;
+
+    orders.push(text);
+  }
+  return orders;
+}
+
+/**
  * What to tell an operator who just sent a message.
  *
  * This brain cannot hold a conversation, but it can answer honestly: a message
@@ -517,15 +544,34 @@ export function createLocalBrain({ thinkTime = [0.25, 0.6] } = {}) {
       // Read the operator's messages before re-reading the briefing, so the
       // reply can say what they changed.
       const messages = memory?.messages ?? drainInbox(participant);
+
+      // Orders arrive the same way, but by ear rather than over a private
+      // channel - and they join the briefing this brain already reads, so a
+      // commander's voice genuinely changes how its squad fights.
+      const orders = ordersHeard(snapshot, participant);
+      if (orders.length) {
+        participant.briefing = `${briefingFor(participant)}\n${orders.join('\n')}`.slice(-4000);
+      }
+
       const previous = cache.get(participant)?.traits ?? null;
       const entry = this.traitsFor(participant);
       const reply = acknowledge(messages, previous, entry.traits);
+      // An order is answered out loud, because that is the only channel a
+      // squad fighter has - and only when it actually changed something, or
+      // four bots would shout "copy" at every word.
+      const acknowledged = orders.length ? acknowledge(orders, previous, entry.traits) : null;
+      const callsign = acknowledged && !/Nothing in that/.test(acknowledged)
+        ? `${participant.codename}: ${acknowledged.replace(/^Copy — /, '')}`
+        : null;
 
       // A small delay so offline agents feel like they are deciding, not twitching.
       const delay = thinkTime[0] + entry.rng() * (thinkTime[1] - thinkTime[0]);
       await new Promise((resolve) => setTimeout(resolve, delay * 1000));
 
       const decision = decideFromTraits(snapshot, entry.traits, entry.rng, entry.state);
+      // Answering an order outranks whatever bark the situation produced: it is
+      // the thing that just happened.
+      if (callsign) decision.chat = callsign;
       return reply ? { ...decision, reply } : decision;
     },
   };

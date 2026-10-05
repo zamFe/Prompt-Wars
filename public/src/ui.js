@@ -62,6 +62,7 @@ export class UI {
       clear: $('btn-clear'),
       leaderboard: $('leaderboard'),
       chatlog: $('chatlog'),
+      commsTitle: $('comms-title'),
       commsCount: $('comms-count'),
       commsStore: $('comms-store'),
       commsEmpty: $('comms-empty'),
@@ -487,14 +488,18 @@ export class UI {
 
     const lives = Number.isFinite(p.livesLeft) ? ` · ${p.livesLeft} ${p.livesLeft === 1 ? 'life' : 'lives'}` : '';
     sub += lives;
+    // In commander mode the name is a call-sign, so say whose it is.
+    if (p.role === 'squad' && p.commanderName) sub += ` · ${p.commanderName}'s`;
+    if (p.role === 'commander') sub += ' · commander';
 
     const hp = agent ? Math.max(0, agent.hp / AGENT.maxHp) : 0;
     const hpColor = hp > 0.5 ? 'var(--good)' : hp > 0.25 ? 'var(--warn)' : 'var(--bad)';
     const brainTag = { sample: ' · Claude', claude: ' · Claude', remote: ' · remote' }[p.brainKind] ?? '';
 
+    const teamRing = p.team && TEAMS[p.team] ? `box-shadow:0 0 0 2px ${TEAMS[p.team].color}` : '';
     return `
       <li data-id="${p.id}" class="${p.status !== 'live' ? 'waiting' : ''} ${this.selectedId === p.id ? 'selected' : ''}">
-        <span class="dot" style="background:${color}"></span>
+        <span class="dot" style="background:${color};${teamRing}"></span>
         <span class="who">
           <span class="name">${escapeHtml(p.name)}</span>
           <div class="sub">${escapeHtml(sub)}${brainTag}</div>
@@ -888,13 +893,38 @@ export class UI {
    * Append-only: existing messages are never re-rendered, and a history that
    * scrolled off the ring is trimmed from the front.
    */
+  /** The side whose channel this page is reading, in a mode that has them. */
+  get myTeam() {
+    const mine = this.world.lobby.list().filter((p) => p.isMine && p.team);
+    return mine.sort((a, b) => b.joinedAt - a.joinedAt)[0]?.team ?? null;
+  }
+
   renderChat() {
-    const messages = this.chatLog.messages;
+    const mode = this.match ? MODES[this.match.settings.mode] : null;
+    const team = mode?.teamChat ? this.myTeam : null;
+
+    // A channel change rebuilds the list; within a channel it stays append-only.
+    const channel = `${mode?.teamChat ? 'team' : 'all'}:${team ?? ''}`;
+    if (channel !== this.chatChannel) {
+      this.chatChannel = channel;
+      this.el.chatlog.innerHTML = '';
+      this.el.commsTitle.textContent = mode?.teamChat ? 'Team chat' : 'Global chat';
+      this.el.commsEmpty.textContent = mode?.teamChat
+        ? team
+          ? `Only ${TEAMS[team].name} can read this. The other side has its own.`
+          : 'Each side has its own channel. Deploy a commander to read one.'
+        : 'Agents call out when something happens. Nothing yet.';
+    }
+
+    const messages = team
+      ? this.chatLog.messages.filter((m) => m.team === team)
+      : this.chatLog.messages;
     this.el.commsEmpty.hidden = messages.length > 0;
     this.el.commsCount.textContent = messages.length ? `${messages.length}` : '';
     this.el.commsStore.textContent = this.chatLog.serverBacked
       ? `server · max ${this.chatLog.capacity}`
       : `this tab · max ${this.chatLog.capacity}`;
+    this.el.commsCount.classList.toggle('team', Boolean(team));
 
     // The store drops from the front when full; mirror that in the DOM.
     while (this.el.chatlog.children.length > messages.length) {

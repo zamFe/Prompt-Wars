@@ -11,7 +11,10 @@ import { createLocalBrain, parsePrompt } from '../public/src/brains/local.js';
 import { buildSnapshot } from '../public/src/sensors.js';
 import { normalizeAction, buildQueue, stepAction, describeAction, MOVE_DIRECTIONS, TOOL_SCHEMAS, TOOL_NAMES, TOOL_SUMMARIES } from '../public/src/actions.js';
 import { hasLineOfSight, castRay, clearance, resolveCollision, MAPS, setMap, baseOf, currentMap } from '../public/src/arena.js';
-import { createMatch, PHASES, MODES, missionBriefing } from '../public/src/match.js';
+import { createMatch, PHASES, MODES, missionBriefing, CODENAMES } from '../public/src/match.js';
+import { compassFrom, emitSound, takeHeard, describeHeard } from '../public/src/sound.js';
+import { ordersHeard } from '../public/src/brains/local.js';
+import { SOUND, TEAMS } from '../public/src/config.js';
 import { WEAPONS, AGENT, WORLD, LOBBY, VISION, MOVE, CHAT, COMMS, PULSE, HARD_RULES } from '../public/src/config.js';
 import { extractChat, extractSpeech, wrapChat, tidy } from '../public/src/chat.js';
 import { messageAgent, drainInbox, operatorBlock, briefingFor, amendmentsBlock, ORDER_AUTHORITY } from '../public/src/comms.js';
@@ -1403,6 +1406,280 @@ test('a guest mirrors the host rather than running the match itself', () => {
   match.setRemaining(42);
   assert.equal(Math.round(match.remaining), 42);
   setMap('crossfire');
+});
+
+console.log('\n-- hearing -------------------------------------------------------');
+
+test('a direction is read in the listener\'s own frame, with its nose as north', () => {
+  const ear = { x: 700, y: 700, facing: 0 };          // facing east in world terms
+  assert.equal(compassFrom(ear, 900, 700), 'N', 'whatever you face is your north');
+  assert.equal(compassFrom(ear, 700, 900), 'E', 'and your right is east');
+  assert.equal(compassFrom(ear, 500, 700), 'S', 'behind you is south');
+  assert.equal(compassFrom(ear, 700, 500), 'W');
+  assert.equal(compassFrom(ear, 900, 900), 'NE', 'forward and to the right');
+
+  ear.facing = 90;                                     // now facing south
+  assert.equal(compassFrom(ear, 700, 900), 'N', 'turning turns the whole frame with you');
+  assert.equal(compassFrom(ear, 500, 700), 'E');
+});
+
+test('a gunshot carries further than a shout, and neither carries forever', () => {
+  const world = makeWorld();
+  const near = addAgent(world, 'Near');
+  const far = addAgent(world, 'Far');
+  const source = addAgent(world, 'Source');
+
+  Object.assign(source.agent, { x: 200, y: 700 });
+  Object.assign(near.agent, { x: 500, y: 700, facing: 180 });
+  Object.assign(far.agent, { x: 200 + SOUND.shotRange + 50, y: 700, facing: 180 });
+
+  emitSound(world, { kind: 'shot', x: source.agent.x, y: source.agent.y, source: source.agent, name: 'Source' });
+  assert.equal(takeHeard(near.agent, world.time).length, 1, 'close enough');
+  assert.equal(takeHeard(far.agent, world.time).length, 0, 'beyond the range of a gunshot');
+
+  // The same distance, said rather than fired, is out of earshot.
+  Object.assign(near.agent, { x: 200 + SOUND.speechRange + 50, y: 700 });
+  emitSound(world, { kind: 'speech', x: source.agent.x, y: source.agent.y, source: source.agent, name: 'Source', text: 'here' });
+  assert.equal(takeHeard(near.agent, world.time).length, 0, 'a shout does not carry as far as a shot');
+});
+
+test('you never hear yourself, and the dead hear nothing', () => {
+  const world = makeWorld();
+  const me = addAgent(world, 'Me');
+  const other = addAgent(world, 'Other');
+  Object.assign(me.agent, { x: 700, y: 500 });
+  Object.assign(other.agent, { x: 760, y: 500 });
+  other.agent.alive = false;
+
+  emitSound(world, { kind: 'shot', x: me.agent.x, y: me.agent.y, source: me.agent, name: 'Me' });
+  assert.equal(takeHeard(me.agent, world.time).length, 0, 'your own gun is not news');
+  assert.equal(takeHeard(other.agent, world.time).length, 0, 'and a body does not listen');
+});
+
+test('firing and speaking are both audible acts', () => {
+  const world = makeWorld();
+  const listener = addAgent(world, 'Listener');
+  const actor = addAgent(world, 'Actor');
+  Object.assign(listener.agent, { x: 700, y: 500, facing: 0 });
+  Object.assign(actor.agent, { x: 820, y: 500 });
+
+  world.fireWeapon(actor.agent);
+  world.say(actor.agent, 'Contact!');
+
+  const heard = takeHeard(listener.agent, world.time);
+  assert.deepEqual(heard.map((h) => h.kind), ['shot', 'speech']);
+  assert.ok(heard.every((h) => h.direction === 'N'), JSON.stringify(heard));
+  assert.equal(heard[1].text, 'Contact!');
+  assert.equal(heard[1].name, 'Actor', 'you know the voice');
+});
+
+test('repeated shots from one direction read as one fact', () => {
+  const lines = describeHeard([
+    { kind: 'shot', direction: 'E' }, { kind: 'shot', direction: 'E' }, { kind: 'shot', direction: 'E' },
+    { kind: 'shot', direction: 'W' },
+    { kind: 'speech', direction: 'S', name: 'Vex', text: 'Reloading!' },
+  ]);
+  assert.ok(lines.some((l) => /3 gunshots to your E/.test(l)), lines.join(' | '));
+  assert.ok(lines.some((l) => /A gunshot to your W/.test(l)));
+  assert.ok(lines.some((l) => /Vex to your S: "Reloading!"/.test(l)));
+  assert.deepEqual(describeHeard([]), []);
+});
+
+test('sound reaches an agent that cannot possibly see the source', () => {
+  const world = makeWorld();
+  const listener = addAgent(world, 'Listener');
+  const actor = addAgent(world, 'Actor');
+  // Directly behind, so it is nowhere near the vision cone.
+  Object.assign(listener.agent, { x: 700, y: 500, facing: 0 });
+  Object.assign(actor.agent, { x: 560, y: 500 });
+
+  world.fireWeapon(actor.agent);
+  const snapshot = buildSnapshot(listener.agent, world);
+  assert.equal(snapshot.enemies.length, 0, 'it sees nothing');
+  assert.equal(snapshot.heard[0].direction, 'S', 'but it hears what is behind it');
+  assert.equal(buildSnapshot(listener.agent, world).heard.length, 0, 'and a sound is only read once');
+});
+
+console.log('\n-- commander mode ------------------------------------------------');
+
+/** A commander match with both chairs filled and the squads raised. */
+function makeCommand() {
+  const brain = createLocalBrain({ thinkTime: [0, 0] });
+  const world = new World({ seed: 5, brains: { local: brain } });
+  const match = createMatch({
+    world,
+    onFormUp: (mode) => {
+      for (const commander of Object.values(match.trimToCommanders()).filter(Boolean)) {
+        const calls = CODENAMES[commander.team].slice(0, mode.squad);
+        for (const codename of calls) {
+          const bot = createParticipant({ name: codename, prompt: 'squad fighter', brainKind: 'local', colorIndex: 4 });
+          Object.assign(bot, {
+            team: commander.team, role: 'squad', codename,
+            commanderId: commander.id, commanderName: commander.name, squadCodenames: calls,
+          });
+          world.lobby.participants.set(bot.id, bot);
+        }
+      }
+    },
+  });
+  world.match = match;
+  match.configure({ mode: 'commander', map: 'crossfire', roundSeconds: 120 });
+  match.toLobby();
+
+  for (const [name, team] of [['Alpha', 'a'], ['Bravo', 'b']]) {
+    const p = createParticipant({ name, prompt: 'Command the squad.', brainKind: 'local', colorIndex: 0 });
+    p.team = team;
+    p.role = 'commander';
+    world.lobby.participants.set(p.id, p);
+  }
+  return { world, match, brain, start: () => { match.openBriefing(); match.goLive(); } };
+}
+
+test('a commander round is two commanders and eight bots, and the arena holds exactly that', () => {
+  const { world, match, start } = makeCommand();
+  start();
+
+  assert.equal(world.agents.length, 10);
+  assert.equal(world.agents.length, WORLD.maxAgents, 'which is the whole arena');
+
+  const squads = world.lobby.list().filter((p) => p.role === 'squad');
+  assert.equal(squads.length, 8);
+  assert.deepEqual(
+    squads.filter((p) => p.team === 'a').map((p) => p.codename),
+    CODENAMES.a,
+    'each side gets its own call-signs, so one is never ambiguous',
+  );
+  assert.equal(new Set(squads.map((p) => p.codename)).size, 8, 'and no two fighters share one');
+  void match;
+});
+
+test('a commander is told its squad and where each of them started', () => {
+  const { world, start } = makeCommand();
+  start();
+
+  const commander = world.lobby.list().find((p) => p.name === 'Alpha');
+  const squad = commander.mission.squad;
+  assert.equal(squad.length, 4);
+  assert.deepEqual(squad.map((m) => m.codename), CODENAMES.a);
+  for (const member of squad) {
+    assert.ok(member.distance > 0, 'a real distance');
+    assert.match(member.direction, /^(N|NE|E|SE|S|SW|W|NW)$/, member.direction);
+  }
+
+  const brief = missionBriefing(commander.mission);
+  assert.match(brief, /YOUR SQUAD/);
+  assert.match(brief, new RegExp(`${CODENAMES.a[0]}: \\d+ units to your`));
+  assert.match(brief, /only way to tell them anything is to SAY IT OUT LOUD/);
+});
+
+test('an order reaches the fighter it names, and nobody else', async () => {
+  const { world, brain, start } = makeCommand();
+  start();
+
+  const commander = world.lobby.list().find((p) => p.name === 'Alpha');
+  const [first, second] = world.lobby.list().filter((p) => p.commanderId === commander.id);
+
+  // Stand them next to their commander so the order is in earshot.
+  for (const bot of [first, second]) Object.assign(bot.agent, { x: commander.agent.x + 40, y: commander.agent.y });
+
+  const before = brain.traitsFor(first).traits.aggression;
+  world.say(commander.agent, `${first.codename}, attack, rush them down`);
+
+  await brain.decide(buildSnapshot(first.agent, world), first);
+  await brain.decide(buildSnapshot(second.agent, world), second);
+
+  assert.ok(brain.traitsFor(first).traits.aggression > before, 'the one that was named acts on it');
+  assert.equal(brain.traitsFor(second).traits.aggression, before, 'the one that was not, does not');
+});
+
+test('an order with no call-sign is for the whole squad', async () => {
+  const { world, brain, start } = makeCommand();
+  start();
+
+  const commander = world.lobby.list().find((p) => p.name === 'Alpha');
+  const squad = world.lobby.list().filter((p) => p.commanderId === commander.id);
+  for (const bot of squad) Object.assign(bot.agent, { x: commander.agent.x + 40, y: commander.agent.y });
+
+  const before = squad.map((p) => brain.traitsFor(p).traits.camp);
+  world.say(commander.agent, 'hold position and wait');
+  for (const bot of squad) await brain.decide(buildSnapshot(bot.agent, world), bot);
+
+  for (const [i, bot] of squad.entries()) {
+    assert.ok(brain.traitsFor(bot).traits.camp > before[i], `${bot.codename} ignored a squad order`);
+  }
+});
+
+test('a squad takes orders from its own commander and from nobody else', () => {
+  const { world, start } = makeCommand();
+  start();
+
+  const mine = world.lobby.list().find((p) => p.role === 'squad' && p.team === 'a');
+  const enemyCommander = world.lobby.list().find((p) => p.name === 'Bravo');
+
+  const fromEnemy = {
+    heard: [{ kind: 'speech', name: enemyCommander.name, text: `${mine.codename}, stand still`, direction: 'N' }],
+  };
+  assert.deepEqual(ordersHeard(fromEnemy, mine), [], 'the other side shouting your call-sign is just noise');
+
+  const fromOwn = {
+    heard: [{ kind: 'speech', name: mine.commanderName, text: 'push left', direction: 'N' }],
+  };
+  assert.deepEqual(ordersHeard(fromOwn, mine), ['push left']);
+
+  // A gunshot is not an order, and neither is a line for someone else.
+  assert.deepEqual(ordersHeard({ heard: [{ kind: 'shot', name: mine.commanderName, direction: 'N' }] }, mine), []);
+  const forOther = mine.squadCodenames.find((c) => c !== mine.codename);
+  assert.deepEqual(
+    ordersHeard({ heard: [{ kind: 'speech', name: mine.commanderName, text: `${forOther}, fall back`, direction: 'N' }] }, mine),
+    [],
+  );
+});
+
+test('a commander is worth five, a squad fighter one', () => {
+  const { world, match, start } = makeCommand();
+  start();
+
+  const killer = world.agents.find((a) => a.team === 'a');
+  const squaddie = world.agents.find((a) => a.team === 'b' && a.participant.role === 'squad');
+  const commander = world.agents.find((a) => a.team === 'b' && a.participant.role === 'commander');
+
+  world.killAgent(squaddie, killer);
+  assert.equal(match.scores.a, 1);
+
+  world.killAgent(commander, killer);
+  assert.equal(match.scores.a, 1 + MODES.commander.commanderBounty);
+});
+
+test('the lobby is trimmed to one commander a side, and squads do not survive the mode', () => {
+  const { world, match } = makeCommand();
+
+  // Three more hopefuls turn up.
+  for (const name of ['Extra1', 'Extra2', 'Extra3']) {
+    const p = createParticipant({ name, prompt: 'me too', brainKind: 'local', colorIndex: 1 });
+    p.team = 'a';
+    world.lobby.participants.set(p.id, p);
+  }
+  const kept = match.trimToCommanders();
+  assert.equal(world.lobby.list().length, 2, 'one chair a side');
+  assert.ok(kept.a && kept.b);
+  assert.equal(match.freeCommandSlot(), null, 'and now there is no room');
+
+  match.openBriefing();
+  match.goLive();
+  assert.equal(world.lobby.list().filter((p) => p.role === 'squad').length, 8);
+
+  // Switching mode clears the squads: they belong to the round that raised them.
+  match.configure({ mode: 'tdm' });
+  assert.equal(world.lobby.list().filter((p) => p.role === 'squad').length, 0);
+  assert.equal(world.lobby.list().length, 2);
+});
+
+test('commander mode gives each side its own channel', () => {
+  assert.equal(MODES.commander.teamChat, true);
+  assert.ok(!MODES.tdm.teamChat, 'the other team modes keep the one global channel');
+  assert.ok(!MODES.ffa.teamChat);
+  assert.equal(MODES.commander.squad, 4);
+  assert.ok(TEAMS.a.name && TEAMS.b.name);
 });
 
 console.log('\n-- a full match --------------------------------------------------');

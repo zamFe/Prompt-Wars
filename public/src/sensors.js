@@ -7,6 +7,7 @@
 import { VISION, MOVE, WEAPONS, AGENT, WORLD, TEAMS } from './config.js';
 import { normalizeDeg, toRad, dist, round0, round1, clamp } from './util.js';
 import { castRay, hasLineOfSight } from './arena.js';
+import { takeHeard, describeHeard } from './sound.js';
 
 /** Internal facing (0 = east, clockwise) to a compass heading (0 = north). */
 export const toCompass = (facing) => (Math.round(normalizeDeg(facing + 90)) + 360) % 360;
@@ -154,6 +155,8 @@ export function buildSnapshot(agent, world) {
     walls,
     // Things that happened since this agent's previous decision.
     events: agent.pendingEvents.slice(-6),
+    // And things it heard happen, which is the only sense it has behind itself.
+    heard: takeHeard(agent, world.time),
     arena: {
       agentsAlive: world.agents.filter((a) => a.alive).length,
       queueLength: world.queue.length,
@@ -318,6 +321,12 @@ export function renderSnapshotText(s) {
   );
   const p = s.walls.proximity;
   lines.push(`WALL PROXIMITY: front ${p.front}, right ${p.right}, back ${p.back}, left ${p.left}`);
+
+  const sounds = describeHeard(s.heard);
+  if (sounds.length) {
+    lines.push('WHAT YOU HEARD (direction is relative to your own facing: N is ahead, E your right, S behind, W your left):');
+    lines.push(...sounds);
+  }
 
   if (s.events.length) {
     lines.push('SINCE YOUR LAST DECISION:');

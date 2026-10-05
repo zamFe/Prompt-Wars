@@ -7,6 +7,7 @@ import { buildSnapshot, bearingTo } from './sensors.js';
 import { buildQueue, stepAction, describeAction, describeOutcome } from './actions.js';
 import { enforce, hasConstraints, describeConstraints } from './constraints.js';
 import { Lobby } from './lobby.js';
+import { emitSound, compassFrom } from './sound.js';
 
 const SPAWN_PROTECTION = 1.5;
 
@@ -61,6 +62,9 @@ export class World {
       saidAt: this.time,
     };
     this.onSay?.(agent, agent.chat.text);
+    // Speaking out loud is an act in the world, not a caption: anyone close
+    // enough hears it, including whoever you were hiding from.
+    emitSound(this, { kind: 'speech', x: agent.x, y: agent.y, source: agent, name: agent.name, text: agent.chat.text });
   }
 
   /**
@@ -162,6 +166,9 @@ export class World {
       spawnedAt: this.time,
 
       chat: null,                 // { text, until, saidAt }
+      // Sounds since this agent last thought: gunshots and voices, each with a
+      // direction in its own frame.
+      heard: [],
       lastReply: null,            // { text, at } - the last private line to its operator
       // Timestamps of the last time each action fired, for the focus bar.
       pulses: { fire: -Infinity, reload: -Infinity, hurt: -Infinity, heal: -Infinity, kill: -Infinity, pickup: -Infinity },
@@ -298,6 +305,8 @@ export class World {
       // so it belongs with the orders rather than in every observation.
       participant.mission = mode
         ? {
+            role: participant.role ?? null,
+            codename: participant.codename ?? null,
             modeId: mode.id,
             modeName: mode.name,
             briefing: mode.briefing,
@@ -312,7 +321,27 @@ export class World {
     this.allowSpawning = true;
     this.lobby.queue = this.lobby.list().map((p) => p.id);
     this.lobby.pump();
+    if (mode?.squad) this.briefSquads();
     this.addLog(`${mode?.name ?? 'Round'} started.`, 'join');
+  }
+
+  /**
+   * Tell each commander who it has and where they are standing. This runs after
+   * the bodies exist, because "where they started" is a fact about the arena
+   * rather than about the lobby.
+   */
+  briefSquads() {
+    for (const commander of this.lobby.list()) {
+      if (commander.role !== 'commander' || !commander.agent || !commander.mission) continue;
+
+      commander.mission.squad = this.lobby.list()
+        .filter((p) => p.commanderId === commander.id && p.agent)
+        .map((p) => ({
+          codename: p.codename,
+          direction: compassFrom(commander.agent, p.agent.x, p.agent.y),
+          distance: Math.round(dist(commander.agent.x, commander.agent.y, p.agent.x, p.agent.y)),
+        }));
+    }
   }
 
   /** Every life ends with a score; the board keeps the ten best. */
@@ -388,6 +417,7 @@ export class World {
     if (agent.ammo <= 0) return;
 
     agent.ammo -= 1;
+    emitSound(this, { kind: 'shot', x: agent.x, y: agent.y, source: agent, name: agent.name });
     agent.nextShotAt = this.time + weapon.timeBetweenShots;
     agent.participant.shotsFired += 1;
     // Counted per pellet, so a shotgun's accuracy means the same as a pistol's.

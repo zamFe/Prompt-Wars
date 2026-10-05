@@ -9,7 +9,7 @@
 // arena rules and that character's standing orders, then its own past
 // decisions and what each achieved.
 
-import { BRAIN, CHAT, COMMS, MATCH, MOVE, VISION, WEAPONS, AGENT, HEALTH_PACKS } from '../config.js';
+import { BRAIN, CHAT, COMMS, MATCH, MOVE, SOUND, VISION, WEAPONS, AGENT, HEALTH_PACKS } from '../config.js';
 import { renderSnapshotText } from '../sensors.js';
 import { TOOL_SUMMARIES } from '../actions.js';
 import { drainInbox, operatorBlock, amendmentsBlock, recordAmendments, ORDER_AUTHORITY } from '../comms.js';
@@ -42,6 +42,13 @@ const ARENA_RULES = [
   `- To put your gun on a target at bearing B, aim |B| degrees that way. If |B| exceeds ${MOVE.aimLimit}, turn your body first.`,
   '- Sidesteps use the same frame: moving "right" carries you toward positive bearings.',
   '- You never get arena coordinates. Wall distances across your cone are how you work out where you are.',
+  '',
+  'Hearing — the only sense you have behind you:',
+  `- A gunshot carries about ${SOUND.shotRange} units, a shout about ${SOUND.speechRange}. Walls muffle sound; they do not stop it.`,
+  '- You are told a DIRECTION and nothing else, as one of eight points relative to your own facing, with your nose as north:',
+  '  N is dead ahead, E is your right, S is directly behind you, W is your left, NE is forward-right, and so on.',
+  '- You never hear how far away it was or what weapon it was. The direction is the whole of it.',
+  '- Speaking out loud is an act in the world. Anyone in earshot hears the line AND learns roughly where you are.',
   '',
   'Weapons:',
   ...Object.values(WEAPONS).map(

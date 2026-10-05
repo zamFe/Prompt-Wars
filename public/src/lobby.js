@@ -32,6 +32,12 @@ export function createParticipant({ name, prompt, brainKind, colorIndex }) {
     readyAt: 0,
     // Which side, in a team mode. Null in a free-for-all.
     team: null,
+    // Commander mode: who this is, and who it answers to.
+    role: null,              // 'commander' | 'squad'
+    codename: null,          // a squad fighter's call-sign
+    commanderId: null,       // the participant it takes orders from
+    commanderName: null,
+    squadCodenames: [],      // every call-sign on this side, to spot one meant for someone else
     livesLeft: Infinity,
     kills: 0,
     assists: 0,

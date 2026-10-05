@@ -135,6 +135,18 @@ export const COMMS = {
   amendmentsKept: 10,   // order changes carried beside the standing orders
 };
 
+// Hearing. Sight is a 45-degree cone, so sound is the only sense that reaches
+// behind an agent - and the only one that goes round a corner. What a listener
+// gets is a direction in its own frame and nothing else: never what was fired,
+// never how far away it was.
+export const SOUND = {
+  shotRange: 950,       // a gunshot carries most of the way across the arena
+  speechRange: 430,     // a shout does not
+  wallDamping: 0.6,     // through cover, a sound carries this fraction as far
+  memory: 8,            // seconds of sound an agent carries into its next decision
+  maxHeard: 6,          // and at most this many, newest kept
+};
+
 // How long an action lights up its tile in the focus bar.
 export const PULSE = {
   duration: 0.4,

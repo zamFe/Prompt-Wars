@@ -11,7 +11,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { TOOL_SCHEMAS } from './public/src/actions.js';
-import { WEAPONS, MOVE, VISION, AGENT, LOBBY, WORLD, HEALTH_PACKS, CHAT, COMMS, BRAIN } from './public/src/config.js';
+import { WEAPONS, MOVE, VISION, AGENT, LOBBY, WORLD, HEALTH_PACKS, CHAT, COMMS, SOUND, BRAIN } from './public/src/config.js';
 import { extractSpeech } from './public/src/chat.js';
 import { operatorBlock, amendmentsBlock, recordAmendments, ORDER_AUTHORITY } from './public/src/comms.js';
 import { missionBriefing } from './public/src/match.js';
@@ -125,6 +125,13 @@ This is one continuous conversation for the length of your life. You can see eve
 - Sidesteps use the same frame: moving "right" carries you toward positive bearings, "left" toward negative ones.
 - You never receive arena coordinates. Your heading is a compass bearing (0 = north). The wall probes across your cone and the four proximity readings are how you work out where you are and where you can go.
 - A large wall distance means open space in that direction; a small one means cover or a corner.
+
+## Hearing
+You hear as well as see, and hearing is the only sense that reaches behind you. A gunshot carries about ${SOUND.shotRange} units and a shout about ${SOUND.speechRange}; walls muffle sound but do not stop it, so you hear things you cannot possibly see.
+
+What you are told is a DIRECTION and nothing else, as one of eight points relative to YOUR OWN FACING, with your nose as north: N is dead ahead, E is your right, S is directly behind you, W is your left, NE is forward-right, and so on. You never hear how far away a sound was, or what made it beyond "a gunshot" or a voice saying something. Turning toward a direction you heard is how you find out more.
+
+Speaking out loud is an act in the world, not a caption. Anyone within earshot hears your line and learns roughly where you are.
 
 ## Weapons
 ${Object.values(WEAPONS)
@@ -243,13 +250,16 @@ let chatSeq = 0;
 /** Colours are rendered into a style attribute, so only real hex is accepted. */
 const isHexColor = (value) => typeof value === 'string' && /^#[0-9a-f]{3,8}$/i.test(value);
 
-function appendChat({ agentId, name, color, text }) {
+function appendChat({ agentId, name, color, team, text }) {
   const message = {
     seq: ++chatSeq,
     at: Date.now(),
     agentId: String(agentId ?? '').slice(0, 40),
     name: String(name ?? 'agent').slice(0, 24),
     color: isHexColor(color) ? color : '#8b93a7',
+    // Which side said it, so a mode with per-team channels can be filtered
+    // after a round trip through here.
+    team: team === 'a' || team === 'b' ? team : null,
     text: String(text ?? '').replace(/\s+/g, ' ').trim().slice(0, CHAT.maxLength),
   };
   if (!message.text) return null;

@@ -10,9 +10,13 @@ commitment. That deliberate weakness is the whole design: when the mechanics
 are this constrained, the quality of your instructions is what decides the
 fight.
 
-Rounds run ten minutes in **free-for-all**, **team deathmatch** or **capture the
-flag**, across three maps, from a lobby the owner sets up — and end on a podium
-where the winning agent gets fifty characters to say something about it.
+Rounds run ten minutes in **free-for-all**, **team deathmatch**, **capture the
+flag** or **commander** — where one agent a side runs four bots by voice alone —
+across three maps, from a lobby the owner sets up, and end on a podium where the
+winning agent gets fifty characters to say something about it.
+
+Agents hear as well as see. Gunshots and voices carry, walls muffle them, and
+what you get is a direction relative to your own nose and nothing more.
 
 ![the arena](docs/arena.png)
 
@@ -154,6 +158,36 @@ positive bearings.
 Bearings are always relative to your body: negative is left, positive is right.
 Click any sphere in the running game to read its exact sensor feed.
 
+## What an agent can hear
+
+Sight is a 45° cone, so an agent is blind to almost everything around it.
+Hearing is the other half, and the only sense that reaches **behind** it.
+
+Two things make a sound, in every mode: **firing a weapon** and **speaking out
+loud**. A gunshot carries about 950 units, a shout about 430. Walls muffle
+sound rather than stopping it — a sound that has cover between it and you
+carries 60% as far — which is the whole reason the sense is worth having: it
+tells you about things you cannot possibly see.
+
+What a listener gets is a **direction and nothing else**, as one of eight points
+**relative to its own facing, with its nose as north**:
+
+```
+WHAT YOU HEARD (N is ahead, E your right, S behind, W your left):
+  Vex to your S: "Reloading!"
+  2 gunshots to your W
+```
+
+Never how far, never which weapon. Turning toward a direction you heard is how
+you find out more — which costs a second of being blind to everywhere else.
+
+Repeated shots from one direction fold into one line, because six bangs from the
+east are one fact, not six. You never hear your own gun.
+
+The consequence worth noticing: **speaking is now an act in the world.** A line
+that used to be pure flavour gives away roughly where you are, to anyone close
+enough, including whoever you were hiding from.
+
 ## Combat
 
 100 HP. Everyone spawns with the pistol; the other two are found on the floor,
@@ -219,9 +253,11 @@ in `public/src/config.js` to switch it on.
 Agents talk on two channels, and they are not the same thing.
 
 **Out loud** is the speech bubble: a line over the sphere for two seconds, and a
-row in the **Global chat**. Saying something new replaces the current line and
-restarts the clock, so an agent that keeps talking holds one continuous bubble
-rather than flickering between separate ones. Everybody reads it.
+row in the **Global chat** — or your side's channel, in commander mode. Saying
+something new replaces the current line and restarts the clock, so an agent that
+keeps talking holds one continuous bubble rather than flickering between separate
+ones. Everybody reads it, and — since hearing went in — every agent close enough
+*hears* it, and learns roughly where the speaker is.
 
 **Privately** is the **Agent chat**: a line to its operator, and nobody else.
 It never reaches the global log, the server, the room, or another player's page
@@ -371,13 +407,14 @@ carries the mode, the score and the countdown.
 best accuracy, longest life — and the winner's own victory speech. The owner
 takes everyone back to the lobby, where the fighters are all still sitting.
 
-### Three ways to play
+### Four ways to play
 
 | Mode | What scores | Who is on your side |
 |---|---|---|
 | **Free-for-all** | a kill | nobody |
 | **Team deathmatch** | a kill, for your side | half the arena |
 | **Capture the flag** | a capture. Kills score *nothing* | half the arena |
+| **Commander** | a kill — and **five** for the enemy commander | four bots that only hear your voice |
 
 In a team mode your shots pass straight through your own side, so a teammate is
 never something to walk around. Each team spawns at its own base and is told
@@ -389,6 +426,40 @@ your own flag is still home — and it counts. Die carrying, and it drops where
 you fell: your side returns it by touching it, their side picks it up and runs.
 A flag left lying for thirty seconds takes itself home, so a corner of the map
 cannot stall a round.
+
+### Commander
+
+One agent a side, each with four bots. The arena holds exactly ten, which is
+what two commanders and their eight come to.
+
+Your agent cannot order anyone around privately. **Its `say` line is its radio**,
+and that is the whole mechanic: a spoken order is a sound in the world, heard by
+everyone in earshot — its own squad, and the enemy commander too if they are
+close enough. Talking gives your position away.
+
+Each bot has a call-sign — `HAWK BISHOP EMBER RUST` on one side,
+`FROST MARLIN COBALT DRIFT` on the other — and the commander is told all four
+and where each one started, as a direction and a distance in its own frame:
+
+```
+YOUR SQUAD, as they stood when the round began:
+- HAWK: 268 units to your NE
+- BISHOP: 155 units to your E
+```
+
+Name one in an order and only that fighter acts on it; name none and the whole
+squad does. A bot takes orders from **one voice** — its own commander's. The
+enemy shouting your call-signs is just noise that tells you where they are.
+
+An order joins the briefing a bot already parses for intent, which is why this
+works at all: *"HAWK, attack, rush them down"* genuinely makes HAWK more
+aggressive, and HAWK answers out loud with its call-sign, which is itself a
+sound. The chain — you type to your agent privately, your agent speaks, the
+squad hears — is the mode.
+
+This is the one mode where the second chat card is a **team channel** rather
+than a global one. You read your own side's traffic; the other side's reaches
+you only through your agent's ears.
 
 ### Maps
 
@@ -473,6 +544,7 @@ public/
     arena.js           the maps, ray casts, line of sight, collision
     sensors.js         what an agent perceives, and its text rendering
     match.js           phases, modes, teams, flags, scoring, the result
+    sound.js           what carries, how far, and which way it came from
     screens.js         the title card, the lobby and the post-game report
     chat.js            agent speech: parsing both channels, tidying, wrapping
     chatlog.js         the two histories: global (server-backed) and private
@@ -512,7 +584,9 @@ walls blocking sight and bullets, map symmetry, the queue, both death cooldowns,
 loot rules, tool-argument clamping, prompt parsing, bubble lifetimes, both chat
 channels and the operator inbox, the phase machine, every mode's scoring, team
 spawns and friendly fire, lives and elimination, the whole flag lifecycle,
-assists, champion scoring, and a full 12-agent two-minute match.
+hearing (ranges, the relative compass, what folds and what drains), commander
+squads and order routing, assists, champion scoring, and a full 12-agent
+two-minute match.
 `model-proxy.test.js` runs the server against a stub Messages API and checks the
 request shape, the tool-call round trip and compatibility mode; it needs no
 credentials.

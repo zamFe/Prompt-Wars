@@ -11,7 +11,7 @@ import { PRESETS, DEMO_NAMES } from './presets.js';
 import { AGENT_COLORS, WORLD } from './config.js';
 import { createChatLog, createDirectLog } from './chatlog.js';
 import { messageAgent } from './comms.js';
-import { createMatch, PHASES, MODES } from './match.js';
+import { createMatch, PHASES, MODES, CODENAMES } from './match.js';
 import { createScreens } from './screens.js';
 
 const usage = createUsageMeter({ onChange: (state) => ui?.renderUsage(state) });
@@ -23,6 +23,7 @@ const match = createMatch({
   world,
   onPhase: (state) => onPhaseChanged(state),
   onEvent: (text, kind) => world.addLog(text, kind ?? 'info'),
+  onFormUp: (mode) => raiseSquads(mode),
 });
 world.match = match;
 // Nothing enters the arena until a round is actually being fought. The World's
@@ -75,7 +76,7 @@ function uniqueName(base) {
   return name;
 }
 
-function join({ name, prompt, brainKind, tier, team = null, focus = true, ownerPeer = null, ownerId = null, mine = true }) {
+function join({ name, prompt, brainKind, tier, team = null, role = null, focus = true, ownerPeer = null, ownerId = null, mine = true }) {
   if (!name) return { ok: false, message: 'Give your agent a name.', tone: 'bad' };
   if (prompt.length < 12) {
     return { ok: false, message: 'Write a real prompt — at least a sentence of tactics.', tone: 'bad' };
@@ -90,6 +91,17 @@ function join({ name, prompt, brainKind, tier, team = null, focus = true, ownerP
     return { ok: false, message: 'Call budget spent. Raise it, or deploy on the offline interpreter.', tone: 'bad' };
   }
 
+  // Commander mode is one agent a side. A commander takes a free chair or is
+  // turned away; the squads it is given are not commanders and skip all this.
+  let side = team;
+  if (match.mode.squad && role !== 'squad') {
+    const free = match.freeCommandSlot();
+    side = team && free !== null ? team : free;
+    if (!side) {
+      return { ok: false, message: 'Both commander slots are taken — this mode is one agent a side.', tone: 'bad' };
+    }
+  }
+
   const participant = createParticipant({
     name: uniqueName(name.slice(0, 14)),
     prompt,
@@ -99,7 +111,8 @@ function join({ name, prompt, brainKind, tier, team = null, focus = true, ownerP
   participant.tier = tier ?? DEFAULT_TIER;
   // In a team mode a fighter joins whichever side is thinner, unless the owner
   // has already put them somewhere.
-  participant.team = team ?? match.thinnestTeam();
+  participant.team = side ?? match.thinnestTeam();
+  participant.role = role ?? (match.mode.squad ? 'commander' : null);
   participant.ownerPeer = ownerPeer;
   participant.ownerId = ownerId;
   // Agents I deployed: only these may lock my tier selector or bill my account.
@@ -118,6 +131,7 @@ function join({ name, prompt, brainKind, tier, team = null, focus = true, ownerP
   // not steal that focus back.
   if (focus) ui.focus(participant.id);
   screens.renderLobby();
+  ui.renderChat();
 
   if (match.phase === PHASES.briefing) {
     return { ok: true, message: `${participant.name} is ready. The round starts when the clock runs out.`, tone: 'ok' };
@@ -129,6 +143,51 @@ function join({ name, prompt, brainKind, tier, team = null, focus = true, ownerP
         message: `Arena is full — ${participant.name} is #${world.lobby.queuePosition(participant.id)} in the queue.`,
         tone: 'warn',
       };
+}
+
+/** A squad fighter's standing orders, before its commander says anything. */
+const SQUAD_PROMPT =
+  'You are a squad fighter under a commander. Move with purpose, engage what you can see, take cover when you ' +
+  'are hurt, and above all do what your commander tells you the moment they tell you.';
+
+/**
+ * Raise four bots for every commander, with call-signs.
+ *
+ * Built fresh each round: last round's squad is gone, and a commander should
+ * never inherit a fighter it was not briefed on.
+ */
+function raiseSquads(mode) {
+  for (const participant of world.lobby.list()) {
+    if (participant.role === 'squad') world.lobby.remove(participant.id);
+  }
+
+  const commanders = Object.values(match.trimToCommanders()).filter(Boolean);
+  for (const commander of commanders) {
+    const team = commander.team ?? 'a';
+    const names = CODENAMES[team] ?? CODENAMES.a;
+    const codenames = names.slice(0, mode.squad);
+
+    for (const codename of codenames) {
+      const result = join({
+        name: codename,
+        prompt: SQUAD_PROMPT,
+        brainKind: 'local',
+        team,
+        role: 'squad',
+        focus: false,
+        mine: false,
+      });
+      if (!result.ok) continue;
+
+      // The newest participant is the one just added.
+      const bot = world.lobby.list().at(-1);
+      bot.codename = codename;
+      bot.commanderId = commander.id;
+      bot.commanderName = commander.name;
+      bot.squadCodenames = codenames;
+    }
+  }
+  screens.renderLobby();
 }
 
 function addDemoAgents(count = 4, team = null) {
@@ -200,6 +259,15 @@ const screens = createScreens({
   onAddBot: () => {
     if (!role.canEdit) return;
     if (net?.state.available && !net.isHost) return net.send(TOPICS.bots, { count: 1 });
+    // Commander mode is one agent a side: a bot here is an opposing commander,
+    // and its squad is raised for it when the round starts.
+    if (match.mode.squad) {
+      const free = match.freeCommandSlot();
+      if (!free) return;                     // both chairs are full
+      addDemoAgents(1, free);
+      screens.renderLobby();
+      return;
+    }
     addDemoAgents(1, match.thinnestTeam());
   },
   onClearLobby: () => {
@@ -235,6 +303,9 @@ function onPhaseChanged(state) {
   world.allowSpawning = state.phase === PHASES.live;
   screens.render();
   ui.renderMatch();
+  // The mode decides whether the second card is a global channel or your own
+  // side's, so it is re-read whenever the round changes shape.
+  ui.renderChat();
 
   if (state.phase === PHASES.live || state.phase === PHASES.briefing) {
     // The canvas was display:none a moment ago, so it has no size yet.
@@ -332,7 +403,7 @@ function makeGhost(netId) {
     weapon: 'pistol', ammo: 3, nextShotAt: 0, reloadUntil: 0, spawnProtectedUntil: 0,
     queue: [], current: null, thinking: false, pendingEvents: [], planResults: [],
     lastActions: [], lastRefused: [], pulses: { fire: -Infinity, reload: -Infinity, hurt: -Infinity, heal: -Infinity, kill: -Infinity, pickup: -Infinity },
-    recentDamage: new Map(), lifeKills: 0, lifeAssists: 0, chat: null, lastReply: null, spawnedAt: 0,
+    recentDamage: new Map(), lifeKills: 0, lifeAssists: 0, chat: null, lastReply: null, heard: [], spawnedAt: 0,
   };
   participant.agent = agent;
   return agent;

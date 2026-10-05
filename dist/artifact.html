@@ -1404,7 +1404,7 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
       <!-- Out loud: every bubble in the arena, and everyone reads it. -->
       <section class="chat-card global-card">
         <div class="comms-head">
-          <h2>Global chat <em id="comms-count"></em></h2>
+          <h2><span id="comms-title">Global chat</span> <em id="comms-count"></em></h2>
           <span class="comms-store" id="comms-store"></span>
         </div>
         <ol class="chatlog" id="chatlog"></ol>
@@ -1643,6 +1643,18 @@ const COMMS = {
   inboxMax: 4,          // unread operator messages an agent carries; oldest drops
   directMax: 400,       // messages kept in one page's private history
   amendmentsKept: 10,   // order changes carried beside the standing orders
+};
+
+// Hearing. Sight is a 45-degree cone, so sound is the only sense that reaches
+// behind an agent - and the only one that goes round a corner. What a listener
+// gets is a direction in its own frame and nothing else: never what was fired,
+// never how far away it was.
+const SOUND = {
+  shotRange: 950,       // a gunshot carries most of the way across the arena
+  speechRange: 430,     // a shout does not
+  wallDamping: 0.6,     // through cover, a sound carries this fraction as far
+  memory: 8,            // seconds of sound an agent carries into its next decision
+  maxHeard: 6,          // and at most this many, newest kept
 };
 
 // How long an action lights up its tile in the focus bar.
@@ -2052,12 +2064,120 @@ const arenaSize = S;
 const clampToArena = (v, radius) =>
   clamp(v, BORDER_THICKNESS + radius, S - BORDER_THICKNESS - radius);
 
+// ---- public/src/sound.js -----------------------------------------
+// Hearing.
+//
+// Sight in this arena is a 45-degree cone: an agent is blind to almost
+// everything around it. Sound is the other half of the picture, and the only
+// sense that reaches behind you. A gunshot or a shout tells you SOMETHING
+// happened and roughly where - never what, never how far.
+//
+// What a listener gets is one of eight directions RELATIVE TO ITS OWN FACING,
+// with its own nose as north: N is dead ahead, E is its right, S is behind it,
+// W is its left. That is deliberately the same mental model as the bearings it
+// already reads, and it costs an agent nothing to act on - turn W and look.
+//
+// Walls muffle rather than block. Sound going round a corner is the whole
+// reason this sense is worth having.
+
+
+
+/** Eight sectors, starting at dead ahead and going clockwise. */
+const POINTS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+
+/**
+ * Which way a point lies, in the listener's own frame. Its facing is north.
+ *
+ * The bearing is worked out here rather than borrowed from sensors.js, which
+ * reads sound back out again - one of them has to not import the other.
+ */
+function compassFrom(listener, x, y) {
+  const absolute = toDeg(Math.atan2(y - listener.y, x - listener.x));
+  const bearing = normalizeDeg(absolute - listener.facing);
+  return POINTS[((Math.round(bearing / 45) % 8) + 8) % 8];
+}
+
+/** How far a sound of this kind carries, before anything is in the way. */
+const rangeFor = (kind) => (kind === 'shot' ? SOUND.shotRange : SOUND.speechRange);
+
+/**
+ * Raise a sound at a point, and give it to everyone close enough to hear it.
+ *
+ * Delivered on the spot rather than stored and queried every tick: there are at
+ * most ten listeners, and a sound that nobody heard should cost nothing to
+ * forget.
+ */
+function emitSound(world, { kind, x, y, source = null, name = null, text = null }) {
+  const reach = rangeFor(kind);
+
+  for (const listener of world.agents) {
+    if (!listener.alive || listener === source) continue;
+
+    const distance = Math.hypot(listener.x - x, listener.y - y);
+    if (distance > reach) continue;
+
+    // A wall between you and it costs range rather than silencing it.
+    const muffled = !hasLineOfSight(listener.x, listener.y, x, y);
+    if (muffled && distance > reach * SOUND.wallDamping) continue;
+
+    listener.heard ??= [];
+    listener.heard.push({
+      kind,
+      direction: compassFrom(listener, x, y),
+      muffled,
+      name,
+      text,
+      at: world.time,
+    });
+    // Only the most recent handful survives to the next decision: an agent in a
+    // firefight should not be handed a minute of bangs to read.
+    if (listener.heard.length > SOUND.maxHeard) listener.heard.shift();
+  }
+}
+
+/** What this agent has heard since it last thought, oldest first. */
+function takeHeard(agent, now) {
+  const all = agent.heard ?? [];
+  if (!all.length) return [];
+  const fresh = all.filter((sound) => now - sound.at <= SOUND.memory);
+  agent.heard = [];
+  return fresh;
+}
+
+/**
+ * The same list as a line an agent reads. Repeats are folded together, because
+ * "gunshot to your E" six times is one fact, not six.
+ */
+function describeHeard(heard = []) {
+  if (!heard.length) return [];
+
+  const lines = [];
+  const shots = new Map();
+
+  for (const sound of heard) {
+    if (sound.kind === 'shot') {
+      shots.set(sound.direction, (shots.get(sound.direction) ?? 0) + 1);
+    } else {
+      lines.push(
+        `  ${sound.name ?? 'A voice'} to your ${sound.direction}${sound.muffled ? ' (muffled, through cover)' : ''}: ` +
+          `"${sound.text ?? '...'}"`,
+      );
+    }
+  }
+
+  for (const [direction, count] of shots) {
+    lines.push(`  ${count === 1 ? 'A gunshot' : `${count} gunshots`} to your ${direction}`);
+  }
+  return lines;
+}
+
 // ---- public/src/sensors.js ---------------------------------------
 // Everything an agent knows about the world.
 //
 // Agents never receive absolute arena coordinates. They get a compass heading,
 // bearings and distances to what is inside their vision cone, and wall probes -
 // so working out where you are is itself part of the prompt's job.
+
 
 
 
@@ -2206,6 +2326,8 @@ function buildSnapshot(agent, world) {
     walls,
     // Things that happened since this agent's previous decision.
     events: agent.pendingEvents.slice(-6),
+    // And things it heard happen, which is the only sense it has behind itself.
+    heard: takeHeard(agent, world.time),
     arena: {
       agentsAlive: world.agents.filter((a) => a.alive).length,
       queueLength: world.queue.length,
@@ -2370,6 +2492,12 @@ function renderSnapshotText(s) {
   );
   const p = s.walls.proximity;
   lines.push(`WALL PROXIMITY: front ${p.front}, right ${p.right}, back ${p.back}, left ${p.left}`);
+
+  const sounds = describeHeard(s.heard);
+  if (sounds.length) {
+    lines.push('WHAT YOU HEARD (direction is relative to your own facing: N is ahead, E your right, S behind, W your left):');
+    lines.push(...sounds);
+  }
 
   if (s.events.length) {
     lines.push('SINCE YOUR LAST DECISION:');
@@ -2935,6 +3063,12 @@ function createParticipant({ name, prompt, brainKind, colorIndex }) {
     readyAt: 0,
     // Which side, in a team mode. Null in a free-for-all.
     team: null,
+    // Commander mode: who this is, and who it answers to.
+    role: null,              // 'commander' | 'squad'
+    codename: null,          // a squad fighter's call-sign
+    commanderId: null,       // the participant it takes orders from
+    commanderName: null,
+    squadCodenames: [],      // every call-sign on this side, to spot one meant for someone else
     livesLeft: Infinity,
     kills: 0,
     assists: 0,
@@ -3065,6 +3199,7 @@ class Lobby {
 
 
 
+
 const SPAWN_PROTECTION = 1.5;
 
 /** Facing from a base toward the middle of the arena. */
@@ -3117,6 +3252,9 @@ class World {
       saidAt: this.time,
     };
     this.onSay?.(agent, agent.chat.text);
+    // Speaking out loud is an act in the world, not a caption: anyone close
+    // enough hears it, including whoever you were hiding from.
+    emitSound(this, { kind: 'speech', x: agent.x, y: agent.y, source: agent, name: agent.name, text: agent.chat.text });
   }
 
   /**
@@ -3218,6 +3356,9 @@ class World {
       spawnedAt: this.time,
 
       chat: null,                 // { text, until, saidAt }
+      // Sounds since this agent last thought: gunshots and voices, each with a
+      // direction in its own frame.
+      heard: [],
       lastReply: null,            // { text, at } - the last private line to its operator
       // Timestamps of the last time each action fired, for the focus bar.
       pulses: { fire: -Infinity, reload: -Infinity, hurt: -Infinity, heal: -Infinity, kill: -Infinity, pickup: -Infinity },
@@ -3354,6 +3495,8 @@ class World {
       // so it belongs with the orders rather than in every observation.
       participant.mission = mode
         ? {
+            role: participant.role ?? null,
+            codename: participant.codename ?? null,
             modeId: mode.id,
             modeName: mode.name,
             briefing: mode.briefing,
@@ -3368,7 +3511,27 @@ class World {
     this.allowSpawning = true;
     this.lobby.queue = this.lobby.list().map((p) => p.id);
     this.lobby.pump();
+    if (mode?.squad) this.briefSquads();
     this.addLog(`${mode?.name ?? 'Round'} started.`, 'join');
+  }
+
+  /**
+   * Tell each commander who it has and where they are standing. This runs after
+   * the bodies exist, because "where they started" is a fact about the arena
+   * rather than about the lobby.
+   */
+  briefSquads() {
+    for (const commander of this.lobby.list()) {
+      if (commander.role !== 'commander' || !commander.agent || !commander.mission) continue;
+
+      commander.mission.squad = this.lobby.list()
+        .filter((p) => p.commanderId === commander.id && p.agent)
+        .map((p) => ({
+          codename: p.codename,
+          direction: compassFrom(commander.agent, p.agent.x, p.agent.y),
+          distance: Math.round(dist(commander.agent.x, commander.agent.y, p.agent.x, p.agent.y)),
+        }));
+    }
   }
 
   /** Every life ends with a score; the board keeps the ten best. */
@@ -3444,6 +3607,7 @@ class World {
     if (agent.ammo <= 0) return;
 
     agent.ammo -= 1;
+    emitSound(this, { kind: 'shot', x: agent.x, y: agent.y, source: agent, name: agent.name });
     agent.nextShotAt = this.time + weapon.timeBetweenShots;
     agent.participant.shotsFired += 1;
     // Counted per pellet, so a shotgun's accuracy means the same as a pistol's.
@@ -4440,6 +4604,33 @@ function decideFromTraits(s, traits, rng, state = {}) {
 }
 
 /**
+ * Which of the lines this fighter just heard were orders FOR IT.
+ *
+ * One voice counts - its own commander's. A line naming call-signs is for the
+ * fighters it names; a line naming none is for the whole squad. Everything else
+ * in earshot, including the enemy commander shouting at their own people, is
+ * just noise that tells you where they are.
+ */
+function ordersHeard(snapshot, participant) {
+  if (participant?.role !== 'squad' || !participant.commanderName) return [];
+
+  const orders = [];
+  for (const sound of snapshot?.heard ?? []) {
+    if (sound.kind !== 'speech' || sound.name !== participant.commanderName) continue;
+
+    const text = String(sound.text ?? '').trim();
+    if (!text) continue;
+
+    const spoken = text.toUpperCase();
+    const named = (participant.squadCodenames ?? []).filter((call) => spoken.includes(call));
+    if (named.length && !named.includes(participant.codename)) continue;
+
+    orders.push(text);
+  }
+  return orders;
+}
+
+/**
  * What to tell an operator who just sent a message.
  *
  * This brain cannot hold a conversation, but it can answer honestly: a message
@@ -4524,15 +4715,34 @@ function createLocalBrain({ thinkTime = [0.25, 0.6] } = {}) {
       // Read the operator's messages before re-reading the briefing, so the
       // reply can say what they changed.
       const messages = memory?.messages ?? drainInbox(participant);
+
+      // Orders arrive the same way, but by ear rather than over a private
+      // channel - and they join the briefing this brain already reads, so a
+      // commander's voice genuinely changes how its squad fights.
+      const orders = ordersHeard(snapshot, participant);
+      if (orders.length) {
+        participant.briefing = `${briefingFor(participant)}\n${orders.join('\n')}`.slice(-4000);
+      }
+
       const previous = cache.get(participant)?.traits ?? null;
       const entry = this.traitsFor(participant);
       const reply = acknowledge(messages, previous, entry.traits);
+      // An order is answered out loud, because that is the only channel a
+      // squad fighter has - and only when it actually changed something, or
+      // four bots would shout "copy" at every word.
+      const acknowledged = orders.length ? acknowledge(orders, previous, entry.traits) : null;
+      const callsign = acknowledged && !/Nothing in that/.test(acknowledged)
+        ? `${participant.codename}: ${acknowledged.replace(/^Copy — /, '')}`
+        : null;
 
       // A small delay so offline agents feel like they are deciding, not twitching.
       const delay = thinkTime[0] + entry.rng() * (thinkTime[1] - thinkTime[0]);
       await new Promise((resolve) => setTimeout(resolve, delay * 1000));
 
       const decision = decideFromTraits(snapshot, entry.traits, entry.rng, entry.state);
+      // Answering an order outranks whatever bark the situation produced: it is
+      // the thing that just happened.
+      if (callsign) decision.chat = callsign;
       return reply ? { ...decision, reply } : decision;
     },
   };
@@ -4692,8 +4902,37 @@ const MODES = {
       'team returns it by touching it, the enemy picks it up and runs. Killing still matters, but only because a ' +
       'dead carrier drops what they were carrying.',
   },
+  commander: {
+    id: 'commander',
+    name: 'Commander',
+    short: 'CMD',
+    teams: true,
+    squad: 4,
+    // The only mode where speech is the mechanic rather than the flavour, so
+    // the global chat is split into one channel per side.
+    teamChat: true,
+    blurb: 'One agent a side, each commanding four bots. Your voice is the only thing they hear.',
+    scoreWord: 'kills',
+    commanderBounty: 5,
+    briefing:
+      'You are a COMMANDER. Four bots fight for you, listed below with their codenames and where they started. ' +
+      'They are not clever and they cannot see what you see - but they do what they are told, and the only way ' +
+      'to tell them anything is to SAY IT OUT LOUD. Your "say" line is your radio.\n' +
+      'Address one of them by codename ("HAWK, hold the left wall") and only that one acts on it. Say it without ' +
+      'a codename and the whole squad takes it. They only hear you within earshot, and so does the enemy ' +
+      'commander if they are close enough - talking gives your position away.\n' +
+      'Orders they understand are plain tactics: push, hold, fall back, regroup, go left, go right, watch the ' +
+      'flanks, spread out, conserve ammo, open fire. Keep each order to one short line.\n' +
+      'A kill scores for your side. Killing the enemy commander is worth five.',
+  },
 };
 const MODE_LIST = Object.values(MODES);
+
+/** Squad codenames, one set a side, so a call-sign is never ambiguous. */
+const CODENAMES = {
+  a: ['HAWK', 'BISHOP', 'EMBER', 'RUST'],
+  b: ['FROST', 'MARLIN', 'COBALT', 'DRIFT'],
+};
 
 /**
  * What a fighter is told about the round before it starts: what game this is,
@@ -4719,6 +4958,15 @@ function missionBriefing(mission) {
       ? `You have ${mission.lives} ${mission.lives === 1 ? 'life' : 'lives'}. When they are gone you are out of the round and you watch the rest of it from the sidelines.`
       : 'You come back indefinitely, so dying costs you time and nothing else.',
   );
+  if (mission.squad?.length) {
+    lines.push('');
+    lines.push('YOUR SQUAD, as they stood when the round began (direction is relative to your own facing):');
+    for (const member of mission.squad) {
+      lines.push(`- ${member.codename}: ${member.distance} units to your ${member.direction}`);
+    }
+    lines.push('Those are their starting positions, not where they are now. They move when you tell them to.');
+  }
+
   lines.push('Your standing orders are written for this round. Where they are silent, play the mode.');
   return lines.join('\n');
 }
@@ -4734,7 +4982,7 @@ function defaultSettings() {
  * Scores, flags and the clock. `world` is the simulation it drives; it is
  * deliberately the only thing in here that knows about bodies.
  */
-function createMatch({ world, onPhase = () => {}, onEvent = () => {} } = {}) {
+function createMatch({ world, onPhase = () => {}, onEvent = () => {}, onFormUp = null } = {}) {
   let phase = PHASES.landing;
   let settings = defaultSettings();
   let clock = 0;              // seconds spent in the current phase
@@ -4890,7 +5138,49 @@ function createMatch({ world, onPhase = () => {}, onEvent = () => {} } = {}) {
       if (phase === PHASES.landing) this.toLobby();
     },
 
+    /**
+     * Commander mode is one agent a side, and the arena holds exactly ten: two
+     * commanders and their eight. So switching into it trims the lobby to one
+     * commander per side, and switching out of it clears the squads, which are
+     * round furniture rather than players.
+     */
+    trimToCommanders() {
+      const kept = { a: null, b: null };
+      const other = (team) => (team === 'a' ? 'b' : 'a');
+      const ordered = [...world.lobby.list()].sort((x, y) => x.joinedAt - y.joinedAt);
+
+      for (const participant of ordered) {
+        if (participant.role === 'squad') {
+          world.lobby.remove(participant.id);
+          continue;
+        }
+        const want = participant.team === 'b' ? 'b' : 'a';
+        const side = !kept[want] ? want : !kept[other(want)] ? other(want) : null;
+        if (!side) {
+          world.lobby.remove(participant.id);
+          continue;
+        }
+        kept[side] = participant;
+        participant.team = side;
+        participant.role = 'commander';
+      }
+      return kept;
+    },
+
+    /** Which sides still have room for a commander. */
+    freeCommandSlot() {
+      const taken = (team) => world.lobby.list().some((p) => p.team === team && p.role === 'commander');
+      return !taken('a') ? 'a' : !taken('b') ? 'b' : null;
+    },
+
+    dropSquads() {
+      for (const participant of world.lobby.list()) {
+        if (participant.role === 'squad') world.lobby.remove(participant.id);
+      }
+    },
+
     configure(patch = {}) {
+      const before = settings.mode;
       const next = { ...settings, ...patch };
       next.mode = MODES[next.mode] ? next.mode : 'ffa';
       next.map = MAPS.some((m) => m.id === next.map) ? next.map : MAPS[0].id;
@@ -4898,6 +5188,14 @@ function createMatch({ world, onPhase = () => {}, onEvent = () => {} } = {}) {
       next.briefSeconds = clampNumber(next.briefSeconds, MATCH.limits.briefSeconds, settings.briefSeconds);
       next.lives = clampNumber(next.lives, MATCH.limits.lives, settings.lives);
       settings = next;
+
+      if (next.mode !== before) {
+        // Squads belong to the mode that raised them.
+        api.dropSquads();
+        if (MODES[next.mode].squad) api.trimToCommanders();
+        else for (const p of world.lobby.list()) p.role = null;
+      }
+
       if (phase === PHASES.lobby) setMap(settings.map);
       onPhase(api.state);
       return settings;
@@ -4916,6 +5214,7 @@ function createMatch({ world, onPhase = () => {}, onEvent = () => {} } = {}) {
     /** The owner has started the round: everyone gets the clock to write. */
     openBriefing() {
       if (phase !== PHASES.lobby) return false;
+      if (mode().squad) api.trimToCommanders();
       world.clearArena?.({ keepParticipants: true });
       scores = { a: 0, b: 0 };
       results = null;
@@ -4927,6 +5226,8 @@ function createMatch({ world, onPhase = () => {}, onEvent = () => {} } = {}) {
     /** The writing time is up (or the owner skipped it): fight. */
     goLive() {
       if (phase !== PHASES.briefing) return false;
+      // Squads are raised before the round, so they spawn with everyone else.
+      if (mode().squad) onFormUp?.(mode());
       resetFlags();
       startedAt = Date.now();
       world.beginRound?.(settings, mode());
@@ -4944,7 +5245,18 @@ function createMatch({ world, onPhase = () => {}, onEvent = () => {} } = {}) {
     /** A kill happened. Only the mode decides whether that is worth anything. */
     onKill(victim, killer) {
       if (phase !== PHASES.live || !killer || killer === victim) return;
-      if (mode().id === 'tdm' && killer.team && killer.team !== victim.team) scores[killer.team] += 1;
+      const m = mode();
+      if (!killer.team || killer.team === victim.team) return;
+
+      if (m.id === 'tdm') scores[killer.team] += 1;
+      if (m.id === 'commander') {
+        // A squad fighter is worth a point; the mind running them is worth five.
+        const worth = victim.participant.role === 'commander' ? m.commanderBounty : 1;
+        scores[killer.team] += worth;
+        if (worth > 1) {
+          onEvent(`${killer.name} killed the enemy commander. ${TEAMS[killer.team].name} +${worth}.`, 'kill');
+        }
+      }
     },
 
     /**
@@ -5179,6 +5491,13 @@ const ARENA_RULES = [
   `- To put your gun on a target at bearing B, aim |B| degrees that way. If |B| exceeds ${MOVE.aimLimit}, turn your body first.`,
   '- Sidesteps use the same frame: moving "right" carries you toward positive bearings.',
   '- You never get arena coordinates. Wall distances across your cone are how you work out where you are.',
+  '',
+  'Hearing — the only sense you have behind you:',
+  `- A gunshot carries about ${SOUND.shotRange} units, a shout about ${SOUND.speechRange}. Walls muffle sound; they do not stop it.`,
+  '- You are told a DIRECTION and nothing else, as one of eight points relative to your own facing, with your nose as north:',
+  '  N is dead ahead, E is your right, S is directly behind you, W is your left, NE is forward-right, and so on.',
+  '- You never hear how far away it was or what weapon it was. The direction is the whole of it.',
+  '- Speaking out loud is an act in the world. Anyone in earshot hears the line AND learns roughly where you are.',
   '',
   'Weapons:',
   ...Object.values(WEAPONS).map(
@@ -6480,6 +6799,7 @@ class UI {
       clear: $('btn-clear'),
       leaderboard: $('leaderboard'),
       chatlog: $('chatlog'),
+      commsTitle: $('comms-title'),
       commsCount: $('comms-count'),
       commsStore: $('comms-store'),
       commsEmpty: $('comms-empty'),
@@ -6905,14 +7225,18 @@ class UI {
 
     const lives = Number.isFinite(p.livesLeft) ? ` · ${p.livesLeft} ${p.livesLeft === 1 ? 'life' : 'lives'}` : '';
     sub += lives;
+    // In commander mode the name is a call-sign, so say whose it is.
+    if (p.role === 'squad' && p.commanderName) sub += ` · ${p.commanderName}'s`;
+    if (p.role === 'commander') sub += ' · commander';
 
     const hp = agent ? Math.max(0, agent.hp / AGENT.maxHp) : 0;
     const hpColor = hp > 0.5 ? 'var(--good)' : hp > 0.25 ? 'var(--warn)' : 'var(--bad)';
     const brainTag = { sample: ' · Claude', claude: ' · Claude', remote: ' · remote' }[p.brainKind] ?? '';
 
+    const teamRing = p.team && TEAMS[p.team] ? `box-shadow:0 0 0 2px ${TEAMS[p.team].color}` : '';
     return `
       <li data-id="${p.id}" class="${p.status !== 'live' ? 'waiting' : ''} ${this.selectedId === p.id ? 'selected' : ''}">
-        <span class="dot" style="background:${color}"></span>
+        <span class="dot" style="background:${color};${teamRing}"></span>
         <span class="who">
           <span class="name">${escapeHtml(p.name)}</span>
           <div class="sub">${escapeHtml(sub)}${brainTag}</div>
@@ -7306,13 +7630,38 @@ class UI {
    * Append-only: existing messages are never re-rendered, and a history that
    * scrolled off the ring is trimmed from the front.
    */
+  /** The side whose channel this page is reading, in a mode that has them. */
+  get myTeam() {
+    const mine = this.world.lobby.list().filter((p) => p.isMine && p.team);
+    return mine.sort((a, b) => b.joinedAt - a.joinedAt)[0]?.team ?? null;
+  }
+
   renderChat() {
-    const messages = this.chatLog.messages;
+    const mode = this.match ? MODES[this.match.settings.mode] : null;
+    const team = mode?.teamChat ? this.myTeam : null;
+
+    // A channel change rebuilds the list; within a channel it stays append-only.
+    const channel = `${mode?.teamChat ? 'team' : 'all'}:${team ?? ''}`;
+    if (channel !== this.chatChannel) {
+      this.chatChannel = channel;
+      this.el.chatlog.innerHTML = '';
+      this.el.commsTitle.textContent = mode?.teamChat ? 'Team chat' : 'Global chat';
+      this.el.commsEmpty.textContent = mode?.teamChat
+        ? team
+          ? `Only ${TEAMS[team].name} can read this. The other side has its own.`
+          : 'Each side has its own channel. Deploy a commander to read one.'
+        : 'Agents call out when something happens. Nothing yet.';
+    }
+
+    const messages = team
+      ? this.chatLog.messages.filter((m) => m.team === team)
+      : this.chatLog.messages;
     this.el.commsEmpty.hidden = messages.length > 0;
     this.el.commsCount.textContent = messages.length ? `${messages.length}` : '';
     this.el.commsStore.textContent = this.chatLog.serverBacked
       ? `server · max ${this.chatLog.capacity}`
       : `this tab · max ${this.chatLog.capacity}`;
+    this.el.commsCount.classList.toggle('team', Boolean(team));
 
     // The store drops from the front when full; mirror that in the DOM.
     while (this.el.chatlog.children.length > messages.length) {
@@ -7439,6 +7788,9 @@ function createChatLog({ endpoint = '/api/chat', max = 1000, pollInterval = 600 
         agentId: agent.participant.id,
         name: agent.name,
         color: agent.color,
+        // Which side said it. A mode with team channels shows you only your
+        // own; everything else ignores this.
+        team: agent.team ?? null,
         text: line,
       };
 
@@ -7882,6 +8234,7 @@ const match = createMatch({
   world,
   onPhase: (state) => onPhaseChanged(state),
   onEvent: (text, kind) => world.addLog(text, kind ?? 'info'),
+  onFormUp: (mode) => raiseSquads(mode),
 });
 world.match = match;
 // Nothing enters the arena until a round is actually being fought. The World's
@@ -7934,7 +8287,7 @@ function uniqueName(base) {
   return name;
 }
 
-function join({ name, prompt, brainKind, tier, team = null, focus = true, ownerPeer = null, ownerId = null, mine = true }) {
+function join({ name, prompt, brainKind, tier, team = null, role = null, focus = true, ownerPeer = null, ownerId = null, mine = true }) {
   if (!name) return { ok: false, message: 'Give your agent a name.', tone: 'bad' };
   if (prompt.length < 12) {
     return { ok: false, message: 'Write a real prompt — at least a sentence of tactics.', tone: 'bad' };
@@ -7949,6 +8302,17 @@ function join({ name, prompt, brainKind, tier, team = null, focus = true, ownerP
     return { ok: false, message: 'Call budget spent. Raise it, or deploy on the offline interpreter.', tone: 'bad' };
   }
 
+  // Commander mode is one agent a side. A commander takes a free chair or is
+  // turned away; the squads it is given are not commanders and skip all this.
+  let side = team;
+  if (match.mode.squad && role !== 'squad') {
+    const free = match.freeCommandSlot();
+    side = team && free !== null ? team : free;
+    if (!side) {
+      return { ok: false, message: 'Both commander slots are taken — this mode is one agent a side.', tone: 'bad' };
+    }
+  }
+
   const participant = createParticipant({
     name: uniqueName(name.slice(0, 14)),
     prompt,
@@ -7958,7 +8322,8 @@ function join({ name, prompt, brainKind, tier, team = null, focus = true, ownerP
   participant.tier = tier ?? DEFAULT_TIER;
   // In a team mode a fighter joins whichever side is thinner, unless the owner
   // has already put them somewhere.
-  participant.team = team ?? match.thinnestTeam();
+  participant.team = side ?? match.thinnestTeam();
+  participant.role = role ?? (match.mode.squad ? 'commander' : null);
   participant.ownerPeer = ownerPeer;
   participant.ownerId = ownerId;
   // Agents I deployed: only these may lock my tier selector or bill my account.
@@ -7977,6 +8342,7 @@ function join({ name, prompt, brainKind, tier, team = null, focus = true, ownerP
   // not steal that focus back.
   if (focus) ui.focus(participant.id);
   screens.renderLobby();
+  ui.renderChat();
 
   if (match.phase === PHASES.briefing) {
     return { ok: true, message: `${participant.name} is ready. The round starts when the clock runs out.`, tone: 'ok' };
@@ -7988,6 +8354,51 @@ function join({ name, prompt, brainKind, tier, team = null, focus = true, ownerP
         message: `Arena is full — ${participant.name} is #${world.lobby.queuePosition(participant.id)} in the queue.`,
         tone: 'warn',
       };
+}
+
+/** A squad fighter's standing orders, before its commander says anything. */
+const SQUAD_PROMPT =
+  'You are a squad fighter under a commander. Move with purpose, engage what you can see, take cover when you ' +
+  'are hurt, and above all do what your commander tells you the moment they tell you.';
+
+/**
+ * Raise four bots for every commander, with call-signs.
+ *
+ * Built fresh each round: last round's squad is gone, and a commander should
+ * never inherit a fighter it was not briefed on.
+ */
+function raiseSquads(mode) {
+  for (const participant of world.lobby.list()) {
+    if (participant.role === 'squad') world.lobby.remove(participant.id);
+  }
+
+  const commanders = Object.values(match.trimToCommanders()).filter(Boolean);
+  for (const commander of commanders) {
+    const team = commander.team ?? 'a';
+    const names = CODENAMES[team] ?? CODENAMES.a;
+    const codenames = names.slice(0, mode.squad);
+
+    for (const codename of codenames) {
+      const result = join({
+        name: codename,
+        prompt: SQUAD_PROMPT,
+        brainKind: 'local',
+        team,
+        role: 'squad',
+        focus: false,
+        mine: false,
+      });
+      if (!result.ok) continue;
+
+      // The newest participant is the one just added.
+      const bot = world.lobby.list().at(-1);
+      bot.codename = codename;
+      bot.commanderId = commander.id;
+      bot.commanderName = commander.name;
+      bot.squadCodenames = codenames;
+    }
+  }
+  screens.renderLobby();
 }
 
 function addDemoAgents(count = 4, team = null) {
@@ -8059,6 +8470,15 @@ const screens = createScreens({
   onAddBot: () => {
     if (!role.canEdit) return;
     if (net?.state.available && !net.isHost) return net.send(TOPICS.bots, { count: 1 });
+    // Commander mode is one agent a side: a bot here is an opposing commander,
+    // and its squad is raised for it when the round starts.
+    if (match.mode.squad) {
+      const free = match.freeCommandSlot();
+      if (!free) return;                     // both chairs are full
+      addDemoAgents(1, free);
+      screens.renderLobby();
+      return;
+    }
     addDemoAgents(1, match.thinnestTeam());
   },
   onClearLobby: () => {
@@ -8094,6 +8514,9 @@ function onPhaseChanged(state) {
   world.allowSpawning = state.phase === PHASES.live;
   screens.render();
   ui.renderMatch();
+  // The mode decides whether the second card is a global channel or your own
+  // side's, so it is re-read whenever the round changes shape.
+  ui.renderChat();
 
   if (state.phase === PHASES.live || state.phase === PHASES.briefing) {
     // The canvas was display:none a moment ago, so it has no size yet.
@@ -8191,7 +8614,7 @@ function makeGhost(netId) {
     weapon: 'pistol', ammo: 3, nextShotAt: 0, reloadUntil: 0, spawnProtectedUntil: 0,
     queue: [], current: null, thinking: false, pendingEvents: [], planResults: [],
     lastActions: [], lastRefused: [], pulses: { fire: -Infinity, reload: -Infinity, hurt: -Infinity, heal: -Infinity, kill: -Infinity, pickup: -Infinity },
-    recentDamage: new Map(), lifeKills: 0, lifeAssists: 0, chat: null, lastReply: null, spawnedAt: 0,
+    recentDamage: new Map(), lifeKills: 0, lifeAssists: 0, chat: null, lastReply: null, heard: [], spawnedAt: 0,
   };
   participant.agent = agent;
   return agent;
