@@ -8,6 +8,16 @@
 
 const NEGATION = String.raw`(?:never|do\s+not|don['’]?t|must\s+not|mustn['’]?t|refuse\s+to|avoid|no)`;
 
+/**
+ * Phrases that give back what an earlier line forbade.
+ *
+ * An operator may change their mind, and their later orders are appended to the
+ * same text, so "you may fire now" has to be able to cancel "never fire" -
+ * otherwise this backstop would hold an agent to an order its own operator has
+ * already replaced, which is precisely the failure it exists to prevent.
+ */
+const RELEASE = String.raw`(?:may|can|are\s+allowed\s+to|allowed\s+to|free\s+to|permitted\s+to|ok(?:ay)?\s+to|start|resume|begin|forget|drop|lift|cancel|ignore|disregard)`;
+
 /** Words that flip a negation into its opposite: "never stop moving" is not a ban on moving. */
 const INVERTERS = /\b(?:stop|stopping|cease|ceasing|quit|hesitate|slow)\b/;
 
@@ -47,6 +57,7 @@ function emptyConstraints() {
       aim: { allow: null, deny: new Set() },
     },
     rules: [],          // human-readable, for the UI
+    released: [],       // rules a later line gave back
   };
 }
 
@@ -90,7 +101,46 @@ export function parseConstraints(text = '') {
     }
   }
 
-  constraints.rules = [...new Set(constraints.rules)];
+  // Releases are applied after every ban, and always win. A line that both
+  // forbids and permits the same tool is ambiguous, and this parser is crude by
+  // design - so it resolves the ambiguity by stepping back and leaving the
+  // agent's own obedience to decide. Under-enforcing falls back to the prompt;
+  // over-enforcing makes an agent refuse its operator.
+  for (const [tool, verb] of Object.entries(VERBS)) {
+    const releasePattern = new RegExp(
+      `\\b${RELEASE}\\s+((?:\\w+\\s+){0,3}?)(?:${verb})(?:\\s+(${DIRECTION_WORDS}))?\\b`,
+      'g',
+    );
+    for (const match of lower.matchAll(releasePattern)) {
+      const slot = constraints.directions[tool];
+      const direction = match[2] ? DIRECTIONS[match[2]] : null;
+
+      if (direction && slot) {
+        slot.deny.delete(direction);
+        if (slot.allow) slot.allow.add(direction);
+      } else {
+        constraints.banned.delete(tool);
+        if (slot) {
+          slot.deny.clear();
+          slot.allow = null;
+        }
+      }
+      constraints.released.push(direction ? `${tool} ${direction}` : tool);
+    }
+  }
+
+  // Rebuilt from what actually survived, so the panel and the agent's own
+  // briefing can never describe a rule that is no longer enforced.
+  constraints.rules = [
+    ...[...constraints.banned].map((tool) => `never ${tool}`),
+    ...TOOLS_WITH_DIRECTIONS.flatMap((tool) => {
+      const slot = constraints.directions[tool];
+      return [
+        ...[...slot.deny].map((d) => `never ${tool} ${d}`),
+        ...(slot.allow ? [`only ${tool} ${[...slot.allow].join(' or ')}`] : []),
+      ];
+    }),
+  ];
   return constraints;
 }
 

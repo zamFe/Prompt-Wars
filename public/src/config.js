@@ -132,6 +132,7 @@ export const COMMS = {
   messageLength: 200,   // one message from an operator to their agent
   inboxMax: 4,          // unread operator messages an agent carries; oldest drops
   directMax: 400,       // messages kept in one page's private history
+  amendmentsKept: 10,   // order changes carried beside the standing orders
 };
 
 // How long an action lights up its tile in the focus bar.

@@ -23,6 +23,8 @@ export function createParticipant({ name, prompt, brainKind, colorIndex }) {
     // what a brain that can only read a prompt gets to work from.
     inbox: [],
     briefing: prompt,
+    // Order changes, newest last - what the agent is actually fighting under.
+    amendments: [],
     messagesSent: 0,
     messagesRead: 0,
     status: 'queued',      // 'live' | 'queued' | 'cooldown'

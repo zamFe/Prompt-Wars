@@ -505,6 +505,16 @@ export class UI {
       `<blockquote class="prompt-quote">${escapeHtml(participant.prompt)}</blockquote>`,
     ];
 
+    // What you have changed since. These outrank the orders above, so they are
+    // shown as what they are rather than folded into the original prompt.
+    if (participant.amendments?.length) {
+      parts.push(
+        `<div><span class="label">Orders you changed since</span><ol class="amendments">` +
+          participant.amendments.map((line) => `<li>${escapeHtml(line)}</li>`).join('') +
+          `</ol></div>`,
+      );
+    }
+
     if (hasConstraints(participant.constraints)) {
       parts.push(
         `<div><span class="label">Hard rules from your prompt</span><div class="chips">` +

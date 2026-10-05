@@ -399,6 +399,9 @@ export function acknowledge(messages, before, after) {
   moved('range', 'keeping my distance', 'closing in');
   moved('loot', 'watching for loot', 'ignoring loot');
   moved('trigger', 'opening up', 'saving ammo');
+  // Which way it sweeps is a trait like any other, and the one most likely to
+  // be the whole point of the message: "only turn left" changes nothing else.
+  if (after.turnBias !== before.turnBias) changed.push(`turning ${after.turnBias} from now on`);
   if (after.wantWeapon && after.wantWeapon !== before.wantWeapon) {
     changed.push(`after the ${WEAPONS[after.wantWeapon]?.name.toLowerCase() ?? after.wantWeapon}`);
   }
