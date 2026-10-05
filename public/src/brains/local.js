@@ -7,6 +7,7 @@
 
 import { MOVE, WEAPONS, AGENT, WORLD, CHAT } from '../config.js';
 import { clamp, toDeg, makeRng } from '../util.js';
+import { briefingFor, drainInbox } from '../comms.js';
 
 /** Keyword -> trait nudges. Each entry may push several traits at once. */
 const RULES = [
@@ -374,6 +375,40 @@ export function decideFromTraits(s, traits, rng, state = {}) {
   };
 }
 
+/**
+ * What to tell an operator who just sent a message.
+ *
+ * This brain cannot hold a conversation, but it can answer honestly: a message
+ * is appended to the briefing it parses, so the reply reports what the message
+ * actually changed - and says plainly when it changed nothing.
+ */
+export function acknowledge(messages, before, after) {
+  if (!messages?.length) return null;
+  if (!before) return 'Copy.';
+
+  const changed = [];
+  const moved = (key, up, down) => {
+    if (after[key] > before[key] + 0.04 && up) changed.push(up);
+    else if (after[key] < before[key] - 0.04 && down) changed.push(down);
+  };
+
+  moved('aggression', 'pushing harder', 'playing it safer');
+  moved('camp', 'holding position', null);
+  moved('roam', 'moving out', null);
+  moved('strafe', 'staying mobile', 'standing my ground');
+  moved('range', 'keeping my distance', 'closing in');
+  moved('loot', 'watching for loot', 'ignoring loot');
+  moved('trigger', 'opening up', 'saving ammo');
+  if (after.wantWeapon && after.wantWeapon !== before.wantWeapon) {
+    changed.push(`after the ${WEAPONS[after.wantWeapon]?.name.toLowerCase() ?? after.wantWeapon}`);
+  }
+  if (after.retreatAt !== before.retreatAt) changed.push(`breaking off below ${after.retreatAt} HP`);
+
+  return changed.length
+    ? `Copy — ${changed.slice(0, 2).join(', ')}.`
+    : 'Copy. Nothing in that I can act on.';
+}
+
 /** Brain object consumed by the world. */
 export function createLocalBrain({ thinkTime = [0.25, 0.6] } = {}) {
   const cache = new WeakMap();
@@ -382,26 +417,40 @@ export function createLocalBrain({ thinkTime = [0.25, 0.6] } = {}) {
     id: 'local',
     label: 'Offline (prompt interpreter)',
 
+    /**
+     * Traits come from the briefing - the standing orders plus every message
+     * the operator has sent since - so talking to an offline agent really does
+     * change how it fights.
+     */
     traitsFor(participant) {
+      const briefing = briefingFor(participant);
       let entry = cache.get(participant);
-      if (!entry || entry.prompt !== participant.prompt) {
+      if (!entry || entry.briefing !== briefing) {
         entry = {
-          prompt: participant.prompt,
-          traits: parsePrompt(participant.prompt),
-          rng: makeRng([...participant.id].reduce((h, c) => h * 31 + c.charCodeAt(0), 7)),
-          state: {},   // carries which way it is currently circling
+          briefing,
+          traits: parsePrompt(briefing),
+          rng: entry?.rng ?? makeRng([...participant.id].reduce((h, c) => h * 31 + c.charCodeAt(0), 7)),
+          state: entry?.state ?? {},   // carries which way it is currently circling
         };
         cache.set(participant, entry);
       }
       return entry;
     },
 
-    async decide(snapshot, participant) {
+    async decide(snapshot, participant, memory) {
+      // Read the operator's messages before re-reading the briefing, so the
+      // reply can say what they changed.
+      const messages = memory?.messages ?? drainInbox(participant);
+      const previous = cache.get(participant)?.traits ?? null;
       const entry = this.traitsFor(participant);
+      const reply = acknowledge(messages, previous, entry.traits);
+
       // A small delay so offline agents feel like they are deciding, not twitching.
       const delay = thinkTime[0] + entry.rng() * (thinkTime[1] - thinkTime[0]);
       await new Promise((resolve) => setTimeout(resolve, delay * 1000));
-      return decideFromTraits(snapshot, entry.traits, entry.rng, entry.state);
+
+      const decision = decideFromTraits(snapshot, entry.traits, entry.rng, entry.state);
+      return reply ? { ...decision, reply } : decision;
     },
   };
 }

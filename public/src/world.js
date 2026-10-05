@@ -1,6 +1,6 @@
 // The simulation: bodies, bullets, loot, damage and the decision loop.
 
-import { WORLD, MOVE, WEAPONS, AGENT, HEALTH_PACKS, LOOT, VISION, BRAIN, AGENT_COLORS, CHAT, PULSE, HARD_RULES } from './config.js';
+import { WORLD, MOVE, WEAPONS, AGENT, HEALTH_PACKS, LOOT, VISION, BRAIN, AGENT_COLORS, CHAT, COMMS, PULSE, HARD_RULES } from './config.js';
 import { makeRng, clamp, dist, toRad, normalizeDeg, randRange, weightedPick, pointSegmentDistance, round0 } from './util.js';
 import { findOpenPosition, resolveCollision, hasLineOfSight, castRay } from './arena.js';
 import { buildSnapshot, bearingTo } from './sensors.js';
@@ -27,7 +27,8 @@ export class World {
     this.log = [];
     this.lobby = new Lobby(this);
     this.champions = [];               // best single lives, highest kills first
-    this.onSay = null;                 // set by the client to mirror bubbles into the comms log
+    this.onSay = null;                 // set by the client to mirror bubbles into the global chat
+    this.onReply = null;                // set by the client to deliver a private answer to an operator
     this.nextLootAt = randRange(this.rng, ...LOOT.spawnCooldown);
     this.paused = false;
   }
@@ -50,6 +51,37 @@ export class World {
       saidAt: this.time,
     };
     this.onSay?.(agent, agent.chat.text);
+  }
+
+  /**
+   * A private answer to this agent's operator. It is not a bubble and not a
+   * global line: it reaches the one page that owns the agent and goes nowhere
+   * else - not to the room, not to the server, not to another player.
+   */
+  reply(agent, text) {
+    const line = String(text ?? '').replace(/\s+/g, ' ').trim();
+    if (!line) return;
+    agent.lastReply = { text: line.slice(0, COMMS.replyLength), at: this.time };
+    this.onReply?.(agent, agent.lastReply.text);
+  }
+
+  /**
+   * An operator message should not have to wait out a four-action plan. Drop
+   * what is still queued so the next decision - the one carrying the message -
+   * comes as soon as the current action finishes. The action already running is
+   * left alone: cutting a reload in half is a worse surprise than half a second
+   * of delay.
+   */
+  nudge(agent) {
+    if (!agent?.alive || !agent.queue.length) return;
+    for (const pending of agent.queue) {
+      agent.planResults.push({
+        id: pending.id ?? null,
+        action: describeAction(pending),
+        outcome: 'never ran - you broke off the plan to read a message from your operator',
+      });
+    }
+    agent.queue = [];
   }
 
   pulse(agent, kind) {
@@ -111,6 +143,7 @@ export class World {
       spawnedAt: this.time,
 
       chat: null,                 // { text, until, saidAt }
+      lastReply: null,            // { text, at } - the last private line to its operator
       // Timestamps of the last time each action fired, for the focus bar.
       pulses: { fire: -Infinity, reload: -Infinity, hurt: -Infinity, heal: -Infinity, kill: -Infinity, pickup: -Infinity },
       // Who has hurt this agent lately, for assist credit: id -> { damage, at }.
@@ -484,6 +517,7 @@ export class World {
         agent.turn = decision?.turn ?? agent.turn;
         agent.memoryDepth = decision?.memory ?? agent.memoryDepth;
         if (decision?.chat) this.say(agent, decision.chat);
+        if (decision?.reply) this.reply(agent, decision.reply);
 
         const proposed = buildQueue(decision?.actions, agent);
 

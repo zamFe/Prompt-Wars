@@ -141,7 +141,7 @@ Environment variables, or a `.env` file in the project root.
 | `PROMPT_WARS_CONCURRENCY` | `4` | Simultaneous model calls |
 | `PROMPT_WARS_MEMORY_TURNS` | `12` | Past exchanges each character carries |
 | `PROMPT_WARS_MAX_SESSIONS` | `200` | Live conversations held before the oldest is evicted |
-| `PROMPT_WARS_CHAT_MAX` | `1000` | Comms messages kept before the oldest is dropped |
+| `PROMPT_WARS_CHAT_MAX` | `1000` | Global chat messages kept before the oldest is dropped |
 | `PROMPT_WARS_COMPAT` | off | Drop effort and caching, for non-Anthropic gateways |
 | `PROMPT_WARS_RATE_LIMIT` | `90` | Decisions per minute per caller; `0` disables |
 | `PROMPT_WARS_DAILY_LIMIT` | none | Hard ceiling on decisions per UTC day, all callers |
@@ -259,14 +259,16 @@ decisions per minute.
 **My agent ignores its prompt.** If you are on the stub model, that is expected —
 it never reads prompts. On a real model, each character carries its orders in a
 cached system block and remembers its own past turns; click the agent and the
-Inspector shows the turn count and what its last moves achieved. If a model
+**Agent** panel in the right-hand rail shows the turn count and what its last
+moves achieved. You can also just ask it, in the Agent chat. If a model
 still will not obey an absolute rule, `HARD_RULES.enforce` in
 `public/src/config.js` makes the simulation refuse the offending calls
 outright.
 
 **Live agents stand around doing nothing.** Usually a weak model returning prose
 or malformed tool calls. Bad calls are dropped by design. Click the agent and
-read the Inspector: an empty plan with a note means nothing usable came back.
+read its **Agent** panel: an empty plan with a note means nothing usable came
+back.
 
 **Port already in use.** `PORT=3000 npm start`.
 
@@ -283,10 +285,11 @@ npm run doctor    # diagnose an offline model brain
 
 `test/sim.test.js` runs the arena headlessly in Node — weapon balance, cone
 geometry, walls blocking sight and bullets, the queue, both death cooldowns,
-loot, tool clamping, prompt parsing, bubbles, assists, champion scoring, and a
-full 12-agent two-minute match. `test/model-proxy.test.js` runs the real server
-against a stub Messages API and checks the request shape, the tool-call round
-trip, the spend caps and compatibility mode.
+loot, tool clamping, prompt parsing, bubbles, the private operator channel,
+assists, champion scoring, and a full 12-agent two-minute match.
+`test/model-proxy.test.js` runs the real server against a stub Messages API and
+checks the request shape, the tool-call round trip, operator messages reaching
+the agent's own turn, the spend caps and compatibility mode.
 
 `npm run build` writes `dist/prompt-wars.html` (open it directly) and
 `dist/artifact.html`. The bundler resolves the import graph and concatenates —

@@ -1,6 +1,6 @@
 // DOM wiring: the join form, roster, inspector, feed and rules panel.
 
-import { WORLD, LOBBY, WEAPONS, HEALTH_PACKS, LOOT, VISION, MOVE, AGENT, AGENT_COLORS, PULSE } from './config.js';
+import { WORLD, LOBBY, WEAPONS, HEALTH_PACKS, LOOT, VISION, MOVE, AGENT, AGENT_COLORS, PULSE, COMMS } from './config.js';
 import { renderSnapshotText } from './sensors.js';
 import { TOOL_SCHEMAS, TOOL_SUMMARIES } from './actions.js';
 import { hasConstraints } from './constraints.js';
@@ -11,13 +11,18 @@ import { PRESETS } from './presets.js';
 const $ = (id) => document.getElementById(id);
 
 export class UI {
-  constructor({ world, chatLog, onJoin, onDemo, onClear, onSelect, onTogglePause }) {
+  constructor({ world, chatLog, directLog, onJoin, onDemo, onClear, onSelect, onTogglePause, onMessage }) {
     this.world = world;
     this.chatLog = chatLog;
+    this.directLog = directLog;
     this.onJoin = onJoin;
     this.onSelect = onSelect;
+    this.onMessage = onMessage;
     this.selectedId = null;
     this.lastLogLength = 0;
+    // Which of the five rail views is on screen. Only this one is rendered.
+    this.railTab = 'roster';
+    this.directThreadId = null;
 
     this.el = {
       alive: $('stat-alive'),
@@ -60,6 +65,15 @@ export class UI {
       commsEmpty: $('comms-empty'),
       champions: $('champions'),
 
+      directlog: $('directlog'),
+      directForm: $('direct-form'),
+      directInput: $('direct-input'),
+      directSend: $('direct-send'),
+      directTarget: $('direct-target'),
+      directEmpty: $('direct-empty'),
+      directNote: $('direct-note'),
+      railTabs: $('rail-tabs'),
+
       focusEmpty: $('focus-empty'),
       focusBody: $('focus-body'),
       fbDot: $('fb-dot'),
@@ -92,6 +106,26 @@ export class UI {
     if (this.chatLog) {
       this.chatLog.onChange(() => this.renderChat());
       this.renderChat();
+    }
+
+    this.railPanels = new Map(
+      [...document.querySelectorAll('.rail-panel')].map((node) => [node.dataset.panel, node]),
+    );
+    this.railButtons = new Map(
+      [...this.el.railTabs.querySelectorAll('button[data-tab]')].map((node) => [node.dataset.tab, node]),
+    );
+    this.el.railTabs.addEventListener('click', (event) => {
+      const button = event.target.closest('button[data-tab]');
+      if (button) this.setRailTab(button.dataset.tab);
+    });
+
+    if (this.directLog) {
+      this.directLog.onChange(() => this.renderDirect());
+      this.el.directForm.addEventListener('submit', (event) => {
+        event.preventDefault();
+        this.sendDirect();
+      });
+      this.renderDirect();
     }
 
     this.el.max.textContent = String(WORLD.maxAgents);
@@ -329,6 +363,8 @@ export class UI {
   /** Clicking toggles: click the focused agent again to let go of it. */
   select(participantId) {
     this.selectedId = this.selectedId === participantId ? null : participantId;
+    // Asking to look at an agent is asking to see what it sees.
+    if (this.selectedId) this.setRailTab('agent');
     this.onSelect?.(this.selectedId);
   }
 
@@ -358,6 +394,7 @@ export class UI {
       if (Math.hypot(agent.x - x, agent.y - y) <= WORLD.agentRadius + 10) hit = agent;
     }
     this.selectedId = hit ? hit.participant.id : null;
+    if (this.selectedId) this.setRailTab('agent');
     this.onSelect?.(this.selectedId);
   }
 
@@ -374,11 +411,36 @@ export class UI {
     const total = Math.floor(world.time);
     this.el.clock.textContent = `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
 
-    this.renderRoster(participants);
     this.lockTierIfDeployed();
-    this.renderBoards();
-    this.renderInspector();
-    this.renderLog();
+    this.renderRail(participants);
+    this.syncDirect();
+  }
+
+  /**
+   * The rail shows one view at a time, so only that one is rendered - the
+   * four behind it cost nothing until you open them.
+   */
+  renderRail(participants) {
+    this.el.rosterCount.textContent = participants.length ? ` ${participants.length}` : '';
+
+    switch (this.railTab) {
+      case 'roster': return this.renderRoster(participants);
+      case 'board': return this.renderLeaderboard();
+      case 'champs': return this.renderChampions();
+      case 'agent': return this.renderInspector();
+      case 'feed': return this.renderLog();
+      default: return undefined;
+    }
+  }
+
+  setRailTab(name) {
+    if (!this.railPanels.has(name) || name === this.railTab) return;
+    this.railTab = name;
+    for (const [key, node] of this.railPanels) node.hidden = key !== name;
+    for (const [key, node] of this.railButtons) node.setAttribute('aria-selected', String(key === name));
+    // A panel coming back on screen has to redraw even if nothing changed.
+    this.lastLogLength = -1;
+    this.update();
   }
 
   renderRoster(participants) {
@@ -387,7 +449,6 @@ export class UI {
       return rank(a) - rank(b) || b.kills - a.kills || a.joinedAt - b.joinedAt;
     });
 
-    this.el.rosterCount.textContent = `${participants.length} total`;
     this.el.roster.innerHTML = ordered.map((p) => this.rosterRow(p)).join('') ||
       '<li class="waiting"><span></span><span class="muted">Nobody has entered yet.</span><span></span></li>';
   }
@@ -587,7 +648,7 @@ export class UI {
     set('doing', doing, (v) => { this.el.fbDoing.textContent = v; });
   }
 
-  renderBoards() {
+  renderLeaderboard() {
     const live = this.world.agents
       .filter((a) => a.alive)
       .map((a) => a.participant)
@@ -604,7 +665,9 @@ export class UI {
           </li>`;
         }).join('')
       : '<li class="empty muted">Nobody is in the arena.</li>';
+  }
 
+  renderChampions() {
     this.el.champions.innerHTML = this.world.champions.length
       ? this.world.champions.map((c, i) => `
           <li>
@@ -617,6 +680,112 @@ export class UI {
             <span class="tally"><b>${c.kills}</b>K <b>${c.assists}</b>A</span>
           </li>`).join('')
       : '<li class="empty muted">No lives have ended yet.</li>';
+  }
+
+  // ------------------------------------------------------- the private channel
+
+  /**
+   * Who the agent-chat card is talking to: the focused agent when it is one of
+   * yours, otherwise the last one you deployed. There is no channel to somebody
+   * else's fighter - theirs answers on their page, paid for by their account.
+   */
+  get directTarget() {
+    const focused = this.selectedId ? this.world.lobby.get(this.selectedId) : null;
+    if (focused?.isMine) return focused;
+    const mine = this.world.lobby.list().filter((p) => p.isMine);
+    return mine.sort((a, b) => b.joinedAt - a.joinedAt)[0] ?? null;
+  }
+
+  sendDirect() {
+    const target = this.directTarget;
+    const text = this.el.directInput.value.trim();
+    if (!target || !text) return;
+
+    // main.js owns the delivery: it files the message and pokes the agent.
+    const line = this.onMessage?.(target, text);
+    if (!line) return;
+    this.el.directInput.value = '';
+    this.renderDirect();
+  }
+
+  /** The cheap part of the card: whose channel it is, and what is pending. */
+  syncDirect() {
+    if (!this.directLog) return;
+    const target = this.directTarget;
+
+    // `null` and `undefined` must compare equal here, or a card with nobody to
+    // talk to would rebuild itself forever.
+    if ((target?.id ?? null) !== this.directThreadId) {
+      this.renderDirect();
+      return;
+    }
+
+    const waiting = target?.inbox?.length ?? 0;
+    const note = !target
+      ? 'Deploy an agent and this becomes a channel to it.'
+      : target.agent?.thinking && waiting
+        ? `${target.name} is reading it now…`
+        : waiting
+          ? `${waiting} message${waiting === 1 ? '' : 's'} waiting for ${target.name}'s next decision.`
+          : target.status === 'live'
+            ? `Private line to ${target.name}. Nobody else can see it.`
+            : target.status === 'cooldown'
+              ? `${target.name} is out of the arena — it reads this when it respawns.`
+              : `${target.name} is waiting to enter — it reads this when it spawns.`;
+
+    if (this.directNoteText !== note) {
+      this.directNoteText = note;
+      this.el.directNote.textContent = note;
+    }
+  }
+
+  /**
+   * One thread at a time. Switching agents rebuilds the list; otherwise this is
+   * append-only, exactly like the global log.
+   */
+  renderDirect() {
+    if (!this.directLog) return;
+    const target = this.directTarget;
+    const id = target?.id ?? null;
+    const thread = this.directLog.forAgent(id);
+
+    this.el.directTarget.textContent = target ? `with ${target.name}` : 'nobody deployed';
+    this.el.directInput.disabled = !target;
+    this.el.directSend.disabled = !target;
+    this.el.directInput.placeholder = target
+      ? `Message ${target.name}…`
+      : 'Deploy an agent to talk to it';
+    this.el.directInput.maxLength = COMMS.messageLength;
+    this.el.directEmpty.hidden = thread.length > 0;
+
+    if (id !== this.directThreadId) {
+      this.directThreadId = id;
+      this.el.directlog.innerHTML = '';
+    }
+
+    // The store drops from the front when full; mirror that in the DOM.
+    while (this.el.directlog.children.length > thread.length) {
+      this.el.directlog.firstElementChild.remove();
+    }
+
+    const nearBottom =
+      this.el.directlog.scrollHeight - this.el.directlog.scrollTop - this.el.directlog.clientHeight < 60;
+
+    for (let i = this.el.directlog.children.length; i < thread.length; i++) {
+      const message = thread[i];
+      const row = document.createElement('li');
+      row.className = message.side === 'you' ? 'from-you' : 'from-agent';
+      const who = message.side === 'you' ? 'You' : message.name;
+      const color = message.side === 'you' ? 'var(--accent)' : message.color ?? 'var(--text)';
+      row.innerHTML =
+        `<span class="who" style="color:${escapeHtml(color)}">${escapeHtml(who)}</span>` +
+        `<span class="bubble">${escapeHtml(message.text)}</span>`;
+      this.el.directlog.append(row);
+    }
+
+    if (nearBottom) this.el.directlog.scrollTop = this.el.directlog.scrollHeight;
+    this.directNoteText = null;
+    this.syncDirect();
   }
 
   /**

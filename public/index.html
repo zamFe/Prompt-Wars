@@ -34,16 +34,12 @@
   </header>
 
   <main>
-    <aside class="comms">
-      <div class="comms-head">
-        <h2>Comms <em id="comms-count"></em></h2>
-        <span class="comms-store" id="comms-store"></span>
-      </div>
-      <ol class="chatlog" id="chatlog"></ol>
-      <p class="comms-empty" id="comms-empty">Agents talk when something happens. Nothing yet.</p>
-    </aside>
-
-    <section class="arena-wrap">
+    <!--
+      The arena and the two chat cards are the game; everything else is
+      reference. So those two take the room, and the rest is a narrow rail that
+      shows one panel at a time rather than five stacked cards.
+    -->
+    <section class="stage">
       <canvas id="arena" aria-label="Prompt Wars arena"></canvas>
 
       <section class="focusbar" id="focusbar" aria-live="polite">
@@ -90,6 +86,33 @@
       <p class="hint">Click a sphere to follow it here and inspect exactly what it sees.</p>
     </section>
 
+    <aside class="comms">
+      <!-- Private: you and the agents you deployed. Never leaves this page. -->
+      <section class="chat-card direct-card">
+        <div class="comms-head">
+          <h2>Agent chat <em id="direct-target">nobody deployed</em></h2>
+          <span class="chat-tag" id="direct-tag">private</span>
+        </div>
+        <ol class="chatlog direct" id="directlog"></ol>
+        <p class="comms-empty" id="direct-empty">Deploy an agent, then talk to it here. Only you two can see this.</p>
+        <form class="chat-send" id="direct-form" autocomplete="off">
+          <input id="direct-input" maxlength="200" placeholder="Deploy an agent to talk to it" disabled />
+          <button type="submit" class="primary" id="direct-send" disabled>Send</button>
+        </form>
+        <p class="chat-note" id="direct-note"></p>
+      </section>
+
+      <!-- Out loud: every bubble in the arena, and everyone reads it. -->
+      <section class="chat-card global-card">
+        <div class="comms-head">
+          <h2>Global chat <em id="comms-count"></em></h2>
+          <span class="comms-store" id="comms-store"></span>
+        </div>
+        <ol class="chatlog" id="chatlog"></ol>
+        <p class="comms-empty" id="comms-empty">Agents call out when something happens. Nothing yet.</p>
+      </section>
+    </aside>
+
     <aside class="panel">
       <section class="card">
         <h2>Enter the arena</h2>
@@ -116,7 +139,7 @@
           <p class="brain-note" id="brain-note" hidden></p>
           <label>
             <span>Prompt <em id="prompt-count">0 / 1200</em></span>
-            <textarea id="field-prompt" rows="6" maxlength="1200" required
+            <textarea id="field-prompt" rows="5" maxlength="1200" required
               placeholder="Describe how your agent should fight. It can turn, walk, sidestep, aim, fire, reload and hold — nothing else."></textarea>
           </label>
           <div class="row">
@@ -134,46 +157,59 @@
         <p class="role-note" id="role-note" hidden></p>
       </section>
 
-      <section class="card">
-        <h2>What your agent can do <em>six tools, nothing else</em></h2>
+      <!--
+        One bar, five views. The same roster, boards, inspector and feed as
+        before - but only the one being read takes up space, and only the one
+        on screen is rendered.
+      -->
+      <section class="card rail">
+        <div class="rail-tabs" id="rail-tabs" role="tablist" aria-label="Arena information">
+          <button type="button" role="tab" data-tab="roster" aria-selected="true">Arena<em id="roster-count"></em></button>
+          <button type="button" role="tab" data-tab="board" aria-selected="false">Board</button>
+          <button type="button" role="tab" data-tab="champs" aria-selected="false">Champs</button>
+          <button type="button" role="tab" data-tab="agent" aria-selected="false">Agent</button>
+          <button type="button" role="tab" data-tab="feed" aria-selected="false">Feed</button>
+        </div>
+
+        <div class="rail-panel" data-panel="roster" role="tabpanel">
+          <p class="rail-cap">Everyone in the arena, queued or sitting out a timer. Click to follow.</p>
+          <ul class="roster" id="roster"></ul>
+        </div>
+
+        <div class="rail-panel" data-panel="board" role="tabpanel" hidden>
+          <p class="rail-cap">Live kills, agents in the arena right now.</p>
+          <ol class="board" id="leaderboard"></ol>
+        </div>
+
+        <div class="rail-panel" data-panel="champs" role="tabpanel" hidden>
+          <p class="rail-cap">Best lives so far — ten rows, highest kills first.</p>
+          <ol class="board champions" id="champions"></ol>
+        </div>
+
+        <div class="rail-panel" data-panel="agent" role="tabpanel" hidden>
+          <p class="rail-cap">The focused agent's prompt, memory and sensor feed.</p>
+          <div id="inspector" class="inspector">
+            <p class="muted">Select an agent to see its sensor feed.</p>
+          </div>
+        </div>
+
+        <div class="rail-panel" data-panel="feed" role="tabpanel" hidden>
+          <p class="rail-cap">Kills, joins, loot and errors, newest first.</p>
+          <ul class="log" id="log"></ul>
+        </div>
+      </section>
+
+      <details class="card reference">
+        <summary>Reference — six tools and the arena rules</summary>
+        <h3>What your agent can do</h3>
         <dl class="rules tools" id="tools"></dl>
         <p class="tools-note">
           Bearings are relative to your body: negative is left, positive is right.
           Sidesteps use the same frame, and are the only move that keeps your aim where it is.
         </p>
-      </section>
-
-      <section class="card">
-        <h2>Arena <em id="roster-count"></em></h2>
-        <ul class="roster" id="roster"></ul>
-      </section>
-
-      <section class="card">
-        <h2>Leaderboard <em>live kills</em></h2>
-        <ol class="board" id="leaderboard"></ol>
-      </section>
-
-      <section class="card">
-        <h2>Champions <em>best lives so far</em></h2>
-        <ol class="board champions" id="champions"></ol>
-      </section>
-
-      <section class="card" id="inspector-card">
-        <h2>Inspector</h2>
-        <div id="inspector" class="inspector">
-          <p class="muted">Select an agent to see its sensor feed.</p>
-        </div>
-      </section>
-
-      <section class="card">
-        <h2>Feed</h2>
-        <ul class="log" id="log"></ul>
-      </section>
-
-      <section class="card">
-        <h2>Rules</h2>
+        <h3>Arena</h3>
         <dl class="rules" id="rules"></dl>
-      </section>
+      </details>
     </aside>
   </main>
 

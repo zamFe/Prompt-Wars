@@ -85,36 +85,106 @@ html, body {
 .badge.off { color: var(--muted); }
 
 /* ------------------------------------------------------------------ layout */
+/*
+ * Three things compete for the screen, and they are not equal. The arena and
+ * the two chats are the game, so they get the room: chats down the left, arena
+ * beside them. Everything else is reference material, and lives in a narrow
+ * rail on the right that shows one panel at a time.
+ *
+ * As the window narrows the rail holds its width and the chats move under the
+ * arena, which is the other place they are still usable. Only the last
+ * breakpoint stacks everything.
+ */
 main {
   display: grid;
-  grid-template-columns: 310px minmax(0, 1fr) 400px;
-  grid-template-areas: "comms arena panel";
-  gap: 16px;
-  padding: 16px;
+  grid-template-columns: minmax(300px, 360px) minmax(0, 1fr) 296px;
+  grid-template-areas: "comms stage rail";
+  gap: 14px;
+  padding: 14px;
   align-items: start;
 }
 
-.arena-wrap { grid-area: arena; }
-.panel { grid-area: panel; }
+.stage { grid-area: stage; }
+.panel { grid-area: rail; }
 .comms { grid-area: comms; }
 
 /* ------------------------------------------------------------------- comms */
 .comms {
   position: sticky;
-  top: 16px;
+  top: 14px;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) minmax(0, 1.25fr);
+  gap: 12px;
+  min-height: 0;
+  height: calc(100vh - 86px);
+}
+
+.chat-card {
   display: flex;
   flex-direction: column;
+  min-height: 0;
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  padding: 14px;
-  max-height: calc(100vh - 90px);
-  min-height: 0;
+  padding: 12px 13px;
+}
+
+/* The private card is marked as such, because the difference matters. */
+.direct-card { border-color: rgba(94, 200, 255, 0.28); }
+
+.chat-tag {
+  font-family: var(--font-display);
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--accent);
+  border: 1px solid rgba(94, 200, 255, 0.35);
+  border-radius: 999px;
+  padding: 1px 7px;
+  white-space: nowrap;
 }
 
 .comms-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
-.comms h2 { margin: 0 0 10px; }
+.chat-card h2 {
+  margin: 0 0 9px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.13em;
+  font-family: var(--font-display);
+  font-weight: 600;
+  color: var(--muted);
+  display: flex;
+  gap: 7px;
+  align-items: baseline;
+  min-width: 0;
+}
+.chat-card h2 em {
+  font-style: normal;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 11.5px;
+  font-family: var(--font-body);
+  font-weight: 400;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .comms-store { font-size: 10.5px; color: var(--muted); font-family: var(--font-mono); }
+
+/* Writing to your agent -------------------------------------------------- */
+.chat-send { display: flex; gap: 6px; margin-top: 10px; }
+.chat-send input { flex: 1; min-width: 0; font-size: 13px; padding: 7px 10px; }
+.chat-send button { padding: 7px 12px; }
+.chat-send input:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.chat-note {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+  min-height: 1.4em;
+}
 
 .chatlog {
   list-style: none;
@@ -124,7 +194,7 @@ main {
   flex-direction: column;
   gap: 8px;
   overflow-y: auto;
-  min-height: 0;
+  min-height: 70px;
   flex: 1;
 }
 
@@ -168,19 +238,35 @@ main {
   border-radius: 12px 12px 3px 12px;
 }
 
-.comms-empty { margin: 0; color: var(--muted); font-size: 12.5px; }
+/*
+ * The private channel needs no rule swapping: there are only ever two sides to
+ * it, and which is which never changes.
+ */
+.chatlog.direct li.from-you { align-self: flex-end; }
+.chatlog.direct li.from-you .who { text-align: right; }
+.chatlog.direct li.from-you .bubble {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #05202e;
+  border-radius: 12px 12px 3px 12px;
+}
+.chatlog.direct li.from-agent .bubble { border-radius: 12px 12px 12px 3px; }
 
-@media (max-width: 1439px) {
-  main {
-    grid-template-columns: minmax(0, 1fr) 400px;
-    grid-template-areas: "arena panel" "comms panel";
-  }
-  .comms { position: static; max-height: 340px; }
+.chatlog:empty { flex: 0 0 0; min-height: 0; }
+.comms-empty {
+  margin: 0;
+  flex: 1;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  color: var(--muted);
+  font-size: 12.5px;
+  padding: 0 10px;
 }
 
-.arena-wrap {
+.stage {
   position: sticky;
-  top: 16px;
+  top: 14px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -189,7 +275,7 @@ main {
 
 #arena {
   width: 100%;
-  max-width: min(calc(100vh - 250px), 100%);
+  max-width: min(calc(100vh - 220px), 100%);
   aspect-ratio: 1 / 1;
   border-radius: var(--radius);
   border: 1px solid var(--line);
@@ -224,8 +310,9 @@ main {
 
 /* -------------------------------------------------------------------- form */
 form { display: flex; flex-direction: column; gap: 10px; }
-.row { display: flex; gap: 8px; align-items: flex-end; }
-.grow { flex: 1; min-width: 0; }
+.row { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; }
+.row > label, .row > select { flex: 1 1 128px; min-width: 0; }
+.grow { flex: 1 1 128px; min-width: 0; }
 
 label { display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--muted); }
 label span { display: flex; justify-content: space-between; align-items: baseline; }
@@ -411,7 +498,7 @@ select:disabled { opacity: 0.55; cursor: not-allowed; }
 /* ---------------------------------------------------------------- focus bar */
 .focusbar {
   width: 100%;
-  max-width: min(calc(100vh - 250px), 100%);
+  max-width: min(calc(100vh - 220px), 100%);
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -571,10 +658,138 @@ select:disabled { opacity: 0.55; cursor: not-allowed; }
   font-size: 12px;
 }
 
+/* ------------------------------------------------------------------- rail */
+/*
+ * Five panels, one bar. The roster, boards, inspector and feed all still exist
+ * in full - they just take the space of one of them, and only the panel on
+ * screen is rendered at all (see ui.js).
+ */
+.rail { padding: 10px; }
+
+.rail-tabs {
+  display: flex;
+  gap: 3px;
+  margin-bottom: 10px;
+}
+.rail-tabs button {
+  /* Sized to their labels, sharing what is left - five equal slices would cut
+     the longest word short in a 296px rail. */
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 6px 2px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--font-display);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rail-tabs button:hover { color: var(--text); }
+.rail-tabs button[aria-selected="true"] {
+  background: var(--panel-2);
+  border-color: var(--line);
+  color: var(--text);
+}
+.rail-tabs em {
+  font-style: normal;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.75;
+}
+
+.rail-cap { margin: 0 0 9px; color: var(--muted); font-size: 11px; line-height: 1.45; }
+
+.rail-panel {
+  max-height: min(48vh, 520px);
+  overflow-y: auto;
+  padding-right: 2px;
+}
+.rail-panel .log { max-height: none; }
+.rail-panel .inspector pre { max-height: 200px; }
+
+/* The reference material: there when you want it, folded away when you do not. */
+.reference { padding: 12px 13px; }
+.reference summary {
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+}
+.reference summary:hover { color: var(--text); }
+.reference[open] summary { margin-bottom: 10px; }
+.reference h3 {
+  margin: 14px 0 7px;
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+}
+.reference h3:first-of-type { margin-top: 0; }
+
+/* -------------------------------------------------------------- breakpoints */
+@media (min-width: 1081px) {
+  /* The rail scrolls on its own rather than pushing the arena off screen. */
+  .panel {
+    position: sticky;
+    top: 14px;
+    max-height: calc(100vh - 28px);
+    overflow-y: auto;
+    scrollbar-width: thin;
+  }
+}
+
+/*
+ * Tighter, but still three columns: both side columns give up width before the
+ * chats give up their place beside the arena. The arena is capped by viewport
+ * height long before this, so it loses nothing here.
+ */
+@media (max-width: 1460px) and (min-width: 1181px) {
+  main { grid-template-columns: minmax(272px, 320px) minmax(0, 1fr) 272px; gap: 12px; }
+}
+
+/* Not enough width for three columns: the chats take the bottom instead. */
+@media (max-width: 1180px) {
+  main {
+    grid-template-columns: minmax(0, 1fr) 286px;
+    grid-template-areas: "stage rail" "comms rail";
+  }
+  .comms {
+    position: static;
+    height: auto;
+    grid-template-rows: none;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .chat-card { height: 320px; }
+}
+
+/* One column. The arena first, the chats under it, the rail last. */
 @media (max-width: 1080px) {
-  main { grid-template-columns: 1fr; grid-template-areas: "arena" "comms" "panel"; }
-  .arena-wrap { position: static; }
-  #arena { max-width: 100%; }
+  main { grid-template-columns: minmax(0, 1fr); grid-template-areas: "stage" "comms" "rail"; }
+  .stage { position: static; }
+  /* Still bounded by the window's height: a square arena as wide as a narrow
+     screen would otherwise push the chats a page and a half down. */
+  #arena, .focusbar { max-width: min(calc(100vh - 170px), 100%); }
+  .rail-panel { max-height: none; }
+}
+
+@media (max-width: 720px) {
+  main { padding: 10px; gap: 10px; }
+  .comms { grid-template-columns: minmax(0, 1fr); }
+  .chat-card { height: 300px; }
+  .rail-tabs { overflow-x: auto; }
+  .rail-tabs button { flex: 0 0 auto; padding: 6px 9px; }
 }
 
 /* Keyboard users get the same affordance mouse users do. */

@@ -11,6 +11,10 @@
 // pays for anyone else's. An agent whose owner has closed the page falls back
 // to the host's offline brain rather than freezing.
 //
+// Chat follows the same split. What an agent says out loud rides in the roster
+// message, so every page sees it; what it says to its operator never leaves the
+// operator's page at all.
+//
 // Every failure here degrades to playing alone: the page is complete on its
 // own and the room only ever lights it up.
 
@@ -267,8 +271,10 @@ export function applyRoster(world, rows, makeGhost) {
     agent.participant.ownerId = ownerId ?? null;
     agent.participant.kills = Number(kills) || 0;
     agent.participant.assists = Number(assists) || 0;
-    if (chat && agent.chat?.text !== chat) {
-      agent.chat = { text: String(chat).slice(0, 80), until: world.time + 2, saidAt: world.time };
-    }
+    // Raised through say() rather than written straight onto the agent, so a
+    // guest's global chat fills from the host's arena exactly as the host's own
+    // does. Private replies never travel: they are produced on, and stay on,
+    // the page that owns the agent.
+    if (chat && agent.chat?.text !== chat) world.say(agent, String(chat));
   }
 }

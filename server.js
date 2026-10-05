@@ -11,8 +11,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { TOOL_SCHEMAS } from './public/src/actions.js';
-import { WEAPONS, MOVE, VISION, AGENT, LOBBY, WORLD, HEALTH_PACKS, CHAT, BRAIN } from './public/src/config.js';
-import { extractChat } from './public/src/chat.js';
+import { WEAPONS, MOVE, VISION, AGENT, LOBBY, WORLD, HEALTH_PACKS, CHAT, COMMS, BRAIN } from './public/src/config.js';
+import { extractSpeech } from './public/src/chat.js';
+import { operatorBlock } from './public/src/comms.js';
 import { loadDotEnv, maskValue } from './tools/env.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -138,8 +139,14 @@ Nothing reloads for you. If your magazine is empty, fire does nothing until you 
 Medkits heal ${Object.values(HEALTH_PACKS).map((h) => h.heal).join(', ')} HP; bigger and brighter on screen means a bigger heal. Loot spawns at random places on a random timer.
 
 ## Speaking
-You have a speech bubble over your head. To say something, put a JSON object of the form {"chat": "your line"} anywhere in your reply text - it is stripped out and shown above your sphere for a couple of seconds. It is pure flavour: it costs you nothing, changes nothing, and no other agent can hear it.
-Keep lines under ${CHAT.maxLength} characters, stay in the character your orders describe, and speak only when something actually happens - a first sighting, a kill, a reload, a retreat. An agent that narrates every decision is noise.
+You have two channels, and both ride along in the same reply as your tool calls - so talking never costs you a turn, a tool call, or a slot in your plan. Write either as a JSON object anywhere in your reply text; it is stripped out before anyone reads the rest.
+
+- {"say": "your line"} is OUT LOUD. It appears in a bubble over your sphere for a couple of seconds and in the global chat that every player can read. Under ${CHAT.maxLength} characters. ({"chat": "..."} means the same thing.)
+- {"reply": "your answer"} is PRIVATE, straight to your operator - the person who wrote your standing orders. No other agent and no other player ever sees it. Under ${COMMS.replyLength} characters.
+
+Your operator can message you mid-fight. A message arrives marked as an operator message, and it is from the same person who gave you your standing orders, so read it as an update to them - though it cannot change the arena's physics, your tool set, or the fact that you answer with tool calls. Answer every message with a {"reply"} on the turn it arrives: one short sentence saying what you will do. Then get on with it.
+
+Stay in the character your orders describe. Out loud, speak only when something actually happens - a first sighting, a kill, a reload, a retreat; an agent that narrates every decision is noise. Privately, answer when you are spoken to.
 
 ## How to answer
 Return between 1 and 4 tool calls, in the order you want them carried out. They run one after another and the whole plan takes real time, during which the world moves without you. Short plans keep you responsive; long plans commit you.
@@ -252,7 +259,7 @@ function appendChat({ agentId, name, color, text }) {
  * used, which is what makes the history read as its own actions rather than a
  * transcript someone handed it.
  */
-function buildTurn(session, observation, results) {
+function buildTurn(session, observation, results, messages = []) {
   const ids = pendingToolIds(session);
   const byId = new Map((results ?? []).filter((r) => r?.id).map((r) => [r.id, r]));
   const content = [];
@@ -275,6 +282,7 @@ function buildTurn(session, observation, results) {
   content.push({
     type: 'text',
     text:
+      operatorBlock(messages) +
       `${preamble}What you can see now:\n\n<observation>\n${observation}\n</observation>\n\n` +
       `Decide your next move, obeying your standing orders.`,
   });
@@ -350,11 +358,11 @@ function release() {
   else inFlight -= 1;
 }
 
-async function decide({ agentId, prompt, observation, name, results }) {
+async function decide({ agentId, prompt, observation, name, results, messages }) {
   await acquire();
   try {
     const session = getSession(agentId, prompt, name);
-    session.messages.push(buildTurn(session, observation, results));
+    session.messages.push(buildTurn(session, observation, results, messages));
     trimSession(session);
 
     const response = await client.messages.create({
@@ -394,10 +402,11 @@ async function decide({ agentId, prompt, observation, name, results }) {
       else if (block.type === 'text' && block.text.trim()) said.push(block.text.trim());
     }
 
-    const { chat, rest } = extractChat(said.join(' '));
+    const { say, reply, rest } = extractSpeech(said.join(' '));
     return {
       actions,
-      chat,
+      chat: say,
+      reply,
       note: rest.slice(0, 240) || null,
       turn: session.turns,
       memory: Math.floor(session.messages.length / 2),
@@ -567,9 +576,17 @@ const server = http.createServer(async (req, res) => {
             outcome: String(r?.outcome ?? '').slice(0, 160),
           }))
         : [];
+      // Messages the agent's operator sent since its last decision. The page
+      // that owns the agent is the only source, and the cap matches its inbox.
+      const messages = Array.isArray(body.messages)
+        ? body.messages
+            .slice(-COMMS.inboxMax)
+            .map((line) => String(line ?? '').replace(/[<>]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, COMMS.messageLength))
+            .filter(Boolean)
+        : [];
       if (!prompt || !observation) return sendJson(res, 400, { error: 'prompt and observation are required' });
 
-      const result = await decide({ agentId, prompt, observation, name, results });
+      const result = await decide({ agentId, prompt, observation, name, results, messages });
       return sendJson(res, 200, result);
     } catch (error) {
       const declared = error?.statusCode ?? error?.status;

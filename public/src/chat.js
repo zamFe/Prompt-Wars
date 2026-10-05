@@ -1,39 +1,59 @@
-// Speech-bubble text: how a line gets out of a model's reply and into a bubble.
+// Agent speech: how a line gets out of a model's reply and onto a channel.
+//
+// There are two channels and one answer. An agent writes both in the same JSON
+// it returns its actions in, so speaking never costs an extra model call:
+//
+//   say / chat  -> out loud: the bubble over its sphere, and the global chat
+//   reply       -> privately to its operator, and nowhere else
+//
+// Either may also be written as a standalone object in the agent's prose
+// ({"say": "..."}), which is what the server brain's tool-calling path uses -
+// there the text and the tool calls arrive as separate blocks.
 
-import { CHAT } from './config.js';
+import { CHAT, COMMS } from './config.js';
+
+/** Matches one speech object: {"say": "…"}, {"chat": "…"} or {"reply": "…"}. */
+const SPEECH_RE = /\{\s*"(say|chat|reply)"\s*:\s*"(?:[^"\\]|\\.)*"\s*\}/g;
 
 /**
- * Pull a {"chat": "..."} object out of a model's reply text.
+ * Pull the speech objects out of a model's reply text.
  *
- * Riding along in text the model already writes costs one short string - no
- * extra tool call, no extra round trip, and no slot taken from the four actions
- * an agent gets per decision. Returns the line plus the text with it removed,
- * so the bubble does not also appear in the reasoning note.
+ * Returns the first line found for each channel, plus the text with every
+ * speech object removed - so a bubble does not also show up in the reasoning
+ * note. The first line per channel wins; later ones are dropped.
  */
-export function extractChat(text) {
-  if (!text) return { chat: null, rest: '' };
+export function extractSpeech(text) {
+  if (!text) return { say: null, reply: null, rest: '' };
 
-  const pattern = /\{\s*"chat"\s*:\s*"(?:[^"\\]|\\.)*"\s*\}/g;
-  let chat = null;
+  const found = { say: null, reply: null };
 
-  const rest = text.replace(pattern, (match) => {
-    if (chat) return '';                    // only the first line counts
+  const rest = String(text).replace(SPEECH_RE, (match, key) => {
+    const channel = key === 'reply' ? 'reply' : 'say';
+    if (found[channel]) return '';                  // only the first line counts
     try {
-      const value = JSON.parse(match).chat;
-      if (typeof value === 'string' && value.trim()) chat = tidy(value);
+      const value = JSON.parse(match)[key];
+      if (typeof value === 'string' && value.trim()) {
+        found[channel] = tidy(value, channel === 'reply' ? COMMS.replyLength : CHAT.maxLength);
+      }
     } catch {
       // Malformed - drop it rather than showing raw braces over a sphere.
     }
     return '';
   });
 
-  return { chat, rest: rest.replace(/\s+/g, ' ').trim() };
+  return { ...found, rest: rest.replace(/\s+/g, ' ').trim() };
 }
 
-/** Collapse whitespace and cut to bubble length. */
-export function tidy(line) {
+/** The out-loud channel on its own, which is all the older callers want. */
+export function extractChat(text) {
+  const { say, rest } = extractSpeech(text);
+  return { chat: say, rest };
+}
+
+/** Collapse whitespace and cut to length. */
+export function tidy(line, limit = CHAT.maxLength) {
   const clean = String(line ?? '').replace(/\s+/g, ' ').trim();
-  return clean.length > CHAT.maxLength ? `${clean.slice(0, CHAT.maxLength - 1)}…` : clean;
+  return clean.length > limit ? `${clean.slice(0, limit - 1)}…` : clean;
 }
 
 /** Greedy wrap into at most CHAT.maxLines lines of about CHAT.lineWidth chars. */

@@ -6,6 +6,7 @@
 
 import { renderSnapshotText } from '../sensors.js';
 import { BRAIN } from '../config.js';
+import { drainInbox } from '../comms.js';
 
 export function createClaudeBrain({ endpoint = '/api/decide', fallback = null } = {}) {
   let available = true;
@@ -38,6 +39,11 @@ export function createClaudeBrain({ endpoint = '/api/decide', fallback = null } 
         throw new Error('model backend unavailable');
       }
 
+      // Whatever the operator has said since the last decision travels with
+      // the snapshot. The server holds the conversation; this is the only
+      // place the message can enter it.
+      const messages = memory?.messages ?? drainInbox(participant);
+
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), BRAIN.decisionTimeout * 1000);
 
@@ -52,6 +58,7 @@ export function createClaudeBrain({ endpoint = '/api/decide', fallback = null } 
             name: participant.name,
             observation: renderSnapshotText(snapshot),
             results: memory?.results ?? [],
+            messages,
           }),
           signal: controller.signal,
         });
@@ -68,12 +75,15 @@ export function createClaudeBrain({ endpoint = '/api/decide', fallback = null } 
           actions: data.actions ?? [],
           note: data.note ?? null,
           chat: data.chat ?? null,
+          reply: data.reply ?? null,
           turn: data.turn ?? null,
           memory: data.memory ?? null,
         };
       } catch (error) {
         if (error.name === 'AbortError') throw new Error('model timed out');
-        if (fallback && !available) return fallback.decide(snapshot, participant, memory);
+        // The messages are already out of the inbox: hand them to whoever
+        // answers instead, rather than losing them with the failed call.
+        if (fallback && !available) return fallback.decide(snapshot, participant, { ...memory, messages });
         throw error;
       } finally {
         clearTimeout(timer);

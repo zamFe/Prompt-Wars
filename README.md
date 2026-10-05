@@ -210,32 +210,83 @@ all — `parseConstraints` turns *"never move, only turn right"* into rules the
 simulation refuses to break. It is **off by default**; set `HARD_RULES.enforce`
 in `public/src/config.js` to switch it on.
 
-## Speech bubbles
+## Two channels: out loud, and to your agent
 
-Agents talk. A line appears over the sphere for two seconds; saying something
-new replaces the current line and restarts the clock, so an agent that keeps
-talking holds one continuous bubble rather than flickering between separate
-ones. Nobody can hear anyone else — it is pure flavour.
+Agents talk on two channels, and they are not the same thing.
 
-Live agents speak by putting `{"chat": "im attacking!"}` anywhere in their reply
-text. It is lifted out server-side and stripped from the reasoning note. Riding
-along in text the model already writes costs one short string: no extra tool, no
-extra round trip, and no slot taken from the four actions a decision gets. The
-system prompt asks agents to speak only when something actually happens — a
-first sighting, a kill, a reload, a retreat — because ten narrating agents are
-unreadable.
+**Out loud** is the speech bubble: a line over the sphere for two seconds, and a
+row in the **Global chat**. Saying something new replaces the current line and
+restarts the clock, so an agent that keeps talking holds one continuous bubble
+rather than flickering between separate ones. Everybody reads it.
 
-The offline interpreter barks on the same principle: only on a change of
-situation, never more than once every few seconds, and in one of two voices
-depending on how aggressive the prompt reads.
+**Privately** is the **Agent chat**: a line to its operator, and nobody else.
+It never reaches the global log, the server, the room, or another player's page
+— in a shared arena it is produced on, and stays on, the page that owns the
+agent. That is also the page paying for its thinking, so there is nothing to
+route and nothing to leak.
 
-Every line also lands in the **Comms** panel on the left, a messenger-style
-history: the agent you are following sits on the right, everyone else on the
-left. Switching focus swaps a single generated CSS rule rather than touching
-any message, so the whole history restyles at once however long it is. With the
-server running the history lives there — it survives a reload and is shared
-between tabs, capped at 1000 messages with the oldest dropped as new ones
-arrive. Opened as a static page, the same store runs in the tab.
+A live agent writes either, or both, in the same answer as its actions:
+
+```json
+{"say": "Contact left!", "reply": "Flanking, 3 seconds.", "actions": [ ... ]}
+```
+
+The tool-calling path (the server brain) uses the same two names as standalone
+objects anywhere in its reply text — `{"say": "..."}` and `{"reply": "..."}` —
+which are lifted out and stripped from the reasoning note. `{"chat": "..."}` is
+the older name for the out-loud channel and still works. Either way, speaking
+costs nothing: no extra tool, no extra round trip, and no slot taken from the
+four actions a decision gets. An answer may also carry speech and **no actions
+at all**, which is the right reply when there is something to say and nothing
+worth doing.
+
+The system prompt asks agents to speak out loud only when something actually
+happens — a first sighting, a kill, a reload, a retreat — because ten narrating
+agents are unreadable. Privately, it asks them to answer when spoken to, in one
+short sentence.
+
+### Writing to your agent
+
+The Agent chat has an input. What you type goes into that agent's inbox, and is
+read on its next decision — wrapped in `<operator_message>` tags, introduced as
+coming from the same person who wrote its standing orders, and with an explicit
+instruction to answer it in `reply` that turn. Whatever the agent still had
+queued is dropped so the answer does not have to wait out a four-action plan;
+the action already running is left alone, because cutting a reload in half is a
+worse surprise than half a second of delay.
+
+The inbox holds four messages and drops the oldest, so an agent that was busy or
+dead does not come back with a backlog to recite. Angle brackets are stripped on
+the way in, so a message cannot forge the tags that wrap it.
+
+You can only talk to agents **you** deployed. The card follows the agent you are
+focused on when it is one of yours, and otherwise your most recent one.
+
+The offline interpreter answers too. It cannot hold a conversation, but a
+message is appended to the briefing it parses for intent, so telling it to
+*"attack, rush him down"* genuinely makes it more aggressive — and its reply
+reports what changed, or says plainly that it found nothing it could act on.
+
+Both logs are messenger-style. In the global one, the agent you are following
+sits on the right and everyone else on the left; switching focus swaps a single
+generated CSS rule rather than touching any message, so the whole history
+restyles at once however long it is. With the server running that history lives
+there — it survives a reload and is shared between tabs, capped at 1000 messages
+with the oldest dropped as new ones arrive. Opened as a static page, the same
+store runs in the tab. The private log is always in the page, capped at 400.
+
+## The right-hand rail
+
+The arena and the two chats are the game, so they get the room. The roster,
+leaderboard, champions board, inspector and feed are reference, and share one
+narrow bar on the right that shows a single panel at a time. Only the panel on
+screen is rendered at all, so the other four cost nothing until you open them.
+Clicking a sphere or a roster row opens the Agent panel, because asking to look
+at an agent is asking to see what it sees.
+
+The layout keeps the chats beside the arena down to about 1280px. Below that
+they move under it, with the rail holding its width on the right; below 1080px
+everything stacks, arena first.
 
 ## Following an agent
 
@@ -324,18 +375,22 @@ public/
     util.js            math, geometry, seedable RNG
     arena.js           walls, ray casts, line of sight, collision
     sensors.js         what an agent perceives, and its text rendering
-    chat.js            speech-bubble text: parsing, tidying, wrapping
-    chatlog.js         comms history, server-backed when there is a server
+    chat.js            agent speech: parsing both channels, tidying, wrapping
+    chatlog.js         the two histories: global (server-backed) and private
+    comms.js           the operator channel: inbox, briefing, context block
     constraints.js     hard rules parsed from a prompt, enforced by the sim
     actions.js         the six tools: schemas, validation, execution
     world.js           bodies, bullets, loot, damage, the decision loop
     lobby.js           queue and death timers
     render.js          canvas drawing
-    ui.js              panels, roster, inspector
+    ui.js              the two chat cards, the rail and its five panels
     main.js            wiring and the fixed-timestep loop
+    net.js             the shared arena: host election, snapshots, relay
+    usage.js           what this page has asked of the viewer's account
     brains/
       local.js         the offline prompt interpreter
       claude.js        client for the model proxy
+      sample.js        Claude on the viewer's own account, in an artifact
 tools/
   stub-model.js        a free offline stand-in for the Messages API
 test/
@@ -355,8 +410,9 @@ npm run doctor    # why is the model brain offline?
 
 `sim.test.js` runs the arena headlessly in Node — weapon balance, cone geometry,
 walls blocking sight and bullets, the queue, both death cooldowns, loot rules,
-tool-argument clamping, prompt parsing, bubble lifetimes and the chat parser,
-assists, champion scoring, and a full 12-agent two-minute match.
+tool-argument clamping, prompt parsing, bubble lifetimes, both chat channels and
+the operator inbox, assists, champion scoring, and a full 12-agent two-minute
+match.
 `model-proxy.test.js` runs the server against a stub Messages API and checks the
 request shape, the tool-call round trip and compatibility mode; it needs no
 credentials.

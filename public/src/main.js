@@ -9,16 +9,38 @@ import { Renderer } from './render.js';
 import { UI } from './ui.js';
 import { PRESETS, DEMO_NAMES } from './presets.js';
 import { AGENT_COLORS, WORLD } from './config.js';
-import { createChatLog } from './chatlog.js';
+import { createChatLog, createDirectLog } from './chatlog.js';
+import { messageAgent } from './comms.js';
 
 const usage = createUsageMeter({ onChange: (state) => ui?.renderUsage(state) });
 const brains = createBrains({ usage });
 const world = new World({ brains });
 const renderer = new Renderer(document.getElementById('arena'));
 const chatLog = createChatLog();
+// The private channel. It has its own store because it has its own audience:
+// nobody. Messages here never reach the server, the room or another viewer.
+const directLog = createDirectLog();
 
-// Every bubble the world raises is mirrored into the comms history.
+// Every bubble the world raises is mirrored into the global history...
 world.onSay = (agent, text) => chatLog.record(agent, text);
+// ...while a private answer goes only into this page's own thread.
+world.onReply = (agent, text) =>
+  directLog.post({ side: 'agent', participant: agent.participant, name: agent.name, color: agent.color, text });
+
+/**
+ * Hand a line to one of my own agents. The message waits in that agent's inbox
+ * until its next decision, which is the only place it enters the conversation -
+ * so it costs no extra model call. Whatever is still queued is dropped so the
+ * answer does not have to wait out a four-action plan.
+ */
+function deliver(participant, text) {
+  if (!participant?.isMine) return null;
+  const line = messageAgent(participant, text);
+  if (!line) return null;
+  directLog.post({ side: 'you', participant, name: 'You', text: line });
+  if (participant.agent) world.nudge(participant.agent);
+  return line;
+}
 
 let usedColors = new Set();
 let usedNames = new Set();
@@ -107,13 +129,17 @@ function clearArena() {
   usedColors = new Set();
   usedNames = new Set();
   ui.selectedId = null;
+  // Those agents are gone, and so are the channels to them.
+  directLog.clear();
   world.addLog('Arena cleared.', 'info');
 }
 
 const ui = new UI({
   world,
   chatLog,
+  directLog,
   onJoin: join,
+  onMessage: deliver,
   onDemo: () => {
     if (net?.state.available && !net.isHost) return net.send(TOPICS.bots, { count: 4 });
     addDemoAgents(4);
@@ -219,7 +245,7 @@ function makeGhost(netId) {
     weapon: 'pistol', ammo: 3, nextShotAt: 0, reloadUntil: 0, spawnProtectedUntil: 0,
     queue: [], current: null, thinking: false, pendingEvents: [], planResults: [],
     lastActions: [], lastRefused: [], pulses: { fire: -Infinity, reload: -Infinity, hurt: -Infinity, heal: -Infinity, kill: -Infinity, pickup: -Infinity },
-    recentDamage: new Map(), lifeKills: 0, lifeAssists: 0, chat: null, spawnedAt: 0,
+    recentDamage: new Map(), lifeKills: 0, lifeAssists: 0, chat: null, lastReply: null, spawnedAt: 0,
   };
   participant.agent = agent;
   return agent;
@@ -247,7 +273,23 @@ net.onDecisionNeeded = async (request) => {
   if (!participant) return;
   try {
     const decision = await brains.sample.decideForOwned(request, participant);
-    net.send(TOPICS.plan, { id: request.id, ...decision });
+    // A private answer stays here: it is shown in my own agent chat and is
+    // deliberately left out of the plan that goes to the host.
+    if (decision?.reply) {
+      directLog.post({
+        side: 'agent',
+        participant,
+        name: participant.name,
+        color: AGENT_COLORS[participant.colorIndex % AGENT_COLORS.length],
+        text: decision.reply,
+      });
+    }
+    net.send(TOPICS.plan, {
+      id: request.id,
+      actions: decision?.actions ?? [],
+      chat: decision?.chat ?? null,
+      note: decision?.note ?? null,
+    });
   } catch {
     net.send(TOPICS.plan, { id: request.id, actions: [] });
   }
@@ -339,4 +381,4 @@ ui.update();
 requestAnimationFrame(frame);
 
 // Handy for poking at the simulation from the console.
-window.promptWars = { world, brains, ui, renderer, join, addDemoAgents, clearArena };
+window.promptWars = { world, brains, ui, renderer, join, addDemoAgents, clearArena, deliver, directLog, chatLog };

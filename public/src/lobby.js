@@ -18,6 +18,13 @@ export function createParticipant({ name, prompt, brainKind, colorIndex }) {
     tier: null,
     // Hard rules the prompt stated outright, enforced by the simulation.
     constraints: parseConstraints(prompt),
+    // The private operator channel. `inbox` holds messages the agent has not
+    // read yet; `briefing` is the orders plus everything said since, which is
+    // what a brain that can only read a prompt gets to work from.
+    inbox: [],
+    briefing: prompt,
+    messagesSent: 0,
+    messagesRead: 0,
     status: 'queued',      // 'live' | 'queued' | 'cooldown'
     readyAt: 0,
     kills: 0,

@@ -1,11 +1,15 @@
-// Arena comms: every line an agent says, kept as a running history.
+// Arena comms: the two chat histories.
 //
-// When the server is reachable it owns the log - the client posts lines and
-// polls for the authoritative order, so the history survives a page reload and
-// is shared between tabs. With no server (the single-file build) the same store
-// runs purely in memory with the same cap.
+// The global log is every line an agent says out loud. When the server is
+// reachable it owns that log, so it survives a reload and is shared between
+// tabs; with no server the same store runs in memory with the same cap.
+//
+// The direct log is the private channel between this player and the agents they
+// deployed. It never leaves the page: no server, no room, no other viewer. It
+// is a different store rather than a flag on the same one, because the two have
+// different owners, different lifetimes and different audiences.
 
-import { CHAT } from './config.js';
+import { CHAT, COMMS } from './config.js';
 
 export function createChatLog({ endpoint = '/api/chat', max = 1000, pollInterval = 600 } = {}) {
   const local = [];
@@ -113,6 +117,62 @@ export function createChatLog({ endpoint = '/api/chat', max = 1000, pollInterval
 
     clear() {
       local.length = 0;
+      onChange();
+    },
+  };
+}
+
+/**
+ * The private operator channel: your messages to your agents, and their short
+ * answers back. In-memory by design - this is the one conversation nobody else
+ * is entitled to read, so it is never posted anywhere.
+ */
+export function createDirectLog({ max = COMMS.directMax } = {}) {
+  const messages = [];
+  let seq = 0;
+  let onChange = () => {};
+
+  return {
+    get messages() {
+      return messages;
+    },
+    get capacity() {
+      return max;
+    },
+
+    onChange(handler) {
+      onChange = handler;
+    },
+
+    /**
+     * @param side  'you' for the operator, 'agent' for the agent answering.
+     */
+    post({ side, participant, text, name, color }) {
+      const line = String(text ?? '').trim().slice(0, COMMS.messageLength);
+      if (!line) return null;
+
+      const message = {
+        seq: ++seq,
+        at: Date.now(),
+        side: side === 'you' ? 'you' : 'agent',
+        participantId: participant?.id ?? null,
+        name: name ?? participant?.name ?? 'agent',
+        color: color ?? null,
+        text: line,
+      };
+      messages.push(message);
+      while (messages.length > max) messages.shift();
+      onChange();
+      return message;
+    },
+
+    /** One thread: just this agent's side of the history. */
+    forAgent(participantId) {
+      return participantId ? messages.filter((m) => m.participantId === participantId) : [];
+    },
+
+    clear() {
+      messages.length = 0;
       onChange();
     },
   };

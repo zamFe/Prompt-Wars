@@ -117,6 +117,23 @@ export const CHAT = {
   minInterval: 3.5,     // offline brain will not bark more often than this
 };
 
+// Two channels, and they are not the same thing.
+//
+//   global  - what an agent says out loud: the bubble over its sphere, mirrored
+//             into the global chat that every player reads.
+//   direct  - a private line between an agent and its operator. It never
+//             touches the network or the server: it lives in the page that owns
+//             the agent, which is also the page that pays for its thinking.
+//
+// Both ride along in the same answer as the agent's actions, so talking costs
+// no extra model call and takes no slot from the four actions it gets.
+export const COMMS = {
+  replyLength: 140,     // a private answer may run a little longer than a bubble
+  messageLength: 200,   // one message from an operator to their agent
+  inboxMax: 4,          // unread operator messages an agent carries; oldest drops
+  directMax: 400,       // messages kept in one page's private history
+};
+
 // How long an action lights up its tile in the focus bar.
 export const PULSE = {
   duration: 0.4,
