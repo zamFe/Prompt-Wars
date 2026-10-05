@@ -4,7 +4,7 @@
 // bearings and distances to what is inside their vision cone, and wall probes -
 // so working out where you are is itself part of the prompt's job.
 
-import { VISION, MOVE, WEAPONS, AGENT, WORLD } from './config.js';
+import { VISION, MOVE, WEAPONS, AGENT, WORLD, TEAMS } from './config.js';
 import { normalizeDeg, toRad, dist, round0, round1, clamp } from './util.js';
 import { castRay, hasLineOfSight } from './arena.js';
 
@@ -85,14 +85,19 @@ export function buildSnapshot(agent, world) {
   const weapon = WEAPONS[agent.weapon] ?? WEAPONS.pistol;
   const heading = toCompass(agent.facing);
 
+  const teamMode = Boolean(world.match?.isTeamMode);
   const enemies = [];
+  const allies = [];
+
   for (const other of world.agents) {
     if (other === agent || !other.alive) continue;
     const seen = seesTarget(agent, other.x, other.y, WORLD.agentRadius);
     if (!seen) continue;
     const rel = relativeFacing(agent, other);
-    enemies.push({
+    const friendly = teamMode && agent.team && other.team === agent.team;
+    (friendly ? allies : enemies).push({
       name: other.name,
+      carrying: other.carrying ? true : false,
       bearing: round1(seen.bearing),
       distance: round0(seen.distance),
       // Relative position, in your own frame: how far ahead and how far to your right.
@@ -105,6 +110,7 @@ export function buildSnapshot(agent, world) {
     });
   }
   enemies.sort((a, b) => a.distance - b.distance);
+  allies.sort((a, b) => a.distance - b.distance);
 
   const loot = [];
   for (const item of world.pickups) {
@@ -140,7 +146,10 @@ export function buildSnapshot(agent, world) {
       aimOffset: round1(agent.aimOffset),
     },
     vision: { fovDegrees: VISION.fov, range: VISION.range },
+    mission: buildMission(agent, world),
+    objective: buildObjective(agent, world),
     enemies,
+    allies,
     loot,
     walls,
     // Things that happened since this agent's previous decision.
@@ -149,6 +158,76 @@ export function buildSnapshot(agent, world) {
       agentsAlive: world.agents.filter((a) => a.alive).length,
       queueLength: world.queue.length,
     },
+  };
+}
+
+/**
+ * What game this is, which side you are on, and how it stands. An agent that
+ * does not know the score cannot play to it.
+ */
+function buildMission(agent, world) {
+  const match = world.match;
+  if (!match) return null;
+  const mode = match.mode;
+  const mine = agent.team;
+  const scores = match.scores;
+
+  return {
+    mode: mode.id,
+    modeName: mode.name,
+    scoreWord: mode.scoreWord,
+    team: mine,
+    teamName: mine ? TEAMS[mine].name : null,
+    yourScore: mine ? scores[mine] : (agent.participant.kills ?? 0),
+    theirScore: mine ? scores[mine === 'a' ? 'b' : 'a'] : null,
+    livesLeft: Number.isFinite(agent.participant.livesLeft) ? agent.participant.livesLeft : null,
+    secondsLeft: match.remaining === null ? null : Math.round(match.remaining),
+  };
+}
+
+/**
+ * The flags, in a mode that has them.
+ *
+ * A team always knows where its own flag is - that is its own flag, and its own
+ * people are watching it. It knows the STATE of the enemy flag too, because
+ * taking one is not a quiet act. Where the enemy flag physically is, though, it
+ * only knows by seeing it, or by carrying it.
+ */
+function buildObjective(agent, world) {
+  if (!agent.team) return null;
+  // Every team mode has two bases; only capture the flag has flags standing on
+  // them. Without this, a team deathmatch gives an agent no sense of direction
+  // at all and both sides sit at home for ten minutes.
+  const flags = world.match?.flags ?? null;
+
+  const mine = flags?.[agent.team] ?? null;
+  const theirs = flags?.[agent.team === 'a' ? 'b' : 'a'] ?? null;
+  // Both bases are known. You were briefed on the map before you walked in -
+  // not knowing where the enemy keeps its flag would make the mode unplayable
+  // behind a 45-degree cone, and would not be realistic either.
+  const home = world.match.baseFor?.(agent.team) ?? null;
+  const away = world.match.baseFor?.(agent.team === 'a' ? 'b' : 'a') ?? null;
+
+  const place = (x, y) => ({
+    bearing: round1(bearingTo(agent, x, y)),
+    distance: round0(dist(agent.x, agent.y, x, y)),
+  });
+
+  const theirsVisible = Boolean(theirs) &&
+    (Boolean(seesTarget(agent, theirs.x, theirs.y, 18)) || theirs.carrier === agent.id);
+
+  return {
+    carrying: Boolean(theirs) && agent.carrying === theirs.team,
+    yourFlag: mine ? { state: mine.state, ...place(mine.x, mine.y), known: true } : null,
+    enemyFlag: theirs
+      ? {
+          state: theirs.state,
+          known: theirsVisible,
+          ...(theirsVisible ? place(theirs.x, theirs.y) : { bearing: null, distance: null }),
+        }
+      : null,
+    yourBase: home ? place(home.x, home.y) : null,
+    enemyBase: away ? place(away.x, away.y) : null,
   };
 }
 
@@ -168,6 +247,47 @@ export function renderSnapshotText(s) {
       `vision ${s.vision.fovDegrees}° cone, ${s.vision.range} range`,
   );
 
+  // The mission comes first: what you are playing, how it stands, what you
+  // have left. An agent that does not know the score cannot play to it.
+  if (s.mission) {
+    const m = s.mission;
+    const score = m.team
+      ? `${m.teamName} ${m.yourScore} - ${m.theirScore} enemy (${m.scoreWord})`
+      : `your ${m.scoreWord}: ${m.yourScore}`;
+    lines.push(
+      `MODE ${m.modeName.toUpperCase()}${m.team ? ` — you are ${m.teamName}` : ''}  |  ${score}` +
+        `${m.livesLeft === null ? '' : `  |  lives left ${m.livesLeft}`}` +
+        `${m.secondsLeft === null ? '' : `  |  ${m.secondsLeft}s on the clock`}`,
+    );
+  }
+
+  if (s.objective) {
+    const o = s.objective;
+    const where = (f) => (!f || f.distance === null ? 'position unknown' : `bearing ${f.bearing > 0 ? '+' : ''}${f.bearing}°, distance ${f.distance}`);
+    lines.push('OBJECTIVE:');
+    if (o.yourFlag) {
+      lines.push(`  You are ${o.carrying ? 'CARRYING THE ENEMY FLAG — get it to your base' : 'not carrying a flag'}.`);
+      lines.push(`  Your flag: ${o.yourFlag.state}, ${where(o.yourFlag)}` +
+        `${o.yourFlag.state === 'home' ? ' (at your base — a capture only counts while it is here)' : ''}`);
+      lines.push(`  Enemy flag: ${o.enemyFlag.state}, ${where(o.enemyFlag)}`);
+    }
+    if (o.yourBase) lines.push(`  Your base: ${where(o.yourBase)}`);
+    if (o.enemyBase) {
+      lines.push(`  Enemy base: ${where(o.enemyBase)}` +
+        `${o.enemyFlag ? ' (where their flag stands when it is home)' : ' (their side of the arena)'}`);
+    }
+  }
+
+  if (s.allies?.length) {
+    lines.push('TEAMMATES IN SIGHT (your fire passes through them):');
+    for (const a of s.allies) {
+      lines.push(
+        `  ${a.name}: bearing ${a.bearing > 0 ? '+' : ''}${a.bearing}°, distance ${a.distance}, HP ${a.hp}` +
+          `${a.carrying ? ' — CARRYING THE ENEMY FLAG' : ''}`,
+      );
+    }
+  }
+
   if (s.enemies.length) {
     lines.push('ENEMIES IN SIGHT:');
     for (const e of s.enemies) {
@@ -175,7 +295,8 @@ export function renderSnapshotText(s) {
         `  ${e.name}: bearing ${e.bearing > 0 ? '+' : ''}${e.bearing}° ` +
           `(${e.bearing > 0 ? 'right' : e.bearing < 0 ? 'left' : 'dead ahead'}), distance ${e.distance}, ` +
           `${e.forward} ahead / ${Math.abs(e.right)} to your ${e.right >= 0 ? 'right' : 'left'}, ` +
-          `HP ${e.hp}, ${e.weapon}, heading ${e.heading}° - ${e.orientation}`,
+          `HP ${e.hp}, ${e.weapon}, heading ${e.heading}° - ${e.orientation}` +
+          `${e.carrying ? ' — CARRYING YOUR FLAG' : ''}`,
       );
     }
   } else {

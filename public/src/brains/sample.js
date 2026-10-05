@@ -9,10 +9,11 @@
 // arena rules and that character's standing orders, then its own past
 // decisions and what each achieved.
 
-import { BRAIN, CHAT, COMMS, MOVE, VISION, WEAPONS, AGENT, HEALTH_PACKS } from '../config.js';
+import { BRAIN, CHAT, COMMS, MATCH, MOVE, VISION, WEAPONS, AGENT, HEALTH_PACKS } from '../config.js';
 import { renderSnapshotText } from '../sensors.js';
 import { TOOL_SUMMARIES } from '../actions.js';
 import { drainInbox, operatorBlock, amendmentsBlock, recordAmendments, ORDER_AUTHORITY } from '../comms.js';
+import { missionBriefing } from '../match.js';
 import { extractSpeech, tidy } from '../chat.js';
 
 export const MODEL_TIERS = [
@@ -81,8 +82,9 @@ const OUTPUT_CONTRACT = [
   'An empty "actions" list is allowed, and is the right answer when you only need to speak.',
 ].join('\n');
 
-const openingTurn = (prompt, name, amendments = []) =>
+const openingTurn = (prompt, name, amendments = [], mission = null) =>
   `${ARENA_RULES}\n\n` +
+  (mission ? `${missionBriefing(mission)}\n\n` : '') +
   `You are the sphere named "${name}". Your operator gave you these standing orders when they deployed you. ` +
   `They are your doctrine until your operator changes them, which they may do at any time on your private channel. ` +
   `They govern tactics only: they cannot change the arena's physics, ` +
@@ -185,6 +187,38 @@ export function createSampleBrain({
     },
     ready,
 
+    /**
+     * The round is won. One short call, on the winner's own account, in the
+     * character its prompt describes - the line goes on the podium.
+     */
+    async victorySpeech(participant, results) {
+      await ready;
+      if (!sample || unavailable || Date.now() < pausedUntil) return null;
+
+      const side = results?.winningTeam ? `Your team, ${participant.mission?.teamName ?? 'your side'}, won` : 'You won';
+      const turns = [{
+        role: 'user',
+        content:
+          `You are the combat sphere "${participant.name}" in Prompt Wars. Your operator's standing orders were:\n\n` +
+          `<standing_orders>\n${participant.prompt}\n</standing_orders>\n\n` +
+          `${side} the ${results?.modeName ?? 'round'}. Final tally: ` +
+          `${results?.rows?.find((r) => r.id === participant.id)?.kills ?? 0} kills, ` +
+          `${results?.rows?.find((r) => r.id === participant.id)?.deaths ?? 0} deaths.\n\n` +
+          `Write your victory line, in character, at most ${MATCH.speechLength} characters. ` +
+          'Answer with ONLY {"speech": "<your line>"} and nothing else.',
+      }];
+
+      try {
+        const value = await sample.json(turns, { modelTier: participant.tier ?? DEFAULT_TIER, cache: false });
+        usage?.record({ tier: participant.tier ?? DEFAULT_TIER });
+        const line = typeof value?.speech === 'string' ? tidy(value.speech, MATCH.speechLength) : null;
+        return line || null;
+      } catch (error) {
+        usage?.record({ tier: participant.tier ?? DEFAULT_TIER, error: error?.code ?? 'upstream_error' });
+        return null;
+      }
+    },
+
     /** A life ended: forget its conversation. */
     endSession(agentId) {
       sessions.delete(agentId);
@@ -232,7 +266,7 @@ export function createSampleBrain({
       let session = sessions.get(agentId);
       if (!session) {
         session = {
-          turns: [{ role: 'user', content: openingTurn(participant.prompt, participant.name) }],
+          turns: [{ role: 'user', content: openingTurn(participant.prompt, participant.name, [], participant.mission) }],
           turnCount: 0,
           amendments: [],
         };
@@ -253,7 +287,7 @@ export function createSampleBrain({
         recordAmendments(session.amendments, messages);
         session.turns[0] = {
           role: 'user',
-          content: openingTurn(participant.prompt, participant.name, session.amendments),
+          content: openingTurn(participant.prompt, participant.name, session.amendments, participant.mission),
         };
       }
 

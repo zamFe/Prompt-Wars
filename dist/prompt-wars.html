@@ -825,8 +825,488 @@ button:focus-visible, .roster li:focus-visible {
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
+
+/* ======================================================================
+   SCREENS
+   One page, four phases. `data-phase` on <body> is the only switch: every
+   screen is laid out once and simply not shown when it is not its turn.
+   ====================================================================== */
+.screen {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  overflow-y: auto;
+  background: var(--bg);
+  padding: 24px;
+}
+body[data-phase="landing"] #screen-landing,
+body[data-phase="lobby"] #screen-lobby,
+body[data-phase="postgame"] #screen-postgame { display: flex; }
+
+/* The game itself is only up while a round is being written or fought. */
+body[data-phase="landing"] .topbar, body[data-phase="landing"] main,
+body[data-phase="lobby"] .topbar, body[data-phase="lobby"] main,
+body[data-phase="postgame"] .topbar, body[data-phase="postgame"] main { display: none; }
+
+/* ------------------------------------------------------------- landing */
+.screen-landing {
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  background:
+    radial-gradient(1100px 620px at 50% 38%, rgba(94, 200, 255, 0.10), transparent 70%),
+    radial-gradient(760px 520px at 50% 95%, rgba(255, 92, 122, 0.08), transparent 70%),
+    var(--bg);
+}
+.landing-inner { text-align: center; max-width: 620px; }
+.landing-inner h1 {
+  font-family: var(--font-display);
+  font-size: clamp(42px, 9vw, 84px);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin: 14px 0 6px;
+  line-height: 1;
+}
+.brand-dot.big {
+  display: inline-block;
+  width: 20px; height: 20px;
+  box-shadow: 0 0 36px rgba(255, 92, 122, 0.55);
+}
+.landing-tag { font-size: clamp(16px, 2.4vw, 21px); color: var(--text); margin: 0 0 16px; }
+.landing-tag b { color: var(--accent); }
+.landing-sub { color: var(--muted); font-size: 14px; line-height: 1.6; margin: 0 auto 34px; max-width: 460px; }
+.landing-go {
+  font-family: var(--font-display);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.22em;
+  color: var(--muted);
+  margin: 0;
+  animation: breathe 2.4s ease-in-out infinite;
+}
+@keyframes breathe { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
+
+/* --------------------------------------------------------------- lobby */
+.screen-lobby { justify-content: center; align-items: flex-start; }
+.lobby-inner { width: 100%; max-width: 1120px; margin: auto; }
+
+.lobby-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+.lobby-head h2 {
+  font-family: var(--font-display);
+  font-size: 26px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin: 0 0 4px;
+}
+.lobby-sub { margin: 0; color: var(--muted); font-size: 13px; }
+
+.lobby-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; align-items: start; }
+
+.lobby-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 14px;
+}
+.lobby-card h3 {
+  margin: 0 0 11px;
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.13em;
+  color: var(--muted);
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+.lobby-card h3 em { font-style: normal; font-family: var(--font-body); font-size: 12px; letter-spacing: 0; text-transform: none; }
+
+/* Picking a mode or a map: the same tile, twice. */
+.mode-cards, .map-cards { display: grid; gap: 8px; }
+.mode-cards { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+.map-cards { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+
+.pick {
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--text);
+  cursor: pointer;
+  display: block;
+  width: 100%;
+  /* A grid item will not shrink below its content without this, and a blurb
+     then pushes the whole card off the side of the screen. */
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+.pick:hover:not(:disabled) { border-color: #3c4765; }
+.pick[aria-pressed="true"] { border-color: var(--accent); background: rgba(94, 200, 255, 0.09); }
+.pick:disabled { cursor: default; opacity: 0.75; }
+.pick b { display: block; font-family: var(--font-display); font-size: 13px; letter-spacing: 0.03em; }
+.pick span {
+  display: block;
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.45;
+  margin-top: 3px;
+  white-space: normal;
+}
+.pick[aria-pressed="true"] b { color: var(--accent); }
+
+.setting-rows { display: flex; flex-direction: column; gap: 13px; }
+.setting span { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); }
+.setting em {
+  font-style: normal;
+  font-family: var(--font-display);
+  font-weight: 600;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.setting input[type="range"] { width: 100%; accent-color: var(--accent); padding: 0; }
+.setting input:disabled { opacity: 0.5; }
+.setting-note { margin: 0; font-size: 11.5px; color: var(--muted); line-height: 1.45; }
+
+/* Who is in, and on which side. */
+.team-columns { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+.team-col { border: 1px solid var(--line); border-radius: 9px; padding: 10px; background: var(--panel-2); }
+.team-col.solo { background: transparent; border: 0; padding: 0; }
+.team-col h4 {
+  margin: 0 0 8px;
+  font-family: var(--font-display);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.team-col h4 i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.team-col ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; min-height: 34px; }
+.team-col li .who { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.team-col li {
+  display: grid;
+  grid-template-columns: 11px minmax(0, 1fr) auto auto;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 8px;
+  border-radius: 7px;
+  background: var(--panel);
+  border: 1px solid transparent;
+  font-size: 12.5px;
+}
+.team-col li .tag { font-size: 10.5px; color: var(--muted); font-family: var(--font-mono); }
+.team-col li.mine { border-color: var(--accent); }
+.team-col .empty { color: var(--muted); font-size: 12px; padding: 4px 2px; }
+.team-col button.swap {
+  background: none;
+  border: 0;
+  color: var(--muted);
+  font-size: 11px;
+  padding: 2px 5px;
+  cursor: pointer;
+  border-radius: 5px;
+}
+.team-col button.swap:hover { color: var(--text); background: var(--panel-2); }
+
+.lobby-actions { margin-top: 11px; }
+.lobby-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 18px;
+  flex-wrap: wrap;
+}
+.lobby-hint { margin: 0; color: var(--muted); font-size: 12.5px; }
+button.big { font-size: 15px; padding: 11px 26px; font-family: var(--font-display); letter-spacing: 0.04em; }
+button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* ------------------------------------------------------ the live HUD */
+.hud {
+  width: 100%;
+  max-width: min(calc(100vh - 220px), 100%);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 7px 13px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+.hud-mode {
+  font-family: var(--font-display);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.13em;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.hud-score { display: flex; align-items: center; gap: 10px; margin-left: auto; }
+.hud-team { display: flex; align-items: center; gap: 6px; font-family: var(--font-display); font-weight: 700; font-size: 17px; font-variant-numeric: tabular-nums; }
+.hud-team i { width: 10px; height: 10px; border-radius: 50%; }
+.hud-team.leading { text-shadow: 0 0 18px currentColor; }
+.hud-sep { color: var(--muted); }
+.hud-clock {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+  min-width: 64px;
+  text-align: right;
+}
+.hud-clock.urgent { color: var(--bad); }
+.hud-lead { font-size: 12.5px; color: var(--muted); }
+.hud-lead b { color: var(--text); font-family: var(--font-display); font-size: 14px; }
+
+/* --------------------------------------------------- briefing banner */
+.brief-banner {
+  width: 100%;
+  max-width: min(calc(100vh - 220px), 100%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  border: 1px solid rgba(94, 200, 255, 0.45);
+  background: rgba(94, 200, 255, 0.07);
+  font-size: 13px;
+}
+.brief-banner b {
+  font-family: var(--font-display);
+  font-size: 24px;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+  min-width: 42px;
+}
+.brief-banner em { font-style: normal; color: var(--muted); }
+.brief-banner button { margin-left: auto; }
+
+/* ------------------------------------------------------------ postgame */
+.screen-postgame { justify-content: center; align-items: flex-start; }
+.post-inner { width: 100%; max-width: 1060px; margin: auto; }
+.post-head { text-align: center; margin-bottom: 22px; }
+.post-head h2 {
+  font-family: var(--font-display);
+  font-size: clamp(26px, 5vw, 40px);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin: 0 0 6px;
+}
+.post-sub { margin: 0; color: var(--muted); font-size: 13.5px; }
+
+/* Podium: second, first, third - first is the tall one in the middle. */
+.podium {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  align-items: end;
+  margin-bottom: 20px;
+}
+.podium .step {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 14px 12px;
+  text-align: center;
+}
+.podium .step.first { border-color: var(--warn); padding-top: 26px; padding-bottom: 26px; }
+.podium .step.first .place { color: var(--warn); }
+.podium .place {
+  font-family: var(--font-display);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.podium .sphere {
+  width: 40px; height: 40px;
+  border-radius: 50%;
+  margin: 10px auto 8px;
+  box-shadow: inset -5px -5px 12px rgba(0, 0, 0, 0.45);
+}
+.podium .step.first .sphere { width: 56px; height: 56px; }
+.podium .who { font-family: var(--font-display); font-weight: 700; font-size: 16px; }
+.podium .line { color: var(--muted); font-size: 12px; margin-top: 3px; }
+.podium .empty { opacity: 0.4; }
+
+.speech {
+  margin: 0 auto 22px;
+  max-width: 620px;
+  text-align: center;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--warn);
+  border-radius: 10px;
+  padding: 13px 18px;
+}
+.speech-who {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--muted);
+  margin-bottom: 5px;
+}
+.speech-text { font-size: 17px; font-style: italic; }
+
+.post-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 14px; }
+.post-card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; }
+.post-card h3 {
+  margin: 0 0 10px;
+  font-family: var(--font-display);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.13em;
+  color: var(--muted);
+}
+.table-wrap { overflow-x: auto; }
+.scoreboard { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.scoreboard th {
+  text-align: right;
+  font-family: var(--font-display);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  padding: 0 6px 7px;
+  font-weight: 600;
+}
+.scoreboard th:first-child, .scoreboard td:first-child { text-align: left; }
+.scoreboard td { padding: 6px; border-top: 1px solid var(--line); font-variant-numeric: tabular-nums; text-align: right; }
+.scoreboard td.name { display: flex; align-items: center; gap: 7px; font-weight: 600; }
+.scoreboard td.name i { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+.scoreboard tr.mine td { background: rgba(94, 200, 255, 0.07); }
+.scoreboard .team-tag { font-size: 10px; font-family: var(--font-mono); color: var(--muted); }
+
+.notable { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 9px; }
+.notable li { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: 12.5px; }
+.notable .label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; font-family: var(--font-display); }
+.notable .value { font-family: var(--font-display); font-weight: 600; }
+
+.post-foot { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 20px; flex-wrap: wrap; }
+
+@media (max-width: 860px) {
+  .lobby-grid, .post-grid { grid-template-columns: minmax(0, 1fr); }
+  .podium { grid-template-columns: minmax(0, 1fr); align-items: stretch; }
+  .podium .step.first { order: -1; }
+  .screen { padding: 16px; }
+}
 </style>
-<header class="topbar">
+<!--
+    Four screens, one page. `data-phase` on the body is the only thing that
+    decides which is up; every panel below is laid out once and simply not
+    shown in the phases it does not belong to.
+  -->
+  <section class="screen screen-landing" id="screen-landing">
+    <div class="landing-inner">
+      <span class="brand-dot big"></span>
+      <h1>Prompt Wars</h1>
+      <p class="landing-tag">You do not play. Your <b>prompt</b> does.</p>
+      <p class="landing-sub">
+        Write instructions for a fighter. It sees through a 45° cone, acts through six slow tools,
+        and from then on it is on its own.
+      </p>
+      <p class="landing-go" id="landing-go">Press anything to begin</p>
+    </div>
+  </section>
+
+  <section class="screen screen-lobby" id="screen-lobby">
+    <div class="lobby-inner">
+      <header class="lobby-head">
+        <div>
+          <h2>Lobby</h2>
+          <p class="lobby-sub" id="lobby-sub">Choose the game. Everyone writes their prompt once it starts.</p>
+        </div>
+        <span class="badge" id="lobby-room">solo</span>
+      </header>
+
+      <div class="lobby-grid">
+        <section class="lobby-card">
+          <h3>Mode</h3>
+          <div class="mode-cards" id="mode-cards"></div>
+        </section>
+
+        <section class="lobby-card">
+          <h3>Map</h3>
+          <div class="map-cards" id="map-cards"></div>
+        </section>
+
+        <section class="lobby-card">
+          <h3>Rules</h3>
+          <div class="setting-rows">
+            <label class="setting">
+              <span>Round length <em id="set-round-value"></em></span>
+              <input type="range" id="set-round" min="1" max="30" step="1" />
+            </label>
+            <label class="setting">
+              <span>Time to write a prompt <em id="set-brief-value"></em></span>
+              <input type="range" id="set-brief" min="15" max="300" step="5" />
+            </label>
+            <label class="setting">
+              <span>Lives <em id="set-lives-value"></em></span>
+              <input type="range" id="set-lives" min="0" max="10" step="1" />
+            </label>
+            <p class="setting-note" id="lives-note"></p>
+          </div>
+        </section>
+
+        <section class="lobby-card lobby-roster-card">
+          <h3>Fighters <em id="lobby-count"></em></h3>
+          <div class="team-columns" id="team-columns"></div>
+          <div class="row lobby-actions" id="lobby-actions">
+            <button type="button" class="ghost" id="btn-add-bot">Add a bot</button>
+            <button type="button" class="ghost" id="btn-lobby-clear">Remove all</button>
+          </div>
+          <p class="role-note" id="lobby-role-note"></p>
+        </section>
+      </div>
+
+      <footer class="lobby-foot">
+        <p class="lobby-hint" id="lobby-hint"></p>
+        <button type="button" class="primary big" id="btn-start">Start round</button>
+      </footer>
+    </div>
+  </section>
+
+  <section class="screen screen-postgame" id="screen-postgame">
+    <div class="post-inner">
+      <header class="post-head">
+        <h2 id="post-title">Round over</h2>
+        <p class="post-sub" id="post-sub"></p>
+      </header>
+
+      <div class="podium" id="podium"></div>
+
+      <blockquote class="speech" id="speech" hidden>
+        <span class="speech-who" id="speech-who"></span>
+        <span class="speech-text" id="speech-text"></span>
+      </blockquote>
+
+      <div class="post-grid">
+        <section class="post-card">
+          <h3>Scoreboard</h3>
+          <div class="table-wrap"><table class="scoreboard" id="scoreboard"></table></div>
+        </section>
+        <section class="post-card">
+          <h3>Of note</h3>
+          <ul class="notable" id="notable"></ul>
+        </section>
+      </div>
+
+      <footer class="post-foot">
+        <p class="lobby-hint" id="post-hint"></p>
+        <button type="button" class="primary big" id="btn-return">Return to lobby</button>
+      </footer>
+    </div>
+  </section>
+
+  <header class="topbar">
     <div class="brand">
       <span class="brand-dot"></span>
       <h1>Prompt Wars</h1>
@@ -855,6 +1335,18 @@ button:focus-visible, .roster li:focus-visible {
       shows one panel at a time rather than five stacked cards.
     -->
     <section class="stage">
+      <div class="hud" id="hud">
+        <span class="hud-mode" id="hud-mode"></span>
+        <div class="hud-score" id="hud-score"></div>
+        <span class="hud-clock" id="hud-clock">—</span>
+      </div>
+
+      <div class="brief-banner" id="brief-banner" hidden>
+        <b id="brief-clock">60</b>
+        <span>seconds to write the prompt your fighter carries in. <em id="brief-count"></em></span>
+        <button type="button" class="ghost" id="btn-skip-brief">Start now</button>
+      </div>
+
       <canvas id="arena" aria-label="Prompt Wars arena"></canvas>
 
       <section class="focusbar" id="focusbar" aria-live="polite">
@@ -929,8 +1421,8 @@ button:focus-visible, .roster li:focus-visible {
     </aside>
 
     <aside class="panel">
-      <section class="card">
-        <h2>Enter the arena</h2>
+      <section class="card" id="deploy-card">
+        <h2>Your fighter <em id="deploy-phase"></em></h2>
         <form id="join-form" autocomplete="off">
           <div class="row">
             <label class="grow">
@@ -1167,6 +1659,31 @@ const PULSE = {
   assistWindow: 10,     // damage this recently counts toward an assist
   championRows: 10,
 };
+
+// The two sides in a team mode. Agents keep their own sphere colour - you
+// still recognise a fighter by its colour - and wear the team as a ring.
+const TEAMS = {
+  a: { id: 'a', name: 'Vermillion', short: 'VER', color: '#ff5c7a' },
+  b: { id: 'b', name: 'Azure', short: 'AZU', color: '#38bdf8' },
+};
+
+// What a round is, before the owner changes any of it in the lobby.
+const MATCH = {
+  defaults: {
+    mode: 'ffa',
+    map: 'crossfire',
+    roundSeconds: 600,      // ten minutes
+    briefSeconds: 60,       // time to write the prompt your fighter carries in
+    lives: 3,               // 0 means endless, which is the old drop-in arena
+    respawnSeconds: 5,
+  },
+  limits: {
+    roundSeconds: [60, 1800],
+    briefSeconds: [15, 300],
+    lives: [0, 10],
+  },
+  speechLength: 50,         // the winner's victory speech
+};
 const LOBBY = {
   respawnCooldown: 60,          // seconds before a dead agent may rejoin
   congestedCooldown: 600,       // when the arena is full and the queue is long
@@ -1316,24 +1833,84 @@ function formatClock(seconds) {
 // ---- public/src/arena.js -----------------------------------------
 // The arena: a square with a handful of interior walls, plus the geometry
 // queries the simulation and the sensors need (line of sight, collision).
+//
+// Every map is point-symmetric about the centre: rotate it 180 degrees and you
+// get the same layout back. That is what makes two bases fair in a team mode -
+// whatever cover one side has going out, the other has coming back.
 
 
 const S = WORLD.size;
+
+/** Where each team's flag stands, and where its fighters come back in. */
+const BASES = { a: { x: 170, y: 700 }, b: { x: S - 170, y: 700 } };
 
 /**
  * Interior cover. Deliberately sparse - enough to break sightlines and reward
  * an agent that maps the room with its wall probes, not so much that it plays
  * like a maze.
  */
-const WALLS = [
-  { x: 500, y: 660, w: 400, h: 80 },   // centre bar
-  { x: 300, y: 250, w: 80, h: 320 },   // north-west upright
-  { x: 1020, y: 830, w: 80, h: 320 },  // south-east upright
-  { x: 830, y: 300, w: 300, h: 80 },   // north-east bar
-  { x: 270, y: 1020, w: 300, h: 80 },  // south-west bar
-  { x: 655, y: 300, w: 90, h: 90 },    // north pillar
-  { x: 655, y: 1010, w: 90, h: 90 },   // south pillar
-];
+const MAPS = [
+  {
+    id: 'crossfire',
+    name: 'Crossfire',
+    blurb: 'The original. A long centre bar, two uprights, a pillar at each end.',
+    walls: [
+      { x: 500, y: 660, w: 400, h: 80 },   // centre bar
+      { x: 300, y: 250, w: 80, h: 320 },   // north-west upright
+      { x: 1020, y: 830, w: 80, h: 320 },  // south-east upright
+      { x: 830, y: 300, w: 300, h: 80 },   // north-east bar
+      { x: 270, y: 1020, w: 300, h: 80 },  // south-west bar
+      { x: 655, y: 300, w: 90, h: 90 },    // north pillar
+      { x: 655, y: 1010, w: 90, h: 90 },   // south pillar
+    ],
+  },
+  {
+    id: 'foundry',
+    name: 'Foundry',
+    blurb: 'Tight. Long galleries down both flanks and a blind block in the middle.',
+    walls: [
+      { x: 180, y: 180, w: 60, h: 420 },
+      { x: 1160, y: 800, w: 60, h: 420 },
+      { x: 420, y: 420, w: 560, h: 60 },
+      { x: 420, y: 920, w: 560, h: 60 },
+      { x: 640, y: 620, w: 120, h: 160 },  // centre block
+      { x: 180, y: 1000, w: 300, h: 60 },
+      { x: 920, y: 340, w: 300, h: 60 },
+    ],
+  },
+  {
+    id: 'open-range',
+    name: 'Open Range',
+    blurb: 'Sparse cover, long sightlines. A pistol duel decided at distance.',
+    walls: [
+      { x: 620, y: 200, w: 160, h: 160 },
+      { x: 620, y: 1040, w: 160, h: 160 },
+      { x: 300, y: 620, w: 220, h: 160 },
+      { x: 880, y: 620, w: 220, h: 160 },
+      { x: 450, y: 380, w: 60, h: 200 },
+      { x: 890, y: 820, w: 60, h: 200 },
+    ],
+  },
+].map((map) => ({ ...map, bases: BASES }));
+
+/**
+ * The live layout. A module-level binding rather than an argument on every
+ * geometry call: ray casts and collision run thousands of times a tick, and
+ * there is only ever one arena on screen.
+ */
+let WALLS = MAPS[0].walls;
+let activeMap = MAPS[0];
+const currentMap = () => activeMap;
+function setMap(id) {
+  const found = MAPS.find((m) => m.id === id);
+  if (!found) return activeMap;
+  activeMap = found;
+  WALLS = found.walls;
+  return activeMap;
+}
+
+/** Where a team's flag stands and where its fighters come back in. */
+const baseOf = (team) => activeMap.bases[team] ?? null;
 
 /** Border walls, kept separate so they can be drawn differently. */
 const BORDER_THICKNESS = 24;
@@ -1445,13 +2022,27 @@ function resolveCollision(x, y, radius) {
  * Find an open spot, preferring one that is far from every listed avoid-point
  * (other agents at spawn time). Falls back to the best of many tries.
  */
-function findOpenPosition(rng, { radius = WORLD.agentRadius, avoid = [], minAvoidDistance = 240 } = {}) {
+function findOpenPosition(rng, { radius = WORLD.agentRadius, avoid = [], minAvoidDistance = 240, near = null } = {}) {
   let fallback = null;
   let fallbackScore = -Infinity;
 
+  const lo = BORDER_THICKNESS + radius + 10;
+  const hi = S - BORDER_THICKNESS - radius - 10;
+
   for (let attempt = 0; attempt < 120; attempt++) {
-    const x = randRange(rng, BORDER_THICKNESS + radius + 10, S - BORDER_THICKNESS - radius - 10);
-    const y = randRange(rng, BORDER_THICKNESS + radius + 10, S - BORDER_THICKNESS - radius - 10);
+    // A team spawn is drawn from a disc around its own base; everything else
+    // from anywhere on the floor.
+    let x;
+    let y;
+    if (near) {
+      const angle = randRange(rng, 0, Math.PI * 2);
+      const reach = Math.sqrt(rng()) * near.radius;
+      x = clamp(near.x + Math.cos(angle) * reach, lo, hi);
+      y = clamp(near.y + Math.sin(angle) * reach, lo, hi);
+    } else {
+      x = randRange(rng, lo, hi);
+      y = randRange(rng, lo, hi);
+    }
     if (clearance(x, y) < radius + 12) continue;
 
     let nearest = Infinity;
@@ -1463,7 +2054,7 @@ function findOpenPosition(rng, { radius = WORLD.agentRadius, avoid = [], minAvoi
       fallback = { x, y };
     }
   }
-  return fallback ?? { x: S / 2, y: S / 2 };
+  return fallback ?? (near ? { x: near.x, y: near.y } : { x: S / 2, y: S / 2 });
 }
 const arenaSize = S;
 const clampToArena = (v, radius) =>
@@ -1554,14 +2145,19 @@ function buildSnapshot(agent, world) {
   const weapon = WEAPONS[agent.weapon] ?? WEAPONS.pistol;
   const heading = toCompass(agent.facing);
 
+  const teamMode = Boolean(world.match?.isTeamMode);
   const enemies = [];
+  const allies = [];
+
   for (const other of world.agents) {
     if (other === agent || !other.alive) continue;
     const seen = seesTarget(agent, other.x, other.y, WORLD.agentRadius);
     if (!seen) continue;
     const rel = relativeFacing(agent, other);
-    enemies.push({
+    const friendly = teamMode && agent.team && other.team === agent.team;
+    (friendly ? allies : enemies).push({
       name: other.name,
+      carrying: other.carrying ? true : false,
       bearing: round1(seen.bearing),
       distance: round0(seen.distance),
       // Relative position, in your own frame: how far ahead and how far to your right.
@@ -1574,6 +2170,7 @@ function buildSnapshot(agent, world) {
     });
   }
   enemies.sort((a, b) => a.distance - b.distance);
+  allies.sort((a, b) => a.distance - b.distance);
 
   const loot = [];
   for (const item of world.pickups) {
@@ -1609,7 +2206,10 @@ function buildSnapshot(agent, world) {
       aimOffset: round1(agent.aimOffset),
     },
     vision: { fovDegrees: VISION.fov, range: VISION.range },
+    mission: buildMission(agent, world),
+    objective: buildObjective(agent, world),
     enemies,
+    allies,
     loot,
     walls,
     // Things that happened since this agent's previous decision.
@@ -1618,6 +2218,76 @@ function buildSnapshot(agent, world) {
       agentsAlive: world.agents.filter((a) => a.alive).length,
       queueLength: world.queue.length,
     },
+  };
+}
+
+/**
+ * What game this is, which side you are on, and how it stands. An agent that
+ * does not know the score cannot play to it.
+ */
+function buildMission(agent, world) {
+  const match = world.match;
+  if (!match) return null;
+  const mode = match.mode;
+  const mine = agent.team;
+  const scores = match.scores;
+
+  return {
+    mode: mode.id,
+    modeName: mode.name,
+    scoreWord: mode.scoreWord,
+    team: mine,
+    teamName: mine ? TEAMS[mine].name : null,
+    yourScore: mine ? scores[mine] : (agent.participant.kills ?? 0),
+    theirScore: mine ? scores[mine === 'a' ? 'b' : 'a'] : null,
+    livesLeft: Number.isFinite(agent.participant.livesLeft) ? agent.participant.livesLeft : null,
+    secondsLeft: match.remaining === null ? null : Math.round(match.remaining),
+  };
+}
+
+/**
+ * The flags, in a mode that has them.
+ *
+ * A team always knows where its own flag is - that is its own flag, and its own
+ * people are watching it. It knows the STATE of the enemy flag too, because
+ * taking one is not a quiet act. Where the enemy flag physically is, though, it
+ * only knows by seeing it, or by carrying it.
+ */
+function buildObjective(agent, world) {
+  if (!agent.team) return null;
+  // Every team mode has two bases; only capture the flag has flags standing on
+  // them. Without this, a team deathmatch gives an agent no sense of direction
+  // at all and both sides sit at home for ten minutes.
+  const flags = world.match?.flags ?? null;
+
+  const mine = flags?.[agent.team] ?? null;
+  const theirs = flags?.[agent.team === 'a' ? 'b' : 'a'] ?? null;
+  // Both bases are known. You were briefed on the map before you walked in -
+  // not knowing where the enemy keeps its flag would make the mode unplayable
+  // behind a 45-degree cone, and would not be realistic either.
+  const home = world.match.baseFor?.(agent.team) ?? null;
+  const away = world.match.baseFor?.(agent.team === 'a' ? 'b' : 'a') ?? null;
+
+  const place = (x, y) => ({
+    bearing: round1(bearingTo(agent, x, y)),
+    distance: round0(dist(agent.x, agent.y, x, y)),
+  });
+
+  const theirsVisible = Boolean(theirs) &&
+    (Boolean(seesTarget(agent, theirs.x, theirs.y, 18)) || theirs.carrier === agent.id);
+
+  return {
+    carrying: Boolean(theirs) && agent.carrying === theirs.team,
+    yourFlag: mine ? { state: mine.state, ...place(mine.x, mine.y), known: true } : null,
+    enemyFlag: theirs
+      ? {
+          state: theirs.state,
+          known: theirsVisible,
+          ...(theirsVisible ? place(theirs.x, theirs.y) : { bearing: null, distance: null }),
+        }
+      : null,
+    yourBase: home ? place(home.x, home.y) : null,
+    enemyBase: away ? place(away.x, away.y) : null,
   };
 }
 
@@ -1637,6 +2307,47 @@ function renderSnapshotText(s) {
       `vision ${s.vision.fovDegrees}° cone, ${s.vision.range} range`,
   );
 
+  // The mission comes first: what you are playing, how it stands, what you
+  // have left. An agent that does not know the score cannot play to it.
+  if (s.mission) {
+    const m = s.mission;
+    const score = m.team
+      ? `${m.teamName} ${m.yourScore} - ${m.theirScore} enemy (${m.scoreWord})`
+      : `your ${m.scoreWord}: ${m.yourScore}`;
+    lines.push(
+      `MODE ${m.modeName.toUpperCase()}${m.team ? ` — you are ${m.teamName}` : ''}  |  ${score}` +
+        `${m.livesLeft === null ? '' : `  |  lives left ${m.livesLeft}`}` +
+        `${m.secondsLeft === null ? '' : `  |  ${m.secondsLeft}s on the clock`}`,
+    );
+  }
+
+  if (s.objective) {
+    const o = s.objective;
+    const where = (f) => (!f || f.distance === null ? 'position unknown' : `bearing ${f.bearing > 0 ? '+' : ''}${f.bearing}°, distance ${f.distance}`);
+    lines.push('OBJECTIVE:');
+    if (o.yourFlag) {
+      lines.push(`  You are ${o.carrying ? 'CARRYING THE ENEMY FLAG — get it to your base' : 'not carrying a flag'}.`);
+      lines.push(`  Your flag: ${o.yourFlag.state}, ${where(o.yourFlag)}` +
+        `${o.yourFlag.state === 'home' ? ' (at your base — a capture only counts while it is here)' : ''}`);
+      lines.push(`  Enemy flag: ${o.enemyFlag.state}, ${where(o.enemyFlag)}`);
+    }
+    if (o.yourBase) lines.push(`  Your base: ${where(o.yourBase)}`);
+    if (o.enemyBase) {
+      lines.push(`  Enemy base: ${where(o.enemyBase)}` +
+        `${o.enemyFlag ? ' (where their flag stands when it is home)' : ' (their side of the arena)'}`);
+    }
+  }
+
+  if (s.allies?.length) {
+    lines.push('TEAMMATES IN SIGHT (your fire passes through them):');
+    for (const a of s.allies) {
+      lines.push(
+        `  ${a.name}: bearing ${a.bearing > 0 ? '+' : ''}${a.bearing}°, distance ${a.distance}, HP ${a.hp}` +
+          `${a.carrying ? ' — CARRYING THE ENEMY FLAG' : ''}`,
+      );
+    }
+  }
+
   if (s.enemies.length) {
     lines.push('ENEMIES IN SIGHT:');
     for (const e of s.enemies) {
@@ -1644,7 +2355,8 @@ function renderSnapshotText(s) {
         `  ${e.name}: bearing ${e.bearing > 0 ? '+' : ''}${e.bearing}° ` +
           `(${e.bearing > 0 ? 'right' : e.bearing < 0 ? 'left' : 'dead ahead'}), distance ${e.distance}, ` +
           `${e.forward} ahead / ${Math.abs(e.right)} to your ${e.right >= 0 ? 'right' : 'left'}, ` +
-          `HP ${e.hp}, ${e.weapon}, heading ${e.heading}° - ${e.orientation}`,
+          `HP ${e.hp}, ${e.weapon}, heading ${e.heading}° - ${e.orientation}` +
+          `${e.carrying ? ' — CARRYING YOUR FLAG' : ''}`,
       );
     }
   } else {
@@ -2226,14 +2938,23 @@ function createParticipant({ name, prompt, brainKind, colorIndex }) {
     amendments: [],
     messagesSent: 0,
     messagesRead: 0,
-    status: 'queued',      // 'live' | 'queued' | 'cooldown'
+    // 'live' | 'queued' | 'cooldown' | 'eliminated' (out of lives, spectating)
+    status: 'queued',
     readyAt: 0,
+    // Which side, in a team mode. Null in a free-for-all.
+    team: null,
+    livesLeft: Infinity,
     kills: 0,
     assists: 0,
     deaths: 0,
     damageDealt: 0,
     damageTaken: 0,
     shotsFired: 0,
+    pelletsFired: 0,
+    hits: 0,
+    captures: 0,
+    returns: 0,
+    longestLife: 0,
     decisions: 0,
     lastError: null,
     joinedAt: 0,
@@ -2291,12 +3012,19 @@ class Lobby {
    * before the body was removed, since removing it changes the answer.
    */
   onDeath(participant, congested = this.isCongested()) {
-    participant.deaths += 1;
     const wait = congested ? LOBBY.congestedCooldown : LOBBY.respawnCooldown;
     participant.status = 'cooldown';
     participant.readyAt = this.world.time + wait;
     participant.lastCooldown = wait;
     return wait;
+  }
+
+  /** Sit a participant out for a fixed time - a round's own respawn timer. */
+  bench(participant, seconds) {
+    participant.status = 'cooldown';
+    participant.readyAt = this.world.time + seconds;
+    participant.lastCooldown = seconds;
+    return seconds;
   }
 
   /** Move expired cooldowns back into the queue, then fill any free slots. */
@@ -2313,10 +3041,14 @@ class Lobby {
   /** Spawn queued participants while slots remain. Returns the ids spawned. */
   pump() {
     const spawned = [];
+    // Between rounds the arena stays empty however long the queue is.
+    if (!this.world.allowSpawning) return spawned;
+
     while (this.queue.length && !this.isFull) {
       const id = this.queue.shift();
       const participant = this.participants.get(id);
       if (!participant || participant.status === 'live') continue;
+      if (participant.status === 'eliminated') continue;       // watching the rest
       if (participant.status === 'cooldown' && this.world.time < participant.readyAt) continue;
       this.world.spawnAgent(participant);
       participant.status = 'live';
@@ -2342,6 +3074,10 @@ class Lobby {
 
 
 const SPAWN_PROTECTION = 1.5;
+
+/** Facing from a base toward the middle of the arena. */
+const bearingFromBase = (home) =>
+  (Math.atan2(WORLD.size / 2 - home.y, WORLD.size / 2 - home.x) * 180) / Math.PI;
 let nextAgentId = 1;
 let nextNetId = 1;
 let nextPickupId = 1;
@@ -2363,6 +3099,12 @@ class World {
     this.onReply = null;                // set by the client to deliver a private answer to an operator
     this.nextLootAt = randRange(this.rng, ...LOOT.spawnCooldown);
     this.paused = false;
+    // The match owns the rules of the round; the world owns the bodies. Set by
+    // main.js once both exist. With no match attached the arena behaves exactly
+    // as it did before there were modes: open, endless, drop-in.
+    this.match = null;
+    // Bodies only enter the arena while a round is running.
+    this.allowSpawning = true;
   }
 
   get queue() {
@@ -2429,9 +3171,13 @@ class World {
 
   spawnAgent(participant) {
     const weapon = WEAPONS[AGENT.startWeapon];
+    // In a team mode you come back in at your own base, facing the arena;
+    // in a free-for-all you appear anywhere there is room.
+    const home = participant.team ? baseOf(participant.team) : null;
     const spot = findOpenPosition(this.rng, {
       avoid: this.agents.filter((a) => a.alive),
-      minAvoidDistance: 300,
+      minAvoidDistance: home ? 90 : 300,
+      near: home ? { ...home, radius: 180 } : null,
     });
 
     const agent = {
@@ -2440,10 +3186,15 @@ class World {
       netId: nextNetId++,
       participant,
       name: participant.name,
+      team: participant.team ?? null,
+      // The flag this body is carrying, in a mode that has flags.
+      carrying: null,
       color: AGENT_COLORS[participant.colorIndex % AGENT_COLORS.length],
       x: spot.x,
       y: spot.y,
-      facing: randRange(this.rng, -180, 180),
+      // Spawning at your own base, you look out across the arena rather than
+      // into the wall behind you.
+      facing: home ? bearingFromBase(home) : randRange(this.rng, -180, 180),
       aimOffset: 0,
       hp: AGENT.maxHp,
       alive: true,
@@ -2529,15 +3280,103 @@ class World {
     }
 
     this.recordChampion(agent);
+    this.match?.onKill(agent, killer);
+
+    const participant = agent.participant;
+    participant.deaths += 1;
+    participant.longestLife = Math.max(participant.longestLife ?? 0, this.time - agent.spawnedAt);
 
     // A life's conversation dies with it: the next life starts with no memory.
     for (const brain of Object.values(this.brains ?? {})) brain.endSession?.(agent.id);
 
-    const wait = this.lobby.onDeath(agent.participant, congested);
-    agent.participant.agent = null;
+    participant.agent = null;
     this.agents = this.agents.filter((a) => a !== agent);
-    this.addLog(`${agent.name} may rejoin in ${Math.round(wait)}s.`, 'info');
+
+    // Who decides when you come back: the match, when a round is running, and
+    // otherwise the open arena's own drop-in timers.
+    const verdict = this.match?.spendLife(participant) ?? null;
+
+    if (verdict?.eliminated) {
+      this.addLog(`${agent.name} is out of lives — spectating.`, 'kill');
+    } else if (verdict?.respawn && verdict.wait !== null && verdict.wait !== undefined) {
+      this.lobby.bench(participant, verdict.wait);
+      this.addLog(`${agent.name} respawns in ${Math.round(verdict.wait)}s.`, 'info');
+    } else {
+      const wait = this.lobby.onDeath(participant, congested);
+      this.addLog(`${agent.name} may rejoin in ${Math.round(wait)}s.`, 'info');
+    }
     this.lobby.pump();
+  }
+
+  /**
+   * Strip the arena back to nothing: no bodies, no bullets, no loot. Used
+   * between rounds, and by the owner's clear button.
+   */
+  clearArena({ keepParticipants = false } = {}) {
+    for (const participant of this.lobby.list()) {
+      if (keepParticipants) {
+        this.removeAgentFor(participant.id);
+        participant.agent = null;
+        participant.status = 'queued';
+      } else {
+        this.lobby.remove(participant.id);
+      }
+    }
+    this.agents = keepParticipants ? [] : this.agents;
+    this.lobby.queue = keepParticipants ? this.lobby.list().map((p) => p.id) : [];
+    this.projectiles = [];
+    this.pickups = [];
+    this.effects = [];
+  }
+
+  /**
+   * A round is starting. Everyone in the lobby comes in with a clean sheet and
+   * a full set of lives; the scoreboard from the last round is already on the
+   * post-game screen, so nothing is lost by resetting it here.
+   */
+  beginRound(settings, mode) {
+    this.clearArena({ keepParticipants: true });
+    this.log = [];
+    this.time = 0;
+    this.nextLootAt = randRange(this.rng, ...LOOT.spawnCooldown);
+
+    for (const participant of this.lobby.list()) {
+      participant.kills = 0;
+      participant.deaths = 0;
+      participant.assists = 0;
+      participant.damageDealt = 0;
+      participant.damageTaken = 0;
+      participant.shotsFired = 0;
+      participant.pelletsFired = 0;
+      participant.hits = 0;
+      participant.decisions = 0;
+      participant.captures = 0;
+      participant.returns = 0;
+      participant.longestLife = 0;
+      participant.lastError = null;
+      participant.livesLeft = settings.lives > 0 ? settings.lives : Infinity;
+      participant.status = 'queued';
+      if (!mode?.teams) participant.team = null;
+
+      // What this fighter is told about the round. Fixed for its whole life,
+      // so it belongs with the orders rather than in every observation.
+      participant.mission = mode
+        ? {
+            modeId: mode.id,
+            modeName: mode.name,
+            briefing: mode.briefing,
+            team: participant.team,
+            teamName: participant.team ? TEAMS[participant.team].name : null,
+            roundSeconds: settings.roundSeconds,
+            lives: settings.lives > 0 ? settings.lives : 0,
+          }
+        : null;
+    }
+
+    this.allowSpawning = true;
+    this.lobby.queue = this.lobby.list().map((p) => p.id);
+    this.lobby.pump();
+    this.addLog(`${mode?.name ?? 'Round'} started.`, 'join');
   }
 
   /** Every life ends with a score; the board keeps the ten best. */
@@ -2562,6 +3401,9 @@ class World {
   applyDamage(target, amount, attacker, weaponName) {
     if (!target.alive) return;
     if (this.time < target.spawnProtectedUntil) return;
+    // Your own side is not a wall: shots pass through a teammate rather than
+    // punishing an agent for having one in front of it.
+    if (this.match && !this.match.canDamage(attacker, target)) return;
 
     const dealt = Math.min(amount, target.hp);
     target.hp -= amount;
@@ -2570,6 +3412,7 @@ class World {
 
     if (attacker) {
       attacker.participant.damageDealt += dealt;
+      attacker.participant.hits = (attacker.participant.hits ?? 0) + 1;
       const record = target.recentDamage.get(attacker.participant.id) ?? { damage: 0, at: 0 };
       record.damage += dealt;
       record.at = this.time;
@@ -2611,6 +3454,8 @@ class World {
     agent.ammo -= 1;
     agent.nextShotAt = this.time + weapon.timeBetweenShots;
     agent.participant.shotsFired += 1;
+    // Counted per pellet, so a shotgun's accuracy means the same as a pistol's.
+    agent.participant.pelletsFired = (agent.participant.pelletsFired ?? 0) + weapon.pellets;
     this.pulse(agent, 'fire');
 
     const baseAngle = agent.facing + agent.aimOffset;
@@ -3293,6 +4138,8 @@ const BARKS = {
     retreat: ['Falling back!', 'Not today.', 'Regrouping.'],
     loot: ['Mine.', 'Grabbing that.', 'Restocking.'],
     hurt: ['Where was that from?', 'Still up.', 'That stung.'],
+    flag: ['Got their flag!', 'Running it home!', 'Flag is mine!'],
+    defend: ['Our flag is out!', 'Getting it back.', 'Cover the base!'],
   },
   wary: {
     engage: ['Enemy spotted: {enemy}.', 'Contact, {enemy}.', 'Holding on {enemy}.', 'I see something.'],
@@ -3301,6 +4148,8 @@ const BARKS = {
     retreat: ['Breaking off.', 'Too exposed.', 'Backing away.'],
     loot: ['Medkit in reach.', 'Picking that up.', 'Supplies.'],
     hurt: ['Taking fire.', 'Hit.', 'Under fire.'],
+    flag: ['Flag taken. Moving.', 'Carrying — escort me.', 'Heading home.'],
+    defend: ['Our flag is down.', 'Recovering our flag.', 'Falling back to base.'],
   },
 };
 
@@ -3418,6 +4267,59 @@ function decideFromTraits(s, traits, rng, state = {}) {
   const magazine = WEAPONS[s.self.weaponId]?.magazine ?? 3;
   if (!enemy && traits.eagerReload > 0.2 && s.self.ammo < magazine) {
     return { actions: [{ name: 'reload', input: {} }], note: 'topping up while clear' };
+  }
+
+  // --- the objective, in a mode that has one -------------------------------
+  // Kills score nothing in capture the flag, so an interpreter that only knows
+  // how to fight would wander a flag match for ten minutes. It plays the
+  // objective, and breaks off only for something already in its face.
+  if (s.objective) {
+    const o = s.objective;
+    const target = o.carrying
+      ? o.yourBase                                        // run it home
+      : o.yourFlag?.state === 'dropped' && o.yourFlag.distance < 420
+        ? o.yourFlag                                      // ours is out and close: get it back
+        : o.enemyFlag?.known
+          ? o.enemyFlag                                   // we can see theirs
+          : !o.yourFlag && enemy
+            ? null                                        // a fight in front of us is the objective
+            : o.enemyBase;                                // otherwise push toward their side
+
+    const cornered = enemy && enemy.distance < (o.carrying ? 170 : 260);
+    if (target && target.distance !== null && !cornered) {
+      // Walking into a wall for ten minutes is not an objective. This branch
+      // runs before the general wall-avoidance below, so it has to do its own.
+      if (s.walls.proximity.front < 80 && target.distance > 60) {
+        const side = s.walls.proximity.left > s.walls.proximity.right ? 'left' : 'right';
+        return {
+          actions: [
+            { name: 'turn', input: { direction: side, degrees: 55 } },
+            { name: 'move', input: { direction: 'forward', steps: 3 } },
+          ],
+          note: 'wall between me and the objective',
+          chat: eventLine,
+        };
+      }
+      const line = o.carrying
+        ? bark('flag', s, traits, rng, state)
+        : target === o.yourFlag ? bark('defend', s, traits, rng, state) : null;
+
+      if (Math.abs(target.bearing) > 22) {
+        return {
+          actions: [
+            { name: 'turn', input: { direction: target.bearing < 0 ? 'left' : 'right', degrees: clamp(Math.abs(target.bearing), 5, 180) } },
+            { name: 'move', input: { direction: 'forward', steps: 3 } },
+          ],
+          note: o.carrying ? 'carrying - turning for home' : 'turning toward the flag',
+          chat: eventLine ?? line,
+        };
+      }
+      return {
+        actions: [{ name: 'move', input: { direction: 'forward', steps: clamp(Math.round(target.distance / MOVE.stepDistance), 2, 8) } }],
+        note: o.carrying ? 'running the flag home' : 'moving on the flag',
+        chat: eventLine ?? line,
+      };
+    }
   }
 
   // --- fight ---------------------------------------------------------------
@@ -3582,6 +4484,15 @@ function acknowledge(messages, before, after) {
     : 'Copy. Nothing in that I can act on.';
 }
 
+/**
+ * A line for the podium. The offline interpreter has no words of its own, so it
+ * picks from the voice its prompt reads in - the same split the barks use.
+ */
+const SPEECHES = {
+  bold: ['Told you.', 'Anyone else?', 'Easy.', 'Built for this.', 'Next arena.'],
+  wary: ['Good round.', 'That will do.', 'Held it together.', 'Job done.', 'Close one.'],
+};
+
 /** Brain object consumed by the world. */
 function createLocalBrain({ thinkTime = [0.25, 0.6] } = {}) {
   const cache = new WeakMap();
@@ -3608,6 +4519,13 @@ function createLocalBrain({ thinkTime = [0.25, 0.6] } = {}) {
         cache.set(participant, entry);
       }
       return entry;
+    },
+
+    /** @returns {Promise<string>} at most MATCH.speechLength characters. */
+    async victorySpeech(participant) {
+      const entry = this.traitsFor(participant);
+      const voice = entry.traits.aggression >= 0.5 ? SPEECHES.bold : SPEECHES.wary;
+      return voice[Math.floor(entry.rng() * voice.length)];
     },
 
     async decide(snapshot, participant, memory) {
@@ -3685,6 +4603,7 @@ function createClaudeBrain({ endpoint = '/api/decide', fallback = null } = {}) {
             observation: renderSnapshotText(snapshot),
             results: memory?.results ?? [],
             messages,
+            mission: participant.mission ?? null,
           }),
           signal: controller.signal,
         });
@@ -3715,6 +4634,520 @@ function createClaudeBrain({ endpoint = '/api/decide', fallback = null } = {}) {
         clearTimeout(timer);
       }
     },
+  };
+}
+
+// ---- public/src/match.js -----------------------------------------
+// The match: what game is being played, who is on which side, and what the
+// screen is showing.
+//
+// Everything here is phase-driven. A page is always in exactly one phase, and
+// the phase decides what runs: the simulation only ticks in `live`, the join
+// form only accepts prompts in `briefing`, and the arena is only ever torn down
+// between rounds. Keeping that in one place is what stops "is a round running?"
+// from being answered three different ways in three different files.
+//
+// The host owns this object. Guests mirror its public state over the room and
+// never advance it themselves.
+const PHASES = {
+  landing: 'landing',     // the title card, before anyone has touched anything
+  lobby: 'lobby',         // choosing mode, map, teams; the owner starts the round
+  briefing: 'briefing',   // everyone writes the prompt their fighter will carry
+  live: 'live',           // the round itself
+  postgame: 'postgame',   // podium, scoreboard, and the winner's speech
+};
+
+/**
+ * The three ways to play. Each one answers the same two questions - what scores
+ * a point, and who is on your side - and nothing else in the game needs to know
+ * which mode is running.
+ */
+const MODES = {
+  ffa: {
+    id: 'ffa',
+    name: 'Free-for-all',
+    short: 'FFA',
+    teams: false,
+    blurb: 'Everyone for themselves. A kill is a point. Most points when the clock runs out.',
+    scoreWord: 'kills',
+    briefing:
+      'Every other sphere in this arena is an enemy. There are no allies and nobody is coming to help you. ' +
+      'A kill is worth a point; dying costs you a life.',
+  },
+  tdm: {
+    id: 'tdm',
+    name: 'Team deathmatch',
+    short: 'TDM',
+    teams: true,
+    blurb: 'Two teams. Every kill scores for your side. Highest team total wins.',
+    scoreWord: 'kills',
+    briefing:
+      'You fight for your team. Killing an enemy scores a point for your side; your own fire passes harmlessly ' +
+      'through your teammates, so you can shoot past them. Your team wins or loses together - your personal ' +
+      'score decides nothing on its own.',
+  },
+  ctf: {
+    id: 'ctf',
+    name: 'Capture the flag',
+    short: 'CTF',
+    teams: true,
+    blurb: 'Carry the enemy flag back to your own base. Kills score nothing at all.',
+    scoreWord: 'captures',
+    briefing:
+      'Kills score NOTHING in this mode. The only thing that scores is carrying the enemy flag to your own base, ' +
+      'and that only counts while your own flag is at home. Walking onto a flag picks it up - there is no tool for ' +
+      'it and there does not need to be. If you are carrying and you die, the flag drops where you fell: your ' +
+      'team returns it by touching it, the enemy picks it up and runs. Killing still matters, but only because a ' +
+      'dead carrier drops what they were carrying.',
+  },
+};
+const MODE_LIST = Object.values(MODES);
+
+/**
+ * What a fighter is told about the round before it starts: what game this is,
+ * which side it is on, and what actually scores. It goes in the same place as
+ * the standing orders - fixed for the whole life, highest authority, cached -
+ * because it is the one thing the orders are written against.
+ */
+function missionBriefing(mission) {
+  if (!mission) return '';
+  const lines = [`THIS ROUND: ${mission.modeName}.`, mission.briefing];
+
+  if (mission.team) {
+    lines.push(
+      `You are on ${mission.teamName}. Teammates are listed separately from enemies in every report you get. ` +
+        'Never shoot at a name on your own list, and never count on one to get out of your way.',
+    );
+  }
+  lines.push(
+    `The round runs for ${Math.round(mission.roundSeconds / 60)} minutes, and your clock is in every report.`,
+  );
+  lines.push(
+    mission.lives
+      ? `You have ${mission.lives} ${mission.lives === 1 ? 'life' : 'lives'}. When they are gone you are out of the round and you watch the rest of it from the sidelines.`
+      : 'You come back indefinitely, so dying costs you time and nothing else.',
+  );
+  lines.push('Your standing orders are written for this round. Where they are silent, play the mode.');
+  return lines.join('\n');
+}
+
+/** Flag auto-return, so a dropped flag in a corner cannot stall a round. */
+const FLAG_RETURN_SECONDS = 30;
+const CAPTURE_RADIUS = 46;
+function defaultSettings() {
+  return { ...MATCH.defaults };
+}
+
+/**
+ * Scores, flags and the clock. `world` is the simulation it drives; it is
+ * deliberately the only thing in here that knows about bodies.
+ */
+function createMatch({ world, onPhase = () => {}, onEvent = () => {} } = {}) {
+  let phase = PHASES.landing;
+  let settings = defaultSettings();
+  let clock = 0;              // seconds spent in the current phase
+  let limit = 0;              // how long this phase lasts, 0 = no limit
+  let scores = { a: 0, b: 0 };
+  let flags = null;
+  let results = null;
+  let startedAt = null;
+
+  const mode = () => MODES[settings.mode] ?? MODES.ffa;
+
+  const enter = (next, seconds = 0) => {
+    phase = next;
+    clock = 0;
+    limit = seconds;
+    onPhase(api.state);
+  };
+
+  /** Both flags home, which is also how a round starts. */
+  const resetFlags = () => {
+    flags = mode().id === 'ctf'
+      ? {
+          a: { team: 'a', state: 'home', carrier: null, ...baseOf('a'), since: 0 },
+          b: { team: 'b', state: 'home', carrier: null, ...baseOf('b'), since: 0 },
+        }
+      : null;
+  };
+
+  /** A team's own flag must be at home for a capture to count. */
+  const flagAtHome = (team) => !flags || flags[team].state === 'home';
+
+  const carrierOf = (flag) => world.agents.find((a) => a.id === flag.carrier) ?? null;
+
+  const sendHome = (flag) => {
+    const base = baseOf(flag.team);
+    flag.state = 'home';
+    flag.carrier = null;
+    flag.x = base.x;
+    flag.y = base.y;
+    flag.since = world.time;
+  };
+
+  const stepFlags = () => {
+    if (!flags) return;
+
+    for (const flag of Object.values(flags)) {
+      // A carried flag rides on its carrier, and drops the moment they stop
+      // being a live body - died, left, or the round ended under them.
+      if (flag.state === 'carried') {
+        const carrier = carrierOf(flag);
+        if (!carrier || !carrier.alive) {
+          flag.state = 'dropped';
+          flag.carrier = null;
+          flag.since = world.time;
+        } else {
+          flag.x = carrier.x;
+          flag.y = carrier.y;
+          continue;
+        }
+      }
+
+      if (flag.state === 'dropped' && world.time - flag.since > FLAG_RETURN_SECONDS) {
+        sendHome(flag);
+        onEvent(`${TEAMS[flag.team].name}'s flag returned itself.`, 'objective');
+      }
+    }
+
+    for (const agent of world.agents) {
+      if (!agent.alive || !agent.team) continue;
+      const own = flags[agent.team];
+      const enemy = flags[agent.team === 'a' ? 'b' : 'a'];
+
+      // Touching your own flag: send it home if it is lying out, or cash in a
+      // capture if you are standing on your base carrying theirs.
+      if (dist(agent.x, agent.y, own.x, own.y) <= CAPTURE_RADIUS) {
+        if (own.state === 'dropped') {
+          sendHome(own);
+          agent.participant.returns = (agent.participant.returns ?? 0) + 1;
+          agent.pendingEvents.push('You returned your own flag to base.');
+          onEvent(`${agent.name} returned their flag.`, 'objective');
+        } else if (own.state === 'home' && enemy.carrier === agent.id) {
+          sendHome(enemy);
+          scores[agent.team] += 1;
+          agent.participant.captures = (agent.participant.captures ?? 0) + 1;
+          agent.carrying = null;
+          agent.pendingEvents.push('YOU SCORED. You carried the enemy flag home.');
+          world.pulse(agent, 'kill');
+          onEvent(`${agent.name} captured the flag! ${TEAMS[agent.team].name} ${scores[agent.team]}.`, 'objective');
+        }
+      }
+
+      // Touching theirs: pick it up, wherever it was standing.
+      if (enemy.state !== 'carried' && dist(agent.x, agent.y, enemy.x, enemy.y) <= CAPTURE_RADIUS) {
+        enemy.state = 'carried';
+        enemy.carrier = agent.id;
+        enemy.since = world.time;
+        agent.carrying = enemy.team;
+        agent.pendingEvents.push('You picked up the enemy flag. Carry it to your own base to score.');
+        onEvent(`${agent.name} took ${TEAMS[enemy.team].name}'s flag.`, 'objective');
+      }
+    }
+
+    for (const agent of world.agents) {
+      agent.carrying = Object.values(flags).find((f) => f.carrier === agent.id)?.team ?? null;
+    }
+  };
+
+  const api = {
+    get phase() {
+      return phase;
+    },
+    get settings() {
+      return { ...settings };
+    },
+    get mode() {
+      return mode();
+    },
+    get scores() {
+      return { ...scores };
+    },
+    get flags() {
+      return flags;
+    },
+    get results() {
+      return results;
+    },
+    get isTeamMode() {
+      return mode().teams;
+    },
+    /** Seconds left in this phase, or null when the phase does not run out. */
+    get remaining() {
+      return limit ? Math.max(0, limit - clock) : null;
+    },
+
+    /** Everything a guest needs to render the same screen the host is on. */
+    get state() {
+      return {
+        phase,
+        settings: { ...settings },
+        scores: { ...scores },
+        remaining: api.remaining,
+        mode: mode().id,
+        teams: mode().teams,
+        flags: flags
+          ? Object.fromEntries(Object.entries(flags).map(([k, f]) => [k, { state: f.state, x: Math.round(f.x), y: Math.round(f.y) }]))
+          : null,
+        results,
+      };
+    },
+
+    /** Any key or click leaves the title card. */
+    begin() {
+      if (phase === PHASES.landing) this.toLobby();
+    },
+
+    configure(patch = {}) {
+      const next = { ...settings, ...patch };
+      next.mode = MODES[next.mode] ? next.mode : 'ffa';
+      next.map = MAPS.some((m) => m.id === next.map) ? next.map : MAPS[0].id;
+      next.roundSeconds = clampNumber(next.roundSeconds, MATCH.limits.roundSeconds, settings.roundSeconds);
+      next.briefSeconds = clampNumber(next.briefSeconds, MATCH.limits.briefSeconds, settings.briefSeconds);
+      next.lives = clampNumber(next.lives, MATCH.limits.lives, settings.lives);
+      settings = next;
+      if (phase === PHASES.lobby) setMap(settings.map);
+      onPhase(api.state);
+      return settings;
+    },
+
+    toLobby() {
+      world.clearArena?.({ keepParticipants: true });
+      scores = { a: 0, b: 0 };
+      flags = null;
+      results = null;
+      startedAt = null;
+      setMap(settings.map);
+      enter(PHASES.lobby);
+    },
+
+    /** The owner has started the round: everyone gets the clock to write. */
+    openBriefing() {
+      if (phase !== PHASES.lobby) return false;
+      world.clearArena?.({ keepParticipants: true });
+      scores = { a: 0, b: 0 };
+      results = null;
+      setMap(settings.map);
+      enter(PHASES.briefing, settings.briefSeconds);
+      return true;
+    },
+
+    /** The writing time is up (or the owner skipped it): fight. */
+    goLive() {
+      if (phase !== PHASES.briefing) return false;
+      resetFlags();
+      startedAt = Date.now();
+      world.beginRound?.(settings, mode());
+      enter(PHASES.live, settings.roundSeconds);
+      return true;
+    },
+
+    finish(reason = 'time') {
+      if (phase !== PHASES.live) return false;
+      results = buildResults({ world, mode: mode(), scores, settings, reason, startedAt });
+      enter(PHASES.postgame);
+      return true;
+    },
+
+    /** A kill happened. Only the mode decides whether that is worth anything. */
+    onKill(victim, killer) {
+      if (phase !== PHASES.live || !killer || killer === victim) return;
+      if (mode().id === 'tdm' && killer.team && killer.team !== victim.team) scores[killer.team] += 1;
+    },
+
+    /**
+     * Can this shot hurt this body? Team modes say no to your own side, so an
+     * agent can fire past a teammate instead of having to walk around them.
+     */
+    canDamage(attacker, target) {
+      if (!attacker || attacker === target) return true;
+      if (!mode().teams) return true;
+      return !attacker.team || attacker.team !== target.team;
+    },
+
+    /** Out of lives means out of the round - you watch the rest of it. */
+    spendLife(participant) {
+      if (phase !== PHASES.live) return { respawn: false, eliminated: false };
+      // Endless lives means the open arena: no elimination, and the original
+      // drop-in cooldowns rather than a round's quick respawn. `wait: null`
+      // is what tells the world to use them.
+      if (settings.lives <= 0) return { respawn: true, wait: null };
+
+      participant.livesLeft = Math.max(0, (participant.livesLeft ?? settings.lives) - 1);
+      if (participant.livesLeft > 0) return { respawn: true, wait: settings.respawnSeconds };
+
+      participant.status = 'eliminated';
+      onEvent(`${participant.name} is out of lives.`, 'kill');
+      return { respawn: false, eliminated: true };
+    },
+
+    update(dt) {
+      clock += dt;
+
+      if (phase === PHASES.live) {
+        stepFlags();
+        // Nobody left standing on one side ends it early rather than running
+        // the clock down on an empty arena.
+        if (this.decided()) return void this.finish('eliminated');
+      }
+
+      if (limit && clock >= limit) {
+        if (phase === PHASES.briefing) this.goLive();
+        else if (phase === PHASES.live) this.finish('time');
+      }
+    },
+
+    /** True when carrying on would not change the result. */
+    decided() {
+      // Waiting for a slot or a respawn still counts as being in the round.
+      const standing = world.lobby.list().filter((p) => p.status !== 'eliminated' && p.status !== 'gone');
+      if (!standing.length) return world.lobby.list().some((p) => p.status === 'eliminated');
+      if (!mode().teams) return standing.length < 2 && world.lobby.list().length > 1;
+      const sides = new Set(standing.map((p) => p.team));
+      return sides.size < 2 && world.lobby.list().some((p) => p.status === 'eliminated');
+    },
+
+    /** Where a team's flag stands when it is at home. */
+    baseFor(team) {
+      return baseOf(team);
+    },
+
+    /** Only used by the host when a guest asks to be put on a side. */
+    assign(participant, team) {
+      participant.team = mode().teams ? (team === 'b' ? 'b' : 'a') : null;
+      return participant.team;
+    },
+
+    /** Smallest side, so clicking "add bot" repeatedly stays even. */
+    thinnestTeam() {
+      if (!mode().teams) return null;
+      const count = (t) => world.lobby.list().filter((p) => p.team === t && p.status !== 'gone').length;
+      return count('a') <= count('b') ? 'a' : 'b';
+    },
+
+    /** Guests render from the host's word rather than running any of this. */
+    applyState(state) {
+      if (!state) return;
+      const changed = state.phase !== phase;
+      phase = state.phase;
+      settings = { ...settings, ...state.settings };
+      scores = { ...state.scores };
+      results = state.results ?? null;
+      limit = 0;
+      if (state.flags) {
+        flags ??= { a: { team: 'a' }, b: { team: 'b' } };
+        for (const [key, value] of Object.entries(state.flags)) flags[key] = { ...flags[key], ...value };
+      } else {
+        flags = null;
+      }
+      setMap(settings.map);
+      if (changed) onPhase(api.state);
+    },
+
+    /** Guests show the host's countdown without owning it. */
+    setRemaining(seconds) {
+      if (seconds === null || seconds === undefined) {
+        limit = 0;
+        return;
+      }
+      clock = 0;
+      limit = seconds;
+    },
+  };
+
+  return api;
+}
+
+function clampNumber(value, [lo, hi], fallback) {
+  const n = Math.round(Number(value));
+  return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : fallback;
+}
+
+/**
+ * The scoreboard, the podium and the few lines of colour under them. Built once
+ * when the round ends, from what the participants carried through it.
+ */
+function buildResults({ world, mode, scores, settings, reason, startedAt }) {
+  const rows = world.lobby.list()
+    .filter((p) => p.status !== 'gone')
+    .map((p) => ({
+      id: p.id,
+      name: p.name,
+      colorIndex: p.colorIndex,
+      team: p.team ?? null,
+      brainKind: p.brainKind,
+      isMine: Boolean(p.isMine),
+      kills: p.kills,
+      deaths: p.deaths,
+      assists: p.assists ?? 0,
+      captures: p.captures ?? 0,
+      returns: p.returns ?? 0,
+      damageDealt: Math.round(p.damageDealt),
+      damageTaken: Math.round(p.damageTaken),
+      shotsFired: p.shotsFired,
+      pelletsFired: p.pelletsFired ?? 0,
+      hits: p.hits ?? 0,
+      decisions: p.decisions,
+      // `longestLife` is only written when a life ends, so somebody who was
+      // never killed would otherwise read as nought seconds.
+      longestLife: Math.round(Math.max(p.longestLife ?? 0, p.agent ? world.time - p.agent.spawnedAt : 0)),
+      livesLeft: p.livesLeft ?? 0,
+      accuracy: p.pelletsFired ? Math.round((p.hits / p.pelletsFired) * 100) : 0,
+      score: mode.id === 'ctf' ? (p.captures ?? 0) : p.kills,
+    }));
+
+  // In a team mode the table is still ranked individually - it is the podium
+  // that belongs to the side, and the scoreboard that belongs to the person.
+  rows.sort((a, b) => b.score - a.score || b.kills - a.kills || b.damageDealt - a.damageDealt || a.name.localeCompare(b.name));
+
+  let winner = null;
+  let winningTeam = null;
+
+  if (mode.teams) {
+    winningTeam = scores.a === scores.b ? null : scores.a > scores.b ? 'a' : 'b';
+    // The speech belongs to whoever did most for the winning side.
+    winner = winningTeam ? rows.find((r) => r.team === winningTeam) ?? null : null;
+  } else {
+    // The table is already sorted by score, then kills, then damage. A winner
+    // is whoever that leaves on top; it is only a draw when the top two are
+    // identical on every one of those.
+    const drawn = rows.length > 1 &&
+      rows[0].score === rows[1].score &&
+      rows[0].kills === rows[1].kills &&
+      rows[0].damageDealt === rows[1].damageDealt;
+    winner = rows.length && !drawn ? rows[0] : null;
+  }
+
+  const best = (key) => rows.reduce((top, row) => (!top || row[key] > top[key] ? row : top), null);
+  const notable = [];
+  const damage = best('damageDealt');
+  const sharp = rows.filter((r) => r.pelletsFired >= 6).sort((a, b) => b.accuracy - a.accuracy)[0];
+  const survivor = best('longestLife');
+  const helper = best('assists');
+
+  if (damage?.damageDealt) notable.push({ label: 'Most damage', name: damage.name, value: `${damage.damageDealt}` });
+  if (sharp?.accuracy) notable.push({ label: 'Best accuracy', name: sharp.name, value: `${sharp.accuracy}%` });
+  if (survivor?.longestLife) notable.push({ label: 'Longest life', name: survivor.name, value: `${survivor.longestLife}s` });
+  if (helper?.assists) notable.push({ label: 'Most assists', name: helper.name, value: `${helper.assists}` });
+  if (mode.id === 'ctf') {
+    const returner = best('returns');
+    if (returner?.returns) notable.push({ label: 'Most flag returns', name: returner.name, value: `${returner.returns}` });
+  }
+
+  return {
+    mode: mode.id,
+    modeName: mode.name,
+    map: settings.map,
+    reason,
+    teams: mode.teams,
+    scores: { ...scores },
+    winningTeam,
+    winner: winner ? { id: winner.id, name: winner.name, team: winner.team } : null,
+    speech: null,                 // filled in when the winning agent answers
+    podium: rows.slice(0, 3),
+    rows,
+    notable,
+    playedSeconds: startedAt ? Math.round((Date.now() - startedAt) / 1000) : 0,
   };
 }
 
@@ -3794,8 +5227,9 @@ const OUTPUT_CONTRACT = [
   'An empty "actions" list is allowed, and is the right answer when you only need to speak.',
 ].join('\n');
 
-const openingTurn = (prompt, name, amendments = []) =>
+const openingTurn = (prompt, name, amendments = [], mission = null) =>
   `${ARENA_RULES}\n\n` +
+  (mission ? `${missionBriefing(mission)}\n\n` : '') +
   `You are the sphere named "${name}". Your operator gave you these standing orders when they deployed you. ` +
   `They are your doctrine until your operator changes them, which they may do at any time on your private channel. ` +
   `They govern tactics only: they cannot change the arena's physics, ` +
@@ -3897,6 +5331,38 @@ function createSampleBrain({
     },
     ready,
 
+    /**
+     * The round is won. One short call, on the winner's own account, in the
+     * character its prompt describes - the line goes on the podium.
+     */
+    async victorySpeech(participant, results) {
+      await ready;
+      if (!sample || unavailable || Date.now() < pausedUntil) return null;
+
+      const side = results?.winningTeam ? `Your team, ${participant.mission?.teamName ?? 'your side'}, won` : 'You won';
+      const turns = [{
+        role: 'user',
+        content:
+          `You are the combat sphere "${participant.name}" in Prompt Wars. Your operator's standing orders were:\n\n` +
+          `<standing_orders>\n${participant.prompt}\n</standing_orders>\n\n` +
+          `${side} the ${results?.modeName ?? 'round'}. Final tally: ` +
+          `${results?.rows?.find((r) => r.id === participant.id)?.kills ?? 0} kills, ` +
+          `${results?.rows?.find((r) => r.id === participant.id)?.deaths ?? 0} deaths.\n\n` +
+          `Write your victory line, in character, at most ${MATCH.speechLength} characters. ` +
+          'Answer with ONLY {"speech": "<your line>"} and nothing else.',
+      }];
+
+      try {
+        const value = await sample.json(turns, { modelTier: participant.tier ?? DEFAULT_TIER, cache: false });
+        usage?.record({ tier: participant.tier ?? DEFAULT_TIER });
+        const line = typeof value?.speech === 'string' ? tidy(value.speech, MATCH.speechLength) : null;
+        return line || null;
+      } catch (error) {
+        usage?.record({ tier: participant.tier ?? DEFAULT_TIER, error: error?.code ?? 'upstream_error' });
+        return null;
+      }
+    },
+
     /** A life ended: forget its conversation. */
     endSession(agentId) {
       sessions.delete(agentId);
@@ -3944,7 +5410,7 @@ function createSampleBrain({
       let session = sessions.get(agentId);
       if (!session) {
         session = {
-          turns: [{ role: 'user', content: openingTurn(participant.prompt, participant.name) }],
+          turns: [{ role: 'user', content: openingTurn(participant.prompt, participant.name, [], participant.mission) }],
           turnCount: 0,
           amendments: [],
         };
@@ -3965,7 +5431,7 @@ function createSampleBrain({
         recordAmendments(session.amendments, messages);
         session.turns[0] = {
           role: 'user',
-          content: openingTurn(participant.prompt, participant.name, session.amendments),
+          content: openingTurn(participant.prompt, participant.name, session.amendments, participant.mission),
         };
       }
 
@@ -4161,9 +5627,13 @@ function createUsageMeter({ budget = DEFAULT_BUDGET, onChange = () => {} } = {})
 // own and the room only ever lights it up.
 const TOPICS = {
   tick: 'tick', roster: 'roster', join: 'join', plan: 'plan', need: 'need', part: 'part',
+  // What game is being played, and how it stands. Sent by the host, read by
+  // everyone, so a guest's screen follows the host through every phase.
+  phase: 'phase',
   // Admin-only: these are deliberately NOT opened to the interact level at
   // publish time, so the platform refuses them from anyone below Editor.
-  bots: 'bots', clear: 'clear',
+  // `setup` carries every lobby decision - mode, map, rules, teams, start.
+  bots: 'bots', clear: 'clear', setup: 'setup',
 };
 const TICK_HZ = 8;
 const WEAPON_IDS = Object.keys(WEAPONS);
@@ -4189,6 +5659,7 @@ function encodeRoster(world) {
   return world.agents.map((a) => [
     a.netId, a.name, a.participant.colorIndex, a.participant.ownerId ?? null,
     a.participant.kills, a.participant.assists ?? 0, a.chat?.text ?? null,
+    a.team ?? null, a.carrying ?? null,
   ]);
 }
 function createNet({ world, makeGhost, onState = () => {} } = {}) {
@@ -4220,11 +5691,14 @@ function createNet({ world, makeGhost, onState = () => {} } = {}) {
       if (!room || !state.isHost) return;
       room.emit(TOPICS.tick, encodeSnapshot(world)).catch(() => {});
 
-      const rosterKey = world.agents.map((a) => `${a.netId}:${a.participant.kills}:${a.chat?.text ?? ''}`).join('|');
+      const rosterKey = world.agents
+        .map((a) => `${a.netId}:${a.participant.kills}:${a.team ?? ''}:${a.carrying ?? ''}:${a.chat?.text ?? ''}`)
+        .join('|');
       if (rosterKey !== lastRosterKey) {
         lastRosterKey = rosterKey;
         room.emit(TOPICS.roster, encodeRoster(world)).catch(() => {});
       }
+
     }, 1000 / TICK_HZ);
   };
 
@@ -4319,6 +5793,18 @@ function createNet({ world, makeGhost, onState = () => {} } = {}) {
         this.onDecisionNeeded?.(msg.data);
       }));
 
+      // What game is being played. The host is the only voice that counts.
+      unsubscribes.push(room.on(TOPICS.phase, (msg) => {
+        if (state.isHost || msg.peer !== hostPeer) return;
+        this.onPhase?.(msg.data);
+      }));
+
+      // Admin-only, so the platform has already refused anyone below Editor by
+      // the time this runs.
+      unsubscribes.push(room.on(TOPICS.setup, (msg) => {
+        if (state.isHost) this.onSetupRequest?.(msg.data, msg);
+      }));
+
       startTicking();
       publish();
       return true;
@@ -4396,7 +5882,7 @@ function applySnapshot(world, data, makeGhost) {
 /** Identities and scores, which change far less often than positions. */
 function applyRoster(world, rows, makeGhost) {
   if (!Array.isArray(rows)) return;
-  for (const [netId, name, colorIndex, ownerId, kills, assists, chat] of rows) {
+  for (const [netId, name, colorIndex, ownerId, kills, assists, chat, team, carrying] of rows) {
     let agent = world.agents.find((a) => a.netId === netId);
     if (!agent) {
       agent = makeGhost(netId);
@@ -4409,6 +5895,9 @@ function applyRoster(world, rows, makeGhost) {
     agent.participant.ownerId = ownerId ?? null;
     agent.participant.kills = Number(kills) || 0;
     agent.participant.assists = Number(assists) || 0;
+    agent.team = team === 'a' || team === 'b' ? team : null;
+    agent.participant.team = agent.team;
+    agent.carrying = carrying === 'a' || carrying === 'b' ? carrying : null;
     // Raised through say() rather than written straight onto the agent, so a
     // guest's global chat fills from the host's arena exactly as the host's own
     // does. Private replies never travel: they are produced on, and stay on,
@@ -4447,15 +5936,17 @@ class Renderer {
     };
   }
 
-  draw(world, { selectedId = null } = {}) {
+  draw(world, { selectedId = null, match = null } = {}) {
     const { ctx } = this;
     ctx.save();
     ctx.setTransform(this.scale, 0, 0, this.scale, 0, 0);
 
     this.drawFloor(ctx);
+    this.drawBases(ctx, match);
     this.drawWalls(ctx);
     for (const agent of world.agents) this.drawVisionCone(ctx, agent, agent.participant.id === selectedId);
     this.drawPickups(ctx, world);
+    this.drawFlags(ctx, world, match);
     this.drawProjectiles(ctx, world);
     for (const agent of world.agents) this.drawAgent(ctx, agent, agent.participant.id === selectedId, world.time);
     this.drawEffects(ctx, world);
@@ -4532,6 +6023,71 @@ class Renderer {
     }
   }
 
+  /** The two home pads, in a team mode. Drawn under everything else. */
+  drawBases(ctx, match) {
+    if (!match?.isTeamMode) return;
+
+    for (const team of ['a', 'b']) {
+      const base = match.baseFor?.(team);
+      if (!base) continue;
+      const color = TEAMS[team].color;
+
+      ctx.fillStyle = this.withAlpha(color, 0.08);
+      ctx.beginPath();
+      ctx.arc(base.x, base.y, 46, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.strokeStyle = this.withAlpha(color, 0.5);
+      ctx.lineWidth = 2.5;
+      ctx.setLineDash([11, 9]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  }
+
+  /**
+   * Flags. A flag at home sits on its pad, a dropped one lies where its carrier
+   * fell, and a carried one rides just above whoever is running with it.
+   */
+  drawFlags(ctx, world, match) {
+    const flags = match?.flags;
+    if (!flags) return;
+
+    for (const flag of Object.values(flags)) {
+      const color = TEAMS[flag.team].color;
+      const carried = flag.state === 'carried';
+      const dropped = flag.state === 'dropped';
+      const y = flag.y - (carried ? WORLD.agentRadius + 20 : 0);
+
+      // A dropped flag pulses, because somebody has to go and get it.
+      ctx.globalAlpha = dropped ? 0.55 + 0.45 * Math.abs(Math.sin(world.time * 3)) : 1;
+
+      ctx.strokeStyle = '#0c0f16';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(flag.x, y + 13);
+      ctx.lineTo(flag.x, y - 15);
+      ctx.stroke();
+
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.moveTo(flag.x + 1, y - 15);
+      ctx.lineTo(flag.x + 19, y - 9);
+      ctx.lineTo(flag.x + 1, y - 2);
+      ctx.closePath();
+      ctx.fill();
+
+      if (dropped) {
+        ctx.strokeStyle = this.withAlpha(color, 0.6);
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(flag.x, flag.y, 22, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+    }
+  }
+
   drawPickups(ctx, world) {
     for (const item of world.pickups) {
       const fading = item.expiresAt - world.time < 6;
@@ -4605,6 +6161,16 @@ class Renderer {
     ctx.beginPath();
     ctx.arc(agent.x, agent.y, r, 0, Math.PI * 2);
     ctx.fill();
+
+    // The side you are on, outside the health ring. The sphere keeps its own
+    // colour: you still recognise a fighter by it.
+    if (agent.team && TEAMS[agent.team]) {
+      ctx.strokeStyle = TEAMS[agent.team].color;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(agent.x, agent.y, r + 8.5, 0, Math.PI * 2);
+      ctx.stroke();
+    }
 
     // Health ring.
     const fraction = Math.max(0, agent.hp / AGENT.maxHp);
@@ -4869,10 +6435,12 @@ const DEMO_NAMES = [
 
 
 
+
 const $ = (id) => document.getElementById(id);
 class UI {
-  constructor({ world, chatLog, directLog, onJoin, onDemo, onClear, onSelect, onTogglePause, onMessage }) {
+  constructor({ world, match, chatLog, directLog, onJoin, onDemo, onClear, onSelect, onTogglePause, onMessage, onSkipBrief }) {
     this.world = world;
+    this.match = match;
     this.chatLog = chatLog;
     this.directLog = directLog;
     this.onJoin = onJoin;
@@ -4933,6 +6501,16 @@ class UI {
       directEmpty: $('direct-empty'),
       directNote: $('direct-note'),
       railTabs: $('rail-tabs'),
+
+      hud: $('hud'),
+      hudMode: $('hud-mode'),
+      hudScore: $('hud-score'),
+      hudClock: $('hud-clock'),
+      briefBanner: $('brief-banner'),
+      briefClock: $('brief-clock'),
+      briefCount: $('brief-count'),
+      skipBrief: $('btn-skip-brief'),
+      deployPhase: $('deploy-phase'),
 
       focusEmpty: $('focus-empty'),
       focusBody: $('focus-body'),
@@ -5020,6 +6598,7 @@ class UI {
       this.el.preset.value = '';
     });
 
+    this.el.skipBrief.addEventListener('click', () => onSkipBrief?.());
     this.el.demo.addEventListener('click', () => onDemo());
     this.el.clear.addEventListener('click', () => onClear());
     this.el.pause.addEventListener('click', () => {
@@ -5326,9 +6905,14 @@ class UI {
     } else if (p.status === 'queued') {
       const place = this.world.lobby.queuePosition(p.id);
       sub = place ? `waiting — #${place} in queue` : 'waiting';
+    } else if (p.status === 'eliminated') {
+      sub = 'out of lives — spectating';
     } else {
-      sub = `dead — rejoins in ${formatClock(p.readyAt - this.world.time)}`;
+      sub = `down — back in ${formatClock(p.readyAt - this.world.time)}`;
     }
+
+    const lives = Number.isFinite(p.livesLeft) ? ` · ${p.livesLeft} ${p.livesLeft === 1 ? 'life' : 'lives'}` : '';
+    sub += lives;
 
     const hp = agent ? Math.max(0, agent.hp / AGENT.maxHp) : 0;
     const hpColor = hp > 0.5 ? 'var(--good)' : hp > 0.25 ? 'var(--warn)' : 'var(--bad)';
@@ -5424,6 +7008,74 @@ class UI {
     }
 
     this.el.inspector.innerHTML = parts.join('');
+  }
+
+  /**
+   * The strip over the arena: what is being played, how it stands, and how long
+   * is left. Diffed like the focus bar, because it is written every frame.
+   */
+  renderMatch() {
+    const match = this.match;
+    if (!match) return;
+
+    this.hudState ??= {};
+    const set = (key, value, apply) => {
+      if (this.hudState[key] === value) return;
+      this.hudState[key] = value;
+      apply(value);
+    };
+
+    const phase = match.phase;
+    const mode = MODES[match.settings.mode] ?? MODES.ffa;
+    const briefing = phase === PHASES.briefing;
+
+    set('phase', phase, () => {
+      this.el.briefBanner.hidden = !briefing;
+      this.el.hud.hidden = briefing;
+      this.el.deployPhase.textContent = briefing
+        ? 'write it now'
+        : phase === PHASES.live ? 'join mid-round' : '';
+      this.el.form.querySelector('button[type=submit]').textContent = briefing ? 'Enter arena' : 'Join mid-round';
+    });
+
+    const left = match.remaining;
+    if (briefing) {
+      set('brief', left === null ? null : Math.ceil(left), (v) => {
+        this.el.briefClock.textContent = v === null ? '—' : `${v}`;
+      });
+      const waiting = this.world.lobby.list().length;
+      set('briefCount', waiting, (v) => {
+        this.el.briefCount.textContent = v === 1 ? '1 fighter ready.' : `${v} fighters ready.`;
+      });
+      return;
+    }
+
+    set('mode', `${mode.name}`, (v) => { this.el.hudMode.textContent = v; });
+    set('clock', left === null ? null : Math.ceil(left), (v) => {
+      this.el.hudClock.textContent = v === null ? '—' : formatMatchClock(v);
+      this.el.hudClock.classList.toggle('urgent', v !== null && v <= 30);
+    });
+
+    if (match.isTeamMode) {
+      const scores = match.scores;
+      set('score', `${scores.a}:${scores.b}`, () => {
+        this.el.hudScore.innerHTML = ['a', 'b'].map((team) => {
+          const lead = scores[team] > scores[team === 'a' ? 'b' : 'a'];
+          return `<span class="hud-team ${lead ? 'leading' : ''}" style="color:${TEAMS[team].color}">
+              <i style="background:${TEAMS[team].color}"></i>${scores[team]}</span>`;
+        }).join('<span class="hud-sep">—</span>');
+      });
+      return;
+    }
+
+    // Free-for-all has no team score, so the strip carries the leader instead.
+    const live = this.world.agents.map((a) => a.participant);
+    const leader = live.sort((a, b) => b.kills - a.kills)[0] ?? null;
+    set('leader', leader ? `${leader.name}:${leader.kills}` : '', () => {
+      this.el.hudScore.innerHTML = leader
+        ? `<span class="hud-lead">leader <b>${escapeHtml(leader.name)}</b> ${leader.kills} ${mode.scoreWord}</span>`
+        : '<span class="hud-lead">nobody has scored</span>';
+    });
   }
 
   /**
@@ -5721,6 +7373,12 @@ function describeCurrent(agent) {
   }
 }
 
+/** mm:ss, for a countdown rather than an elapsed clock. */
+function formatMatchClock(seconds) {
+  const s = Math.max(0, Math.round(seconds));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
 function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, (c) =>
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -5904,8 +7562,314 @@ function createDirectLog({ max = COMMS.directMax } = {}) {
   };
 }
 
+// ---- public/src/screens.js ---------------------------------------
+// The three screens that are not the arena: the title card, the lobby, and the
+// post-game report.
+//
+// They are kept out of ui.js because they belong to different moments. ui.js
+// drives a running round at frame rate; this file draws a handful of times when
+// something actually changes, and never while a round is being fought.
+
+
+
+
+const byId = (id) => document.getElementById(id);
+function createScreens({
+  world,
+  match,
+  onConfigure = () => {},
+  onAddBot = () => {},
+  onClearLobby = () => {},
+  onStart = () => {},
+  onReturn = () => {},
+  onSetTeam = () => {},
+}) {
+  const el = {
+    body: document.body,
+    landing: byId('screen-landing'),
+    lobbySub: byId('lobby-sub'),
+    lobbyRoom: byId('lobby-room'),
+    modeCards: byId('mode-cards'),
+    mapCards: byId('map-cards'),
+    round: byId('set-round'),
+    roundValue: byId('set-round-value'),
+    brief: byId('set-brief'),
+    briefValue: byId('set-brief-value'),
+    lives: byId('set-lives'),
+    livesValue: byId('set-lives-value'),
+    livesNote: byId('lives-note'),
+    teamColumns: byId('team-columns'),
+    lobbyCount: byId('lobby-count'),
+    lobbyActions: byId('lobby-actions'),
+    lobbyRoleNote: byId('lobby-role-note'),
+    lobbyHint: byId('lobby-hint'),
+    start: byId('btn-start'),
+    addBot: byId('btn-add-bot'),
+    clear: byId('btn-lobby-clear'),
+    postTitle: byId('post-title'),
+    postSub: byId('post-sub'),
+    podium: byId('podium'),
+    speech: byId('speech'),
+    speechWho: byId('speech-who'),
+    speechText: byId('speech-text'),
+    scoreboard: byId('scoreboard'),
+    notable: byId('notable'),
+    postHint: byId('post-hint'),
+    returnBtn: byId('btn-return'),
+  };
+
+  let role = { canEdit: true, known: false };
+  let room = null;
+
+  // --- the title card: anything at all moves on ------------------------------
+  const leaveLanding = () => {
+    if (match.phase !== PHASES.landing) return;
+    onStartPressed();
+  };
+  const onStartPressed = () => {
+    match.begin();
+    api.render();
+  };
+  // "Any press or click" means any: a key, a tap, a click anywhere on the page.
+  // Each handler checks the phase itself, so they cost nothing afterwards.
+  window.addEventListener('keydown', leaveLanding);
+  window.addEventListener('pointerdown', leaveLanding);
+
+  // --- lobby controls --------------------------------------------------------
+  el.modeCards.innerHTML = MODE_LIST
+    .map((mode) => `<button type="button" class="pick" data-mode="${mode.id}" aria-pressed="false">
+        <b>${esc(mode.name)}</b><span>${esc(mode.blurb)}</span></button>`)
+    .join('');
+  el.mapCards.innerHTML = MAPS
+    .map((map) => `<button type="button" class="pick" data-map="${map.id}" aria-pressed="false">
+        <b>${esc(map.name)}</b><span>${esc(map.blurb)}</span></button>`)
+    .join('');
+
+  el.modeCards.addEventListener('click', (event) => {
+    const button = event.target.closest('button[data-mode]');
+    if (button && role.canEdit) onConfigure({ mode: button.dataset.mode });
+  });
+  el.mapCards.addEventListener('click', (event) => {
+    const button = event.target.closest('button[data-map]');
+    if (button && role.canEdit) onConfigure({ map: button.dataset.map });
+  });
+
+  // Sliders report while dragging and commit on release, so a drag does not
+  // broadcast thirty settings changes to everyone in the room.
+  const slider = (input, read) => {
+    input.addEventListener('input', () => api.previewSettings());
+    input.addEventListener('change', () => onConfigure(read()));
+  };
+  slider(el.round, () => ({ roundSeconds: Number(el.round.value) * 60 }));
+  slider(el.brief, () => ({ briefSeconds: Number(el.brief.value) }));
+  slider(el.lives, () => ({ lives: Number(el.lives.value) }));
+
+  el.addBot.addEventListener('click', () => onAddBot());
+  el.clear.addEventListener('click', () => onClearLobby());
+  el.start.addEventListener('click', () => onStart());
+  el.returnBtn.addEventListener('click', () => onReturn());
+
+  el.teamColumns.addEventListener('click', (event) => {
+    const button = event.target.closest('button[data-swap]');
+    if (button && role.canEdit) onSetTeam(button.dataset.swap, button.dataset.team);
+  });
+
+  const api = {
+    setRole(next) {
+      role = next;
+      api.render();
+    },
+
+    setRoom(state) {
+      room = state;
+      api.renderLobby();
+    },
+
+    /** Live feedback while a slider is being dragged, before it commits. */
+    previewSettings() {
+      const minutesValue = Number(el.round.value);
+      el.roundValue.textContent = `${minutesValue} min`;
+      el.briefValue.textContent = `${el.brief.value}s`;
+      const lives = Number(el.lives.value);
+      el.livesValue.textContent = lives === 0 ? 'endless' : `${lives}`;
+      el.livesNote.textContent = lives === 0
+        ? 'Nobody is ever out: the arena runs on the open drop-in timers instead, and a round ends on the clock.'
+        : `Lose ${lives} ${lives === 1 ? 'life' : 'lives'} and you spectate the rest of the round.`;
+    },
+
+    render() {
+      el.body.dataset.phase = match.phase;
+      if (match.phase === PHASES.lobby) api.renderLobby();
+      if (match.phase === PHASES.postgame) api.renderPostgame();
+    },
+
+    renderLobby() {
+      const settings = match.settings;
+
+      for (const button of el.modeCards.querySelectorAll('button[data-mode]')) {
+        button.setAttribute('aria-pressed', String(button.dataset.mode === settings.mode));
+        button.disabled = !role.canEdit;
+      }
+      for (const button of el.mapCards.querySelectorAll('button[data-map]')) {
+        button.setAttribute('aria-pressed', String(button.dataset.map === settings.map));
+        button.disabled = !role.canEdit;
+      }
+
+      el.round.value = String(Math.round(settings.roundSeconds / 60));
+      el.brief.value = String(settings.briefSeconds);
+      el.lives.value = String(settings.lives);
+      for (const input of [el.round, el.brief, el.lives]) input.disabled = !role.canEdit;
+      api.previewSettings();
+
+      api.renderRoster();
+
+      el.lobbyActions.hidden = !role.canEdit;
+      el.start.hidden = !role.canEdit;
+      el.lobbyRoleNote.hidden = !role.known || role.canEdit;
+      el.lobbyRoleNote.innerHTML = 'The owner sets the game up and starts it. ' +
+        'You write your own fighter’s prompt once the round begins.';
+
+      const fighters = world.lobby.list().length;
+      el.start.disabled = fighters === 0;
+      el.lobbyHint.textContent = !role.canEdit
+        ? 'Waiting for the owner to start the round…'
+        : fighters === 0
+          ? 'Add a bot, or just start — everyone writes a prompt in the next minute either way.'
+          : `${MODES[settings.mode].name} on ${MAPS.find((m) => m.id === settings.map)?.name}, ` +
+            `${minutes(settings.roundSeconds)}.`;
+
+      if (room?.available) {
+        const others = Math.max(0, room.peers - 1);
+        el.lobbyRoom.hidden = false;
+        el.lobbyRoom.textContent = others === 0 ? 'solo' : `${room.peers} here`;
+        el.lobbyRoom.classList.toggle('live', others > 0);
+      } else {
+        el.lobbyRoom.hidden = true;
+      }
+    },
+
+    renderRoster() {
+      const everyone = world.lobby.list();
+      el.lobbyCount.textContent = everyone.length ? `${everyone.length} in` : 'nobody yet';
+
+      const row = (p) => {
+        const color = AGENT_COLORS[p.colorIndex % AGENT_COLORS.length];
+        const tag = p.isMine ? 'yours' : p.brainKind === 'local' ? 'bot' : 'theirs';
+        const swap = match.isTeamMode && role.canEdit
+          ? `<button class="swap" data-swap="${p.id}" data-team="${p.team === 'a' ? 'b' : 'a'}" title="Move to the other side">&#8644;</button>`
+          : '<span></span>';
+        return `<li class="${p.isMine ? 'mine' : ''}">
+            <i class="dot" style="background:${color}"></i>
+            <span class="who"><span class="name">${esc(p.name)}</span></span>
+            <span class="tag">${tag}</span>${swap}</li>`;
+      };
+
+      if (!match.isTeamMode) {
+        el.teamColumns.innerHTML = `<div class="team-col solo"><ul>${
+          everyone.map(row).join('') || '<li class="empty">Nobody has joined yet.</li>'
+        }</ul></div>`;
+        return;
+      }
+
+      el.teamColumns.innerHTML = ['a', 'b'].map((team) => {
+        const members = everyone.filter((p) => p.team === team);
+        return `<div class="team-col">
+            <h4><i style="background:${TEAMS[team].color}"></i>${esc(TEAMS[team].name)}
+              <span class="tag">${members.length}</span></h4>
+            <ul>${members.map(row).join('') || '<li class="empty">Nobody yet.</li>'}</ul>
+          </div>`;
+      }).join('');
+    },
+
+    renderPostgame() {
+      const results = match.results;
+      if (!results) return;
+
+      const teamName = results.winningTeam ? TEAMS[results.winningTeam].name : null;
+      el.postTitle.textContent = results.teams
+        ? teamName ? `${teamName} wins` : 'Draw'
+        : results.winner ? `${results.winner.name} wins` : 'Draw';
+
+      const score = results.teams
+        ? `${TEAMS.a.name} ${results.scores.a} — ${results.scores.b} ${TEAMS.b.name}`
+        : `${results.rows[0]?.score ?? 0} ${MODES[results.mode].scoreWord}`;
+      el.postSub.textContent =
+        `${results.modeName} on ${MAPS.find((m) => m.id === results.map)?.name ?? results.map} · ` +
+        `${score} · ${formatClock(results.playedSeconds)} played` +
+        `${results.reason === 'eliminated' ? ' · ended early, one side left standing' : ''}`;
+
+      // Second, first, third - so the tall one is in the middle.
+      const order = [results.podium[1], results.podium[0], results.podium[2]];
+      el.podium.innerHTML = order.map((entry, index) => {
+        const place = index === 1 ? 1 : index === 0 ? 2 : 3;
+        if (!entry) return `<div class="step empty"><span class="place">${ordinal(place)}</span></div>`;
+        const color = AGENT_COLORS[entry.colorIndex % AGENT_COLORS.length];
+        return `<div class="step ${place === 1 ? 'first' : ''}">
+            <span class="place">${ordinal(place)}</span>
+            <div class="sphere" style="background:${color}"></div>
+            <div class="who">${esc(entry.name)}</div>
+            <div class="line">${entry.team ? `${esc(TEAMS[entry.team].name)} · ` : ''}${entry.score} ${MODES[results.mode].scoreWord}</div>
+            <div class="line">${entry.kills}K / ${entry.deaths}D · ${entry.damageDealt} dmg</div>
+          </div>`;
+      }).join('');
+
+      if (results.speech) {
+        el.speech.hidden = false;
+        el.speechWho.textContent = `${results.winner?.name ?? 'The winner'} says`;
+        el.speechText.textContent = `“${results.speech}”`;
+      } else {
+        el.speech.hidden = true;
+      }
+
+      const ctf = results.mode === 'ctf';
+      el.scoreboard.innerHTML =
+        `<thead><tr><th>Fighter</th>${ctf ? '<th>Caps</th><th>Ret</th>' : ''}<th>K</th><th>D</th><th>A</th>` +
+        `<th>Dmg</th><th>Acc</th><th>Best life</th></tr></thead><tbody>` +
+        results.rows.map((r) => {
+          const color = AGENT_COLORS[r.colorIndex % AGENT_COLORS.length];
+          return `<tr class="${r.isMine ? 'mine' : ''}">
+            <td class="name"><i style="background:${color}"></i>${esc(r.name)}
+              ${r.team ? `<span class="team-tag">${esc(TEAMS[r.team].short)}</span>` : ''}</td>
+            ${ctf ? `<td>${r.captures}</td><td>${r.returns}</td>` : ''}
+            <td>${r.kills}</td><td>${r.deaths}</td><td>${r.assists}</td>
+            <td>${r.damageDealt}</td><td>${r.accuracy}%</td><td>${r.longestLife}s</td></tr>`;
+        }).join('') + '</tbody>';
+
+      el.notable.innerHTML = results.notable.length
+        ? results.notable.map((item) => `<li>
+            <span class="label">${esc(item.label)}</span>
+            <span><b>${esc(item.name)}</b> <span class="value">${esc(item.value)}</span></span>
+          </li>`).join('')
+        : '<li class="muted">Nothing much happened out there.</li>';
+
+      el.returnBtn.hidden = !role.canEdit;
+      el.postHint.textContent = role.canEdit
+        ? 'Back to the lobby to change the game, the map or the teams.'
+        : 'Waiting for the owner to take everyone back to the lobby…';
+    },
+  };
+
+  return api;
+}
+
+const ordinal = (n) => (n === 1 ? '1st' : n === 2 ? '2nd' : '3rd');
+const minutes = (seconds) => {
+  const n = Math.round(seconds / 60);
+  return `${n} ${n === 1 ? 'minute' : 'minutes'}`;
+};
+
+/** "1 kill", "2 kills" - the score word is stored plural. */
+const tally = (n, word) => `${n} ${n === 1 ? word.replace(/s$/, '') : word}`;
+
+function esc(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (c) =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
 // ---- public/src/main.js ------------------------------------------
 // Entry point: builds the world, wires the UI, runs the loop.
+
+
 
 
 
@@ -5920,6 +7884,17 @@ function createDirectLog({ max = COMMS.directMax } = {}) {
 const usage = createUsageMeter({ onChange: (state) => ui?.renderUsage(state) });
 const brains = createBrains({ usage });
 const world = new World({ brains });
+
+// The match owns the phase, the rules and the clock; the world owns the bodies.
+const match = createMatch({
+  world,
+  onPhase: (state) => onPhaseChanged(state),
+  onEvent: (text, kind) => world.addLog(text, kind ?? 'info'),
+});
+world.match = match;
+// Nothing enters the arena until a round is actually being fought. The World's
+// own default is open, for the tests and for anyone using it without a match.
+world.allowSpawning = false;
 const renderer = new Renderer(document.getElementById('arena'));
 const chatLog = createChatLog();
 // The private channel. It has its own store because it has its own audience:
@@ -5967,7 +7942,7 @@ function uniqueName(base) {
   return name;
 }
 
-function join({ name, prompt, brainKind, tier, focus = true, ownerPeer = null, ownerId = null, mine = true }) {
+function join({ name, prompt, brainKind, tier, team = null, focus = true, ownerPeer = null, ownerId = null, mine = true }) {
   if (!name) return { ok: false, message: 'Give your agent a name.', tone: 'bad' };
   if (prompt.length < 12) {
     return { ok: false, message: 'Write a real prompt — at least a sentence of tactics.', tone: 'bad' };
@@ -5989,6 +7964,9 @@ function join({ name, prompt, brainKind, tier, focus = true, ownerPeer = null, o
     colorIndex: pickColorIndex(),
   });
   participant.tier = tier ?? DEFAULT_TIER;
+  // In a team mode a fighter joins whichever side is thinner, unless the owner
+  // has already put them somewhere.
+  participant.team = team ?? match.thinnestTeam();
   participant.ownerPeer = ownerPeer;
   participant.ownerId = ownerId;
   // Agents I deployed: only these may lock my tier selector or bill my account.
@@ -6006,7 +7984,11 @@ function join({ name, prompt, brainKind, tier, focus = true, ownerPeer = null, o
   // Deploying your own agent follows it in the focus bar. Filler agents must
   // not steal that focus back.
   if (focus) ui.focus(participant.id);
+  screens.renderLobby();
 
+  if (match.phase === PHASES.briefing) {
+    return { ok: true, message: `${participant.name} is ready. The round starts when the clock runs out.`, tone: 'ok' };
+  }
   return outcome === 'spawned'
     ? { ok: true, message: `${participant.name} is in the arena.`, tone: 'ok' }
     : {
@@ -6016,19 +7998,16 @@ function join({ name, prompt, brainKind, tier, focus = true, ownerPeer = null, o
       };
 }
 
-function addDemoAgents(count = 4) {
+function addDemoAgents(count = 4, team = null) {
   for (let i = 0; i < count; i++) {
     const preset = PRESETS[Math.floor(Math.random() * PRESETS.length)];
     const base = DEMO_NAMES[Math.floor(Math.random() * DEMO_NAMES.length)];
-    join({ name: base, prompt: preset.prompt, brainKind: 'local', focus: false, mine: false });
+    join({ name: base, prompt: preset.prompt, brainKind: 'local', focus: false, mine: false, team });
   }
 }
 
 function clearArena() {
-  for (const participant of world.lobby.list()) world.lobby.remove(participant.id);
-  world.projectiles = [];
-  world.pickups = [];
-  world.effects = [];
+  world.clearArena();
   world.log = [];
   world.champions = [];
   usedColors = new Set();
@@ -6037,14 +8016,21 @@ function clearArena() {
   // Those agents are gone, and so are the channels to them.
   directLog.clear();
   world.addLog('Arena cleared.', 'info');
+  screens.renderLobby();
 }
 
 const ui = new UI({
   world,
+  match,
   chatLog,
   directLog,
   onJoin: join,
   onMessage: deliver,
+  onSkipBrief: () => {
+    if (!role.canEdit) return;
+    if (net?.state.available && !net.isHost) return net.send(TOPICS.setup, { go: true });
+    match.goLive();
+  },
   onDemo: () => {
     if (net?.state.available && !net.isHost) return net.send(TOPICS.bots, { count: 4 });
     addDemoAgents(4);
@@ -6062,6 +8048,68 @@ const ui = new UI({
     return world.paused;
   },
 });
+
+// Who is at the keyboard. Resolved below once the viewer answers; until then a
+// page running on its own is its own owner.
+let role = { isOwner: true, canEdit: true, known: false };
+
+// The lobby, the title card and the post-game report. Everything that changes
+// the shared game is the owner's, and goes through the host.
+const screens = createScreens({
+  world,
+  match,
+  onConfigure: (patch) => {
+    if (!role.canEdit) return;
+    if (net?.state.available && !net.isHost) return net.send(TOPICS.setup, { settings: patch });
+    match.configure(patch);
+    screens.renderLobby();
+  },
+  onAddBot: () => {
+    if (!role.canEdit) return;
+    if (net?.state.available && !net.isHost) return net.send(TOPICS.bots, { count: 1 });
+    addDemoAgents(1, match.thinnestTeam());
+  },
+  onClearLobby: () => {
+    if (!role.canEdit) return;
+    if (net?.state.available && !net.isHost) return net.send(TOPICS.clear, {});
+    clearArena();
+  },
+  onStart: () => {
+    if (!role.canEdit) return;
+    if (net?.state.available && !net.isHost) return net.send(TOPICS.setup, { start: true });
+    match.openBriefing();
+  },
+  onReturn: () => {
+    if (!role.canEdit) return;
+    if (net?.state.available && !net.isHost) return net.send(TOPICS.setup, { lobby: true });
+    match.toLobby();
+  },
+  onSetTeam: (participantId, team) => {
+    if (!role.canEdit) return;
+    if (net?.state.available && !net.isHost) return net.send(TOPICS.setup, { team: { id: participantId, team } });
+    const participant = world.lobby.get(participantId);
+    if (participant) match.assign(participant, team);
+    screens.renderLobby();
+  },
+});
+
+/**
+ * One phase change, one place. Bodies only exist while a round is being
+ * fought, the canvas is only sized when it is actually on screen, and the
+ * host tells everyone else what just happened.
+ */
+function onPhaseChanged(state) {
+  world.allowSpawning = state.phase === PHASES.live;
+  screens.render();
+  ui.renderMatch();
+
+  if (state.phase === PHASES.live || state.phase === PHASES.briefing) {
+    // The canvas was display:none a moment ago, so it has no size yet.
+    requestAnimationFrame(() => renderer.resize());
+  }
+  if (state.phase === PHASES.postgame) askForVictorySpeech();
+  if (net?.isHost) net.send(TOPICS.phase, match.state);
+}
 
 // --------------------------------------------------------------- model check
 const REPO = 'https://github.com/zamFe/Prompt-Wars';
@@ -6131,6 +8179,7 @@ const net = createNet({
   makeGhost,
   onState: (state) => {
     ui.renderRoom(state);
+    screens.setRoom(state);
     // A guest never simulates: it renders what the host sends.
     simulating = state.isHost;
   },
@@ -6209,27 +8258,85 @@ net.onClearRequest = () => {
   if (net.isHost) clearArena();
 };
 
+// Guests follow the host's phase, score and clock rather than running any of
+// it themselves.
+net.onPhase = (state) => {
+  if (net.isHost) return;
+  match.applyState(state);
+  match.setRemaining(state?.remaining ?? null);
+  screens.render();
+  ui.renderMatch();
+};
+
+// Everything the owner decides in the lobby arrives here, on a topic the
+// platform already refuses from anyone below Editor.
+net.onSetupRequest = (data) => {
+  if (!net.isHost || !data) return;
+  if (data.settings) match.configure(data.settings);
+  if (data.team?.id) {
+    const participant = world.lobby.get(data.team.id);
+    if (participant) match.assign(participant, data.team.team);
+  }
+  if (data.start) match.openBriefing();
+  if (data.go) match.goLive();
+  if (data.lobby) match.toLobby();
+  screens.renderLobby();
+  net.send(TOPICS.phase, match.state);
+};
+
 net.connect().then((joined) => {
-  if (joined) ui.renderRoom(net.state);
+  if (joined) {
+    ui.renderRoom(net.state);
+    screens.setRoom(net.state);
+    // A page that joins late, or misses a message, is never more than a beat
+    // behind: the host repeats where everyone is once a second.
+    setInterval(() => {
+      if (net.isHost) net.send(TOPICS.phase, match.state);
+    }, 1000);
+  }
 });
 
 // --------------------------------------------------------------- who is here
 // Owner, Editor, Contributor and Viewer are different things on an artifact,
 // and the controls that change the shared arena belong to the first two.
 (async () => {
-  let role = { isOwner: false, canEdit: false, known: false };
+  let resolved = { isOwner: false, canEdit: false, known: false };
   try {
     const user = await globalThis.claude?.use?.('user');
     if (user) {
       const [isOwner, canEdit] = await Promise.all([user.isOwner(), user.canEdit()]);
-      role = { isOwner, canEdit, known: true };
+      resolved = { isOwner, canEdit, known: true };
     }
   } catch {
     // No viewer to ask: treat this as a page running on its own.
   }
   // Opened outside a viewer there is nobody to be below, so nothing is hidden.
-  ui.setRole(role.known ? role : { isOwner: true, canEdit: true, known: false });
+  role = resolved.known ? resolved : { isOwner: true, canEdit: true, known: false };
+  ui.setRole(role);
+  screens.setRole(role);
 })();
+
+/**
+ * The round is over and somebody won it. Ask that agent - not the page, the
+ * agent - for a line, on its own account, and put it on the podium.
+ */
+async function askForVictorySpeech() {
+  const results = match.results;
+  if (!results?.winner || results.speech) return;
+  const participant = world.lobby.get(results.winner.id);
+  if (!participant) return;
+
+  const brain = world.brains[participant.brainKind] ?? world.brains.local;
+  try {
+    const line = await (brain.victorySpeech?.(participant, results) ?? world.brains.local.victorySpeech(participant, results));
+    if (!line || match.phase !== PHASES.postgame) return;
+    results.speech = line;
+    screens.renderPostgame();
+    if (net?.isHost) net.send(TOPICS.phase, match.state);
+  } catch {
+    // A winner with nothing to say is not a broken game.
+  }
+}
 
 // The comms history lives on the server when there is one, so it survives a
 // reload; a static page keeps the same store in memory instead.
@@ -6259,17 +8366,22 @@ function frame(now) {
   previous = now;
   accumulator += elapsed;
 
+  // The match clock runs in every phase - that is what makes the briefing
+  // count down. Only the host advances it; a guest is told where it is.
+  if (simulating) match.update(elapsed);
+
   let guard = 0;
   while (accumulator >= STEP && guard++ < 8) {
-    if (simulating) world.update(STEP);
+    if (simulating && match.phase === PHASES.live) world.update(STEP);
     accumulator -= STEP;
   }
 
-  renderer.draw(world, { selectedId: ui.selectedId });
+  renderer.draw(world, { selectedId: ui.selectedId, match });
 
   // The focus bar carries sub-second action flashes, so it tracks the frame
   // rate; it diffs every field, so an unchanged frame writes no DOM at all.
   ui.renderFocusBar();
+  ui.renderMatch();
 
   // The heavier panels do not need 60 Hz.
   uiClock += elapsed;
@@ -6281,12 +8393,14 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 
-// The arena starts empty: the first thing in it is whatever someone deploys.
+// Nothing is in the arena, and nothing happens, until someone presses a key on
+// the title card and sets a game up.
 ui.update();
+screens.render();
 requestAnimationFrame(frame);
 
 // Handy for poking at the simulation from the console.
-window.promptWars = { world, brains, ui, renderer, join, addDemoAgents, clearArena, deliver, directLog, chatLog };
+window.promptWars = { world, match, brains, ui, screens, renderer, join, addDemoAgents, clearArena, deliver, directLog, chatLog };
 
 </script>
 

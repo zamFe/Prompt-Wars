@@ -10,6 +10,10 @@ commitment. That deliberate weakness is the whole design: when the mechanics
 are this constrained, the quality of your instructions is what decides the
 fight.
 
+Rounds run ten minutes in **free-for-all**, **team deathmatch** or **capture the
+flag**, across three maps, from a lobby the owner sets up — and end on a podium
+where the winning agent gets fifty characters to say something about it.
+
 ![the arena](docs/arena.png)
 
 ## Running it
@@ -344,14 +348,74 @@ alone, and the ten best are kept, ranked by kills and broken by how long the
 agent survived. Career totals live in the roster; the champions board is about
 single lives.
 
-## The lobby
+## A game, end to end
+
+The page moves through four screens, and `data-phase` on `<body>` is the only
+thing that decides which one is up.
+
+**Landing.** A title card. Any key, any click, anywhere.
+
+**Lobby.** The owner picks the mode, the map and the rules; everyone else
+watches the choices arrive. Bots can be added — they join the thinner side — and
+dragged across with the swap arrow. Nothing is in the arena yet.
+
+**Briefing.** The round is called and a clock starts: **60 seconds** to write
+the prompt your fighter carries in, adjustable by the owner from 15 seconds to
+five minutes. The owner can also start early. Whoever has written a prompt is in
+the round; whoever has not, is not.
+
+**Live.** Ten minutes by default, 1–30 adjustable. The strip over the arena
+carries the mode, the score and the countdown.
+
+**Post-game.** A podium, the full scoreboard, a few notable lines — most damage,
+best accuracy, longest life — and the winner's own victory speech. The owner
+takes everyone back to the lobby, where the fighters are all still sitting.
+
+### Three ways to play
+
+| Mode | What scores | Who is on your side |
+|---|---|---|
+| **Free-for-all** | a kill | nobody |
+| **Team deathmatch** | a kill, for your side | half the arena |
+| **Capture the flag** | a capture. Kills score *nothing* | half the arena |
+
+In a team mode your shots pass straight through your own side, so a teammate is
+never something to walk around. Each team spawns at its own base and is told
+which side it is on, who its teammates are, and where both bases stand.
+
+Capture the flag needs no new tool, and gets none: walking onto a flag picks it
+up, the way walking onto a medkit takes it. Carry theirs to your base — while
+your own flag is still home — and it counts. Die carrying, and it drops where
+you fell: your side returns it by touching it, their side picks it up and runs.
+A flag left lying for thirty seconds takes itself home, so a corner of the map
+cannot stall a round.
+
+### Maps
+
+Three, and every one of them is **point-symmetric** — rotate it 180° and you get
+the same layout back. That is what makes two bases fair: whatever cover one side
+has going out, the other has coming back. There is a test that asserts it.
+
+*Crossfire* is the original. *Foundry* is tight, with long galleries down both
+flanks. *Open Range* is sparse, where a pistol duel is decided at distance.
+
+### Lives
+
+Three by default. Lose them all and you watch the rest of the round from the
+sidelines — you are still on the scoreboard, and your prompt is still judged by
+what it did while it was in. Set lives to **0** and nothing changes about the old
+arena at all: nobody is ever eliminated, and death costs you the original
+drop-in timers below.
+
+## The open arena
 
 The arena holds **10 agents**. Anyone else waits in a queue and is admitted the
 moment a slot frees.
 
-When you die you sit out **60 seconds**. If the arena was full *and* more than 10
-were already queued at the moment of your death, that becomes **10 minutes** —
-dying in a crowd costs you your place for a long while.
+With lives set to endless, dying sits you out **60 seconds**. If the arena was
+full *and* more than 10 were already queued at the moment of your death, that
+becomes **10 minutes** — dying in a crowd costs you your place for a long while.
+In a round with lives, a death costs five seconds instead, until your last one.
 
 ## The two brains
 
@@ -406,8 +470,10 @@ public/
   src/
     config.js          every tunable number in one table
     util.js            math, geometry, seedable RNG
-    arena.js           walls, ray casts, line of sight, collision
+    arena.js           the maps, ray casts, line of sight, collision
     sensors.js         what an agent perceives, and its text rendering
+    match.js           phases, modes, teams, flags, scoring, the result
+    screens.js         the title card, the lobby and the post-game report
     chat.js            agent speech: parsing both channels, tidying, wrapping
     chatlog.js         the two histories: global (server-backed) and private
     comms.js           the operator channel: inbox, briefing, context block
@@ -442,10 +508,11 @@ npm run doctor    # why is the model brain offline?
 ```
 
 `sim.test.js` runs the arena headlessly in Node — weapon balance, cone geometry,
-walls blocking sight and bullets, the queue, both death cooldowns, loot rules,
-tool-argument clamping, prompt parsing, bubble lifetimes, both chat channels and
-the operator inbox, assists, champion scoring, and a full 12-agent two-minute
-match.
+walls blocking sight and bullets, map symmetry, the queue, both death cooldowns,
+loot rules, tool-argument clamping, prompt parsing, bubble lifetimes, both chat
+channels and the operator inbox, the phase machine, every mode's scoring, team
+spawns and friendly fire, lives and elimination, the whole flag lifecycle,
+assists, champion scoring, and a full 12-agent two-minute match.
 `model-proxy.test.js` runs the server against a stub Messages API and checks the
 request shape, the tool-call round trip and compatibility mode; it needs no
 credentials.

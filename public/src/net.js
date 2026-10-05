@@ -22,9 +22,13 @@ import { WEAPONS } from './config.js';
 
 export const TOPICS = {
   tick: 'tick', roster: 'roster', join: 'join', plan: 'plan', need: 'need', part: 'part',
+  // What game is being played, and how it stands. Sent by the host, read by
+  // everyone, so a guest's screen follows the host through every phase.
+  phase: 'phase',
   // Admin-only: these are deliberately NOT opened to the interact level at
   // publish time, so the platform refuses them from anyone below Editor.
-  bots: 'bots', clear: 'clear',
+  // `setup` carries every lobby decision - mode, map, rules, teams, start.
+  bots: 'bots', clear: 'clear', setup: 'setup',
 };
 const TICK_HZ = 8;
 const WEAPON_IDS = Object.keys(WEAPONS);
@@ -50,6 +54,7 @@ export function encodeRoster(world) {
   return world.agents.map((a) => [
     a.netId, a.name, a.participant.colorIndex, a.participant.ownerId ?? null,
     a.participant.kills, a.participant.assists ?? 0, a.chat?.text ?? null,
+    a.team ?? null, a.carrying ?? null,
   ]);
 }
 
@@ -82,11 +87,14 @@ export function createNet({ world, makeGhost, onState = () => {} } = {}) {
       if (!room || !state.isHost) return;
       room.emit(TOPICS.tick, encodeSnapshot(world)).catch(() => {});
 
-      const rosterKey = world.agents.map((a) => `${a.netId}:${a.participant.kills}:${a.chat?.text ?? ''}`).join('|');
+      const rosterKey = world.agents
+        .map((a) => `${a.netId}:${a.participant.kills}:${a.team ?? ''}:${a.carrying ?? ''}:${a.chat?.text ?? ''}`)
+        .join('|');
       if (rosterKey !== lastRosterKey) {
         lastRosterKey = rosterKey;
         room.emit(TOPICS.roster, encodeRoster(world)).catch(() => {});
       }
+
     }, 1000 / TICK_HZ);
   };
 
@@ -181,6 +189,18 @@ export function createNet({ world, makeGhost, onState = () => {} } = {}) {
         this.onDecisionNeeded?.(msg.data);
       }));
 
+      // What game is being played. The host is the only voice that counts.
+      unsubscribes.push(room.on(TOPICS.phase, (msg) => {
+        if (state.isHost || msg.peer !== hostPeer) return;
+        this.onPhase?.(msg.data);
+      }));
+
+      // Admin-only, so the platform has already refused anyone below Editor by
+      // the time this runs.
+      unsubscribes.push(room.on(TOPICS.setup, (msg) => {
+        if (state.isHost) this.onSetupRequest?.(msg.data, msg);
+      }));
+
       startTicking();
       publish();
       return true;
@@ -258,7 +278,7 @@ export function applySnapshot(world, data, makeGhost) {
 /** Identities and scores, which change far less often than positions. */
 export function applyRoster(world, rows, makeGhost) {
   if (!Array.isArray(rows)) return;
-  for (const [netId, name, colorIndex, ownerId, kills, assists, chat] of rows) {
+  for (const [netId, name, colorIndex, ownerId, kills, assists, chat, team, carrying] of rows) {
     let agent = world.agents.find((a) => a.netId === netId);
     if (!agent) {
       agent = makeGhost(netId);
@@ -271,6 +291,9 @@ export function applyRoster(world, rows, makeGhost) {
     agent.participant.ownerId = ownerId ?? null;
     agent.participant.kills = Number(kills) || 0;
     agent.participant.assists = Number(assists) || 0;
+    agent.team = team === 'a' || team === 'b' ? team : null;
+    agent.participant.team = agent.team;
+    agent.carrying = carrying === 'a' || carrying === 'b' ? carrying : null;
     // Raised through say() rather than written straight onto the agent, so a
     // guest's global chat fills from the host's arena exactly as the host's own
     // does. Private replies never travel: they are produced on, and stay on,

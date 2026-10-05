@@ -1,6 +1,7 @@
 // DOM wiring: the join form, roster, inspector, feed and rules panel.
 
-import { WORLD, LOBBY, WEAPONS, HEALTH_PACKS, LOOT, VISION, MOVE, AGENT, AGENT_COLORS, PULSE, COMMS } from './config.js';
+import { WORLD, LOBBY, WEAPONS, HEALTH_PACKS, LOOT, VISION, MOVE, AGENT, AGENT_COLORS, PULSE, COMMS, TEAMS } from './config.js';
+import { MODES, PHASES } from './match.js';
 import { renderSnapshotText } from './sensors.js';
 import { TOOL_SCHEMAS, TOOL_SUMMARIES } from './actions.js';
 import { hasConstraints } from './constraints.js';
@@ -11,8 +12,9 @@ import { PRESETS } from './presets.js';
 const $ = (id) => document.getElementById(id);
 
 export class UI {
-  constructor({ world, chatLog, directLog, onJoin, onDemo, onClear, onSelect, onTogglePause, onMessage }) {
+  constructor({ world, match, chatLog, directLog, onJoin, onDemo, onClear, onSelect, onTogglePause, onMessage, onSkipBrief }) {
     this.world = world;
+    this.match = match;
     this.chatLog = chatLog;
     this.directLog = directLog;
     this.onJoin = onJoin;
@@ -73,6 +75,16 @@ export class UI {
       directEmpty: $('direct-empty'),
       directNote: $('direct-note'),
       railTabs: $('rail-tabs'),
+
+      hud: $('hud'),
+      hudMode: $('hud-mode'),
+      hudScore: $('hud-score'),
+      hudClock: $('hud-clock'),
+      briefBanner: $('brief-banner'),
+      briefClock: $('brief-clock'),
+      briefCount: $('brief-count'),
+      skipBrief: $('btn-skip-brief'),
+      deployPhase: $('deploy-phase'),
 
       focusEmpty: $('focus-empty'),
       focusBody: $('focus-body'),
@@ -160,6 +172,7 @@ export class UI {
       this.el.preset.value = '';
     });
 
+    this.el.skipBrief.addEventListener('click', () => onSkipBrief?.());
     this.el.demo.addEventListener('click', () => onDemo());
     this.el.clear.addEventListener('click', () => onClear());
     this.el.pause.addEventListener('click', () => {
@@ -466,9 +479,14 @@ export class UI {
     } else if (p.status === 'queued') {
       const place = this.world.lobby.queuePosition(p.id);
       sub = place ? `waiting — #${place} in queue` : 'waiting';
+    } else if (p.status === 'eliminated') {
+      sub = 'out of lives — spectating';
     } else {
-      sub = `dead — rejoins in ${formatClock(p.readyAt - this.world.time)}`;
+      sub = `down — back in ${formatClock(p.readyAt - this.world.time)}`;
     }
+
+    const lives = Number.isFinite(p.livesLeft) ? ` · ${p.livesLeft} ${p.livesLeft === 1 ? 'life' : 'lives'}` : '';
+    sub += lives;
 
     const hp = agent ? Math.max(0, agent.hp / AGENT.maxHp) : 0;
     const hpColor = hp > 0.5 ? 'var(--good)' : hp > 0.25 ? 'var(--warn)' : 'var(--bad)';
@@ -564,6 +582,74 @@ export class UI {
     }
 
     this.el.inspector.innerHTML = parts.join('');
+  }
+
+  /**
+   * The strip over the arena: what is being played, how it stands, and how long
+   * is left. Diffed like the focus bar, because it is written every frame.
+   */
+  renderMatch() {
+    const match = this.match;
+    if (!match) return;
+
+    this.hudState ??= {};
+    const set = (key, value, apply) => {
+      if (this.hudState[key] === value) return;
+      this.hudState[key] = value;
+      apply(value);
+    };
+
+    const phase = match.phase;
+    const mode = MODES[match.settings.mode] ?? MODES.ffa;
+    const briefing = phase === PHASES.briefing;
+
+    set('phase', phase, () => {
+      this.el.briefBanner.hidden = !briefing;
+      this.el.hud.hidden = briefing;
+      this.el.deployPhase.textContent = briefing
+        ? 'write it now'
+        : phase === PHASES.live ? 'join mid-round' : '';
+      this.el.form.querySelector('button[type=submit]').textContent = briefing ? 'Enter arena' : 'Join mid-round';
+    });
+
+    const left = match.remaining;
+    if (briefing) {
+      set('brief', left === null ? null : Math.ceil(left), (v) => {
+        this.el.briefClock.textContent = v === null ? '—' : `${v}`;
+      });
+      const waiting = this.world.lobby.list().length;
+      set('briefCount', waiting, (v) => {
+        this.el.briefCount.textContent = v === 1 ? '1 fighter ready.' : `${v} fighters ready.`;
+      });
+      return;
+    }
+
+    set('mode', `${mode.name}`, (v) => { this.el.hudMode.textContent = v; });
+    set('clock', left === null ? null : Math.ceil(left), (v) => {
+      this.el.hudClock.textContent = v === null ? '—' : formatMatchClock(v);
+      this.el.hudClock.classList.toggle('urgent', v !== null && v <= 30);
+    });
+
+    if (match.isTeamMode) {
+      const scores = match.scores;
+      set('score', `${scores.a}:${scores.b}`, () => {
+        this.el.hudScore.innerHTML = ['a', 'b'].map((team) => {
+          const lead = scores[team] > scores[team === 'a' ? 'b' : 'a'];
+          return `<span class="hud-team ${lead ? 'leading' : ''}" style="color:${TEAMS[team].color}">
+              <i style="background:${TEAMS[team].color}"></i>${scores[team]}</span>`;
+        }).join('<span class="hud-sep">—</span>');
+      });
+      return;
+    }
+
+    // Free-for-all has no team score, so the strip carries the leader instead.
+    const live = this.world.agents.map((a) => a.participant);
+    const leader = live.sort((a, b) => b.kills - a.kills)[0] ?? null;
+    set('leader', leader ? `${leader.name}:${leader.kills}` : '', () => {
+      this.el.hudScore.innerHTML = leader
+        ? `<span class="hud-lead">leader <b>${escapeHtml(leader.name)}</b> ${leader.kills} ${mode.scoreWord}</span>`
+        : '<span class="hud-lead">nobody has scored</span>';
+    });
   }
 
   /**
@@ -859,6 +945,12 @@ function describeCurrent(agent) {
     case 'hold': return 'Holding';
     default: return action.type;
   }
+}
+
+/** mm:ss, for a countdown rather than an elapsed clock. */
+function formatMatchClock(seconds) {
+  const s = Math.max(0, Math.round(seconds));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
 
 function escapeHtml(value) {

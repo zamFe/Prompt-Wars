@@ -1,25 +1,87 @@
 // The arena: a square with a handful of interior walls, plus the geometry
 // queries the simulation and the sensors need (line of sight, collision).
+//
+// Every map is point-symmetric about the centre: rotate it 180 degrees and you
+// get the same layout back. That is what makes two bases fair in a team mode -
+// whatever cover one side has going out, the other has coming back.
 
 import { WORLD } from './config.js';
 import { clamp, dist, rayRect, closestPointOnRect, randRange } from './util.js';
 
 const S = WORLD.size;
 
+/** Where each team's flag stands, and where its fighters come back in. */
+const BASES = { a: { x: 170, y: 700 }, b: { x: S - 170, y: 700 } };
+
 /**
  * Interior cover. Deliberately sparse - enough to break sightlines and reward
  * an agent that maps the room with its wall probes, not so much that it plays
  * like a maze.
  */
-export const WALLS = [
-  { x: 500, y: 660, w: 400, h: 80 },   // centre bar
-  { x: 300, y: 250, w: 80, h: 320 },   // north-west upright
-  { x: 1020, y: 830, w: 80, h: 320 },  // south-east upright
-  { x: 830, y: 300, w: 300, h: 80 },   // north-east bar
-  { x: 270, y: 1020, w: 300, h: 80 },  // south-west bar
-  { x: 655, y: 300, w: 90, h: 90 },    // north pillar
-  { x: 655, y: 1010, w: 90, h: 90 },   // south pillar
-];
+export const MAPS = [
+  {
+    id: 'crossfire',
+    name: 'Crossfire',
+    blurb: 'The original. A long centre bar, two uprights, a pillar at each end.',
+    walls: [
+      { x: 500, y: 660, w: 400, h: 80 },   // centre bar
+      { x: 300, y: 250, w: 80, h: 320 },   // north-west upright
+      { x: 1020, y: 830, w: 80, h: 320 },  // south-east upright
+      { x: 830, y: 300, w: 300, h: 80 },   // north-east bar
+      { x: 270, y: 1020, w: 300, h: 80 },  // south-west bar
+      { x: 655, y: 300, w: 90, h: 90 },    // north pillar
+      { x: 655, y: 1010, w: 90, h: 90 },   // south pillar
+    ],
+  },
+  {
+    id: 'foundry',
+    name: 'Foundry',
+    blurb: 'Tight. Long galleries down both flanks and a blind block in the middle.',
+    walls: [
+      { x: 180, y: 180, w: 60, h: 420 },
+      { x: 1160, y: 800, w: 60, h: 420 },
+      { x: 420, y: 420, w: 560, h: 60 },
+      { x: 420, y: 920, w: 560, h: 60 },
+      { x: 640, y: 620, w: 120, h: 160 },  // centre block
+      { x: 180, y: 1000, w: 300, h: 60 },
+      { x: 920, y: 340, w: 300, h: 60 },
+    ],
+  },
+  {
+    id: 'open-range',
+    name: 'Open Range',
+    blurb: 'Sparse cover, long sightlines. A pistol duel decided at distance.',
+    walls: [
+      { x: 620, y: 200, w: 160, h: 160 },
+      { x: 620, y: 1040, w: 160, h: 160 },
+      { x: 300, y: 620, w: 220, h: 160 },
+      { x: 880, y: 620, w: 220, h: 160 },
+      { x: 450, y: 380, w: 60, h: 200 },
+      { x: 890, y: 820, w: 60, h: 200 },
+    ],
+  },
+].map((map) => ({ ...map, bases: BASES }));
+
+/**
+ * The live layout. A module-level binding rather than an argument on every
+ * geometry call: ray casts and collision run thousands of times a tick, and
+ * there is only ever one arena on screen.
+ */
+export let WALLS = MAPS[0].walls;
+let activeMap = MAPS[0];
+
+export const currentMap = () => activeMap;
+
+export function setMap(id) {
+  const found = MAPS.find((m) => m.id === id);
+  if (!found) return activeMap;
+  activeMap = found;
+  WALLS = found.walls;
+  return activeMap;
+}
+
+/** Where a team's flag stands and where its fighters come back in. */
+export const baseOf = (team) => activeMap.bases[team] ?? null;
 
 /** Border walls, kept separate so they can be drawn differently. */
 export const BORDER_THICKNESS = 24;
@@ -132,13 +194,27 @@ export function resolveCollision(x, y, radius) {
  * Find an open spot, preferring one that is far from every listed avoid-point
  * (other agents at spawn time). Falls back to the best of many tries.
  */
-export function findOpenPosition(rng, { radius = WORLD.agentRadius, avoid = [], minAvoidDistance = 240 } = {}) {
+export function findOpenPosition(rng, { radius = WORLD.agentRadius, avoid = [], minAvoidDistance = 240, near = null } = {}) {
   let fallback = null;
   let fallbackScore = -Infinity;
 
+  const lo = BORDER_THICKNESS + radius + 10;
+  const hi = S - BORDER_THICKNESS - radius - 10;
+
   for (let attempt = 0; attempt < 120; attempt++) {
-    const x = randRange(rng, BORDER_THICKNESS + radius + 10, S - BORDER_THICKNESS - radius - 10);
-    const y = randRange(rng, BORDER_THICKNESS + radius + 10, S - BORDER_THICKNESS - radius - 10);
+    // A team spawn is drawn from a disc around its own base; everything else
+    // from anywhere on the floor.
+    let x;
+    let y;
+    if (near) {
+      const angle = randRange(rng, 0, Math.PI * 2);
+      const reach = Math.sqrt(rng()) * near.radius;
+      x = clamp(near.x + Math.cos(angle) * reach, lo, hi);
+      y = clamp(near.y + Math.sin(angle) * reach, lo, hi);
+    } else {
+      x = randRange(rng, lo, hi);
+      y = randRange(rng, lo, hi);
+    }
     if (clearance(x, y) < radius + 12) continue;
 
     let nearest = Infinity;
@@ -150,7 +226,7 @@ export function findOpenPosition(rng, { radius = WORLD.agentRadius, avoid = [], 
       fallback = { x, y };
     }
   }
-  return fallback ?? { x: S / 2, y: S / 2 };
+  return fallback ?? (near ? { x: near.x, y: near.y } : { x: S / 2, y: S / 2 });
 }
 
 export const arenaSize = S;

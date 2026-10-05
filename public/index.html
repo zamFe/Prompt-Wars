@@ -10,7 +10,115 @@
   <link rel="stylesheet" href="./styles.css" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='11' fill='%23ff5c7a'/></svg>" />
 </head>
-<body>
+<body data-phase="landing">
+  <!--
+    Four screens, one page. `data-phase` on the body is the only thing that
+    decides which is up; every panel below is laid out once and simply not
+    shown in the phases it does not belong to.
+  -->
+  <section class="screen screen-landing" id="screen-landing">
+    <div class="landing-inner">
+      <span class="brand-dot big"></span>
+      <h1>Prompt Wars</h1>
+      <p class="landing-tag">You do not play. Your <b>prompt</b> does.</p>
+      <p class="landing-sub">
+        Write instructions for a fighter. It sees through a 45° cone, acts through six slow tools,
+        and from then on it is on its own.
+      </p>
+      <p class="landing-go" id="landing-go">Press anything to begin</p>
+    </div>
+  </section>
+
+  <section class="screen screen-lobby" id="screen-lobby">
+    <div class="lobby-inner">
+      <header class="lobby-head">
+        <div>
+          <h2>Lobby</h2>
+          <p class="lobby-sub" id="lobby-sub">Choose the game. Everyone writes their prompt once it starts.</p>
+        </div>
+        <span class="badge" id="lobby-room">solo</span>
+      </header>
+
+      <div class="lobby-grid">
+        <section class="lobby-card">
+          <h3>Mode</h3>
+          <div class="mode-cards" id="mode-cards"></div>
+        </section>
+
+        <section class="lobby-card">
+          <h3>Map</h3>
+          <div class="map-cards" id="map-cards"></div>
+        </section>
+
+        <section class="lobby-card">
+          <h3>Rules</h3>
+          <div class="setting-rows">
+            <label class="setting">
+              <span>Round length <em id="set-round-value"></em></span>
+              <input type="range" id="set-round" min="1" max="30" step="1" />
+            </label>
+            <label class="setting">
+              <span>Time to write a prompt <em id="set-brief-value"></em></span>
+              <input type="range" id="set-brief" min="15" max="300" step="5" />
+            </label>
+            <label class="setting">
+              <span>Lives <em id="set-lives-value"></em></span>
+              <input type="range" id="set-lives" min="0" max="10" step="1" />
+            </label>
+            <p class="setting-note" id="lives-note"></p>
+          </div>
+        </section>
+
+        <section class="lobby-card lobby-roster-card">
+          <h3>Fighters <em id="lobby-count"></em></h3>
+          <div class="team-columns" id="team-columns"></div>
+          <div class="row lobby-actions" id="lobby-actions">
+            <button type="button" class="ghost" id="btn-add-bot">Add a bot</button>
+            <button type="button" class="ghost" id="btn-lobby-clear">Remove all</button>
+          </div>
+          <p class="role-note" id="lobby-role-note"></p>
+        </section>
+      </div>
+
+      <footer class="lobby-foot">
+        <p class="lobby-hint" id="lobby-hint"></p>
+        <button type="button" class="primary big" id="btn-start">Start round</button>
+      </footer>
+    </div>
+  </section>
+
+  <section class="screen screen-postgame" id="screen-postgame">
+    <div class="post-inner">
+      <header class="post-head">
+        <h2 id="post-title">Round over</h2>
+        <p class="post-sub" id="post-sub"></p>
+      </header>
+
+      <div class="podium" id="podium"></div>
+
+      <blockquote class="speech" id="speech" hidden>
+        <span class="speech-who" id="speech-who"></span>
+        <span class="speech-text" id="speech-text"></span>
+      </blockquote>
+
+      <div class="post-grid">
+        <section class="post-card">
+          <h3>Scoreboard</h3>
+          <div class="table-wrap"><table class="scoreboard" id="scoreboard"></table></div>
+        </section>
+        <section class="post-card">
+          <h3>Of note</h3>
+          <ul class="notable" id="notable"></ul>
+        </section>
+      </div>
+
+      <footer class="post-foot">
+        <p class="lobby-hint" id="post-hint"></p>
+        <button type="button" class="primary big" id="btn-return">Return to lobby</button>
+      </footer>
+    </div>
+  </section>
+
   <header class="topbar">
     <div class="brand">
       <span class="brand-dot"></span>
@@ -40,6 +148,18 @@
       shows one panel at a time rather than five stacked cards.
     -->
     <section class="stage">
+      <div class="hud" id="hud">
+        <span class="hud-mode" id="hud-mode"></span>
+        <div class="hud-score" id="hud-score"></div>
+        <span class="hud-clock" id="hud-clock">—</span>
+      </div>
+
+      <div class="brief-banner" id="brief-banner" hidden>
+        <b id="brief-clock">60</b>
+        <span>seconds to write the prompt your fighter carries in. <em id="brief-count"></em></span>
+        <button type="button" class="ghost" id="btn-skip-brief">Start now</button>
+      </div>
+
       <canvas id="arena" aria-label="Prompt Wars arena"></canvas>
 
       <section class="focusbar" id="focusbar" aria-live="polite">
@@ -114,8 +234,8 @@
     </aside>
 
     <aside class="panel">
-      <section class="card">
-        <h2>Enter the arena</h2>
+      <section class="card" id="deploy-card">
+        <h2>Your fighter <em id="deploy-phase"></em></h2>
         <form id="join-form" autocomplete="off">
           <div class="row">
             <label class="grow">

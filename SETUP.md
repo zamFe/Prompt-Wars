@@ -285,7 +285,8 @@ npm run doctor    # diagnose an offline model brain
 
 `test/sim.test.js` runs the arena headlessly in Node — weapon balance, cone
 geometry, walls blocking sight and bullets, the queue, both death cooldowns,
-loot, tool clamping, prompt parsing, bubbles, the private operator channel,
+loot, map symmetry, the phase machine, mode scoring, lives, flags, tool
+clamping, prompt parsing, bubbles, the private operator channel,
 assists, champion scoring, and a full 12-agent two-minute match.
 `test/model-proxy.test.js` runs the real server against a stub Messages API and
 checks the request shape, the tool-call round trip, operator messages reaching

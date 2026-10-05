@@ -10,7 +10,8 @@ import { createParticipant } from '../public/src/lobby.js';
 import { createLocalBrain, parsePrompt } from '../public/src/brains/local.js';
 import { buildSnapshot } from '../public/src/sensors.js';
 import { normalizeAction, buildQueue, stepAction, describeAction, MOVE_DIRECTIONS, TOOL_SCHEMAS, TOOL_NAMES, TOOL_SUMMARIES } from '../public/src/actions.js';
-import { hasLineOfSight, castRay, clearance, resolveCollision } from '../public/src/arena.js';
+import { hasLineOfSight, castRay, clearance, resolveCollision, MAPS, setMap, baseOf, currentMap } from '../public/src/arena.js';
+import { createMatch, PHASES, MODES, missionBriefing } from '../public/src/match.js';
 import { WEAPONS, AGENT, WORLD, LOBBY, VISION, MOVE, CHAT, COMMS, PULSE, HARD_RULES } from '../public/src/config.js';
 import { extractChat, extractSpeech, wrapChat, tidy } from '../public/src/chat.js';
 import { messageAgent, drainInbox, operatorBlock, briefingFor, amendmentsBlock, ORDER_AUTHORITY } from '../public/src/comms.js';
@@ -1074,6 +1075,334 @@ asyncTest('an order change outlives the turn that carried it', async () => {
     'and the order survived it - this is what made Turner revert to his opening orders');
   assert.match(latest[0].content, /THESE WIN/);
   delete globalThis.claude;
+});
+
+console.log('\n-- maps ----------------------------------------------------------');
+
+test('every map is point-symmetric, so two bases are a fair fight', () => {
+  const key = (w) => `${w.x},${w.y},${w.w},${w.h}`;
+  for (const map of MAPS) {
+    const have = new Set(map.walls.map(key));
+    const rotated = map.walls.map((w) => key({ x: WORLD.size - w.x - w.w, y: WORLD.size - w.y - w.h, w: w.w, h: w.h }));
+    const missing = rotated.filter((r) => !have.has(r));
+    assert.deepEqual(missing, [], `${map.id} is not the same rotated 180 degrees`);
+  }
+});
+
+test('both bases stand in open ground on every map', () => {
+  for (const map of MAPS) {
+    setMap(map.id);
+    for (const team of ['a', 'b']) {
+      const base = baseOf(team);
+      assert.ok(clearance(base.x, base.y) > WORLD.agentRadius * 2,
+        `${map.id} base ${team} has only ${Math.round(clearance(base.x, base.y))} units of room`);
+    }
+  }
+  setMap('crossfire');
+  assert.equal(currentMap().id, 'crossfire');
+});
+
+console.log('\n-- game modes ----------------------------------------------------');
+
+/** A world with a match attached, ready to start a round. */
+function makeMatch(settings = {}, { fighters = 4, decide = () => ({ actions: [] }) } = {}) {
+  const brain = { id: 'test', decide: async (s, p) => decide(s, p) };
+  const world = new World({ seed: 99, brains: { local: brain } });
+  const events = [];
+  const match = createMatch({ world, onEvent: (text) => events.push(text) });
+  world.match = match;
+  match.configure({ roundSeconds: 60, ...settings });
+  match.toLobby();
+
+  for (let i = 0; i < fighters; i++) {
+    const p = createParticipant({ name: `P${i}`, prompt: 'fight', brainKind: 'local', colorIndex: i });
+    if (match.isTeamMode) p.team = i % 2 === 0 ? 'a' : 'b';
+    world.lobby.participants.set(p.id, p);
+  }
+  // The briefing minute has a floor of its own, so a test that only wants a
+  // live round skips it rather than sitting through it.
+  const start = () => {
+    match.openBriefing();
+    match.goLive();
+  };
+  return { world, match, events, start };
+}
+
+test('a round walks from the lobby to the podium and back', () => {
+  const { world, match } = makeMatch();
+  assert.equal(match.phase, PHASES.lobby);
+  assert.equal(world.agents.length, 0, 'nobody is in the arena before a round starts');
+
+  match.openBriefing();
+  assert.equal(match.phase, PHASES.briefing);
+  assert.equal(world.agents.length, 0, 'still nobody - this is the writing minute');
+
+  match.update(match.settings.briefSeconds + 0.1);
+  assert.equal(match.phase, PHASES.live, 'the briefing clock starts the round by itself');
+  assert.equal(world.agents.length, 4, 'everyone in the lobby is now in the arena');
+
+  match.finish('time');
+  assert.equal(match.phase, PHASES.postgame);
+  assert.ok(match.results, 'a round that ended has a result');
+
+  match.toLobby();
+  assert.equal(match.phase, PHASES.lobby);
+  assert.equal(world.lobby.list().length, 4, 'the lobby survives the round');
+  assert.equal(world.agents.length, 0, 'the arena does not');
+});
+
+test('the lobby settings are clamped, not trusted', () => {
+  const { match } = makeMatch();
+  match.configure({ mode: 'nonsense', map: 'nowhere', roundSeconds: 999999, lives: -4, briefSeconds: 0 });
+  const s = match.settings;
+  assert.equal(s.mode, 'ffa', 'an unknown mode falls back');
+  assert.equal(s.map, MAPS[0].id, 'as does an unknown map');
+  assert.ok(s.roundSeconds <= 1800 && s.roundSeconds >= 60, s.roundSeconds);
+  assert.equal(s.lives, 0, 'clamped to the floor, which means endless');
+  assert.ok(s.briefSeconds >= 15);
+});
+
+test('a team mode puts each side at its own base, and keeps fire off its own', () => {
+  const { world, match, start } = makeMatch({ mode: 'tdm' });
+  start();
+
+  for (const agent of world.agents) {
+    const home = baseOf(agent.team);
+    const away = Math.hypot(agent.x - home.x, agent.y - home.y);
+    assert.ok(away < 260, `${agent.name} spawned ${Math.round(away)} units from its own base`);
+  }
+
+  // Everyone is untouchable for a moment after spawning, which is exactly how
+  // long this test has been running.
+  world.time += 3;
+
+  const [one, two] = world.agents.filter((a) => a.team === 'a');
+  const enemy = world.agents.find((a) => a.team === 'b');
+  assert.equal(match.canDamage(one, two), false, 'your own side is not a target');
+  assert.equal(match.canDamage(one, enemy), true, 'the other side is');
+
+  const before = two.hp;
+  world.applyDamage(two, 40, one, 'Pistol');
+  assert.equal(two.hp, before, 'friendly fire does nothing at all');
+  world.applyDamage(enemy, 40, one, 'Pistol');
+  assert.ok(enemy.hp < 100, 'an enemy still takes it');
+});
+
+test('only team deathmatch scores on a kill', () => {
+  for (const [mode, expected] of [['tdm', 1], ['ctf', 0], ['ffa', 0]]) {
+    const { world, match, start } = makeMatch({ mode });
+    start();
+    const killer = match.isTeamMode ? world.agents.find((a) => a.team === 'a') : world.agents[0];
+    const victim = match.isTeamMode ? world.agents.find((a) => a.team === 'b') : world.agents[1];
+    world.killAgent(victim, killer);
+    const scored = mode === 'ffa' ? 0 : match.scores.a;
+    assert.equal(scored, expected, `${mode} scored ${scored} for a kill`);
+    assert.equal(killer.participant.kills, 1, 'a kill is still a kill on the scoreboard');
+  }
+});
+
+test('lives run out and you watch the rest of the round', () => {
+  const { world, match, start } = makeMatch({ lives: 2 }, { fighters: 3 });
+  start();
+
+  const participant = world.lobby.list()[0];
+  assert.equal(participant.livesLeft, 2);
+
+  world.killAgent(participant.agent, world.agents.find((a) => a.participant !== participant));
+  assert.equal(participant.livesLeft, 1);
+  assert.equal(participant.status, 'cooldown', 'one life left means a respawn timer');
+
+  world.time += 10;
+  world.lobby.update();
+  assert.equal(participant.status, 'live', 'and then you are back');
+
+  world.killAgent(participant.agent, world.agents.find((a) => a.participant !== participant));
+  assert.equal(participant.livesLeft, 0);
+  assert.equal(participant.status, 'eliminated', 'out of lives is out of the round');
+
+  world.time += 120;
+  world.lobby.update();
+  assert.equal(participant.status, 'eliminated', 'and a spectator does not come back');
+  assert.ok(!world.agents.some((a) => a.participant === participant));
+});
+
+test('endless lives fall back to the open arena timers', () => {
+  const { world, match, start } = makeMatch({ lives: 0 });
+  start();
+  const participant = world.lobby.list()[0];
+  world.killAgent(participant.agent, world.agents[1]);
+  assert.equal(participant.status, 'cooldown');
+  assert.equal(Math.round(participant.readyAt - world.time), LOBBY.respawnCooldown,
+    'the original drop-in cooldown, which is what endless lives means');
+});
+
+test('a flag is taken, dropped where you fall, and brought home for a point', () => {
+  const { world, match, events, start } = makeMatch({ mode: 'ctf' });
+  start();
+
+  const runner = world.agents.find((a) => a.team === 'a');
+  const theirFlag = match.flags.b;
+  const ourBase = baseOf('a');
+
+  // Walk onto their flag.
+  runner.x = theirFlag.x;
+  runner.y = theirFlag.y;
+  match.update(1 / 60);
+  assert.equal(match.flags.b.state, 'carried');
+  assert.equal(runner.carrying, 'b');
+
+  // Die on the way back: the flag stays where you fell.
+  const where = { x: 700, y: 700 };
+  runner.x = where.x;
+  runner.y = where.y;
+  match.update(1 / 60);
+  world.killAgent(runner, world.agents.find((a) => a.team === 'b'));
+  match.update(1 / 60);
+  assert.equal(match.flags.b.state, 'dropped');
+  assert.equal(Math.round(match.flags.b.x), where.x, 'dropped exactly where the carrier died');
+  assert.equal(match.scores.a, 0, 'and nothing has been scored');
+
+  // A teammate picks it up and walks it home.
+  const second = world.agents.find((a) => a.team === 'a');
+  second.x = match.flags.b.x;
+  second.y = match.flags.b.y;
+  match.update(1 / 60);
+  assert.equal(match.flags.b.carrier, second.id);
+
+  second.x = ourBase.x;
+  second.y = ourBase.y;
+  match.update(1 / 60);
+  assert.equal(match.scores.a, 1, 'a capture');
+  assert.equal(match.flags.b.state, 'home', 'and their flag goes back to their base');
+  assert.equal(second.participant.captures, 1);
+  assert.ok(events.some((e) => /captured the flag/.test(e)), events.join(' | '));
+});
+
+test('a capture only counts while your own flag is at home', () => {
+  const { world, match, start } = makeMatch({ mode: 'ctf' });
+  start();
+
+  const ours = world.agents.find((a) => a.team === 'a');
+  const theirs = world.agents.find((a) => a.team === 'b');
+
+  // They take ours, we take theirs, and we run home anyway.
+  theirs.x = match.flags.a.x;
+  theirs.y = match.flags.a.y;
+  ours.x = match.flags.b.x;
+  ours.y = match.flags.b.y;
+  match.update(1 / 60);
+  assert.equal(match.flags.a.state, 'carried');
+  assert.equal(match.flags.b.state, 'carried');
+
+  const home = baseOf('a');
+  ours.x = home.x;
+  ours.y = home.y;
+  match.update(1 / 60);
+  assert.equal(match.scores.a, 0, 'no point while your own flag is out');
+  assert.equal(ours.carrying, 'b', 'you are still holding theirs');
+});
+
+test('a dropped flag takes itself home rather than stalling the round', () => {
+  const { world, match, start } = makeMatch({ mode: 'ctf' });
+  start();
+
+  const runner = world.agents.find((a) => a.team === 'a');
+  runner.x = match.flags.b.x;
+  runner.y = match.flags.b.y;
+  match.update(1 / 60);
+  runner.x = 700;
+  runner.y = 400;
+  match.update(1 / 60);
+  world.killAgent(runner, world.agents.find((a) => a.team === 'b'));
+  match.update(1 / 60);
+  assert.equal(match.flags.b.state, 'dropped');
+
+  world.time += 31;
+  match.update(1 / 60);
+  assert.equal(match.flags.b.state, 'home', 'it goes back on its own after half a minute');
+});
+
+test('the round ends early when one side is all that is left', () => {
+  const { world, match, start } = makeMatch({ mode: 'tdm', lives: 1 }, { fighters: 2 });
+  start();
+  assert.equal(match.phase, PHASES.live);
+
+  const [first, second] = world.agents;
+  world.killAgent(second, first);
+  match.update(1 / 60);
+
+  assert.equal(match.phase, PHASES.postgame);
+  assert.equal(match.results.reason, 'eliminated');
+});
+
+test('the result carries a podium, a scoreboard and something to say about it', () => {
+  const { world, match, start } = makeMatch({ mode: 'ffa' });
+  start();
+
+  world.time += 30;
+  const [a, b, c] = world.agents;
+  a.participant.kills = 3;
+  a.participant.damageDealt = 240;
+  a.participant.pelletsFired = 10;
+  a.participant.hits = 8;
+  b.participant.kills = 1;
+  c.participant.assists = 2;
+  match.finish('time');
+
+  const r = match.results;
+  assert.equal(r.winner.name, a.name, 'most kills wins a free-for-all');
+  assert.equal(r.podium.length, 3);
+  assert.equal(r.podium[0].name, a.name);
+  assert.equal(r.rows.length, 4, 'everyone is on the scoreboard');
+  assert.equal(r.rows[0].accuracy, 80, 'accuracy is hits per pellet, so a shotgun reads like a pistol');
+  assert.ok(r.notable.some((n) => n.label === 'Most damage' && n.name === a.name), JSON.stringify(r.notable));
+  assert.ok(r.rows.every((row) => row.longestLife > 0),
+    'a fighter who was never killed still has a longest life');
+  assert.ok(r.notable.some((n) => n.label === 'Most assists' && n.name === c.name));
+});
+
+test('an exact tie has no winner and nobody gives a speech', () => {
+  const { world, match, start } = makeMatch({ mode: 'ffa' }, { fighters: 2 });
+  start();
+  match.finish('time');
+  assert.equal(match.results.winner, null, 'two fighters with identical nothing is a draw');
+});
+
+test('a fighter is told which game it is in, and what wins it', () => {
+  const brief = missionBriefing({
+    modeId: 'ctf', modeName: MODES.ctf.name, briefing: MODES.ctf.briefing,
+    team: 'a', teamName: 'Vermillion', roundSeconds: 600, lives: 3,
+  });
+  assert.match(brief, /Capture the flag/);
+  assert.match(brief, /Kills score NOTHING/);
+  assert.match(brief, /You are on Vermillion/);
+  assert.match(brief, /10 minutes/);
+  assert.match(brief, /3 lives/);
+
+  const endless = missionBriefing({ modeName: 'x', briefing: 'y', roundSeconds: 600, lives: 0 });
+  assert.match(endless, /come back indefinitely/);
+  assert.equal(missionBriefing(null), '');
+});
+
+test('a guest mirrors the host rather than running the match itself', () => {
+  const { match } = makeMatch();
+  match.applyState({
+    phase: PHASES.live,
+    settings: { mode: 'ctf', map: 'open-range', roundSeconds: 300, briefSeconds: 20, lives: 5, respawnSeconds: 5 },
+    scores: { a: 2, b: 1 },
+    flags: { a: { state: 'dropped', x: 400, y: 400 }, b: { state: 'home', x: 1230, y: 700 } },
+    results: null,
+  });
+
+  assert.equal(match.phase, PHASES.live);
+  assert.equal(match.settings.map, 'open-range');
+  assert.equal(currentMap().id, 'open-range', 'and the map it is rendering follows');
+  assert.deepEqual(match.scores, { a: 2, b: 1 });
+  assert.equal(match.flags.a.state, 'dropped');
+
+  match.setRemaining(42);
+  assert.equal(Math.round(match.remaining), 42);
+  setMap('crossfire');
 });
 
 console.log('\n-- a full match --------------------------------------------------');

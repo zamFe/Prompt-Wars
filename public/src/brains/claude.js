@@ -59,6 +59,7 @@ export function createClaudeBrain({ endpoint = '/api/decide', fallback = null } 
             observation: renderSnapshotText(snapshot),
             results: memory?.results ?? [],
             messages,
+            mission: participant.mission ?? null,
           }),
           signal: controller.signal,
         });

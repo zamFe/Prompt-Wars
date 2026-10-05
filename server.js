@@ -14,6 +14,7 @@ import { TOOL_SCHEMAS } from './public/src/actions.js';
 import { WEAPONS, MOVE, VISION, AGENT, LOBBY, WORLD, HEALTH_PACKS, CHAT, COMMS, BRAIN } from './public/src/config.js';
 import { extractSpeech } from './public/src/chat.js';
 import { operatorBlock, amendmentsBlock, recordAmendments, ORDER_AUTHORITY } from './public/src/comms.js';
+import { missionBriefing } from './public/src/match.js';
 import { loadDotEnv, maskValue } from './tools/env.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -163,8 +164,9 @@ Do not reply with prose instead of tool calls.`;
  */
 const sessions = new Map();
 
-function ordersBlock(prompt, name, amendments = []) {
+function ordersBlock(prompt, name, amendments = [], mission = null) {
   return (
+    (mission ? `${missionBriefing(mission)}\n\n` : '') +
     `You are the sphere named "${name}".\n\n` +
     `Your operator gave you these standing orders when they deployed you. They are your doctrine until your ` +
     `operator changes them, which they may do at any time on your private channel. They outrank ` +
@@ -185,7 +187,7 @@ function getSession(agentId, prompt, name) {
     for (const [id, entry] of sessions) if (now - entry.lastAt > SESSION_IDLE_MS) sessions.delete(id);
     while (sessions.size >= MAX_SESSIONS) sessions.delete(sessions.keys().next().value);
 
-    session = { messages: [], prompt, name, amendments: [], turns: 0, createdAt: now, lastAt: now };
+    session = { messages: [], prompt, name, amendments: [], mission: null, turns: 0, createdAt: now, lastAt: now };
     sessions.set(agentId, session);
   }
   session.lastAt = Date.now();
@@ -362,10 +364,13 @@ function release() {
   else inFlight -= 1;
 }
 
-async function decide({ agentId, prompt, observation, name, results, messages }) {
+async function decide({ agentId, prompt, observation, name, results, messages, mission }) {
   await acquire();
   try {
     const session = getSession(agentId, prompt, name);
+    // Fixed for the character's whole life, so it is set once and then lives
+    // in the cached orders block rather than in every observation.
+    session.mission ??= mission ?? null;
     // An order change joins the cached orders block, which is the one place in
     // this conversation that is never trimmed. The turn carries it as well, so
     // the agent answers it now; this copy is what makes it stick.
@@ -380,10 +385,10 @@ async function decide({ agentId, prompt, observation, name, results, messages })
       // and share one cache entry, while each character's orders get their own,
       // stable for that character's whole life.
       system: COMPAT
-        ? `${SYSTEM_PROMPT}\n\n${ordersBlock(session.prompt, session.name, session.amendments)}`
+        ? `${SYSTEM_PROMPT}\n\n${ordersBlock(session.prompt, session.name, session.amendments, session.mission)}`
         : [
             { type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } },
-            { type: 'text', text: ordersBlock(session.prompt, session.name, session.amendments), cache_control: { type: 'ephemeral' } },
+            { type: 'text', text: ordersBlock(session.prompt, session.name, session.amendments, session.mission), cache_control: { type: 'ephemeral' } },
           ],
       ...(COMPAT
         ? {}
@@ -594,7 +599,21 @@ const server = http.createServer(async (req, res) => {
         : [];
       if (!prompt || !observation) return sendJson(res, 400, { error: 'prompt and observation are required' });
 
-      const result = await decide({ agentId, prompt, observation, name, results, messages });
+      // The round's own briefing: which mode, which side, how long, how many
+      // lives. Shaped, not trusted - it is rendered from fixed strings here.
+      const mission = body.mission && typeof body.mission === 'object'
+        ? {
+            modeId: String(body.mission.modeId ?? '').slice(0, 12),
+            modeName: String(body.mission.modeName ?? '').slice(0, 40),
+            briefing: String(body.mission.briefing ?? '').slice(0, 1200),
+            team: body.mission.team === 'a' || body.mission.team === 'b' ? body.mission.team : null,
+            teamName: String(body.mission.teamName ?? '').slice(0, 40) || null,
+            roundSeconds: Math.max(0, Math.min(7200, Number(body.mission.roundSeconds) || 0)),
+            lives: Math.max(0, Math.min(99, Number(body.mission.lives) || 0)),
+          }
+        : null;
+
+      const result = await decide({ agentId, prompt, observation, name, results, messages, mission });
       return sendJson(res, 200, result);
     } catch (error) {
       const declared = error?.statusCode ?? error?.status;

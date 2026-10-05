@@ -27,14 +27,23 @@ export function createParticipant({ name, prompt, brainKind, colorIndex }) {
     amendments: [],
     messagesSent: 0,
     messagesRead: 0,
-    status: 'queued',      // 'live' | 'queued' | 'cooldown'
+    // 'live' | 'queued' | 'cooldown' | 'eliminated' (out of lives, spectating)
+    status: 'queued',
     readyAt: 0,
+    // Which side, in a team mode. Null in a free-for-all.
+    team: null,
+    livesLeft: Infinity,
     kills: 0,
     assists: 0,
     deaths: 0,
     damageDealt: 0,
     damageTaken: 0,
     shotsFired: 0,
+    pelletsFired: 0,
+    hits: 0,
+    captures: 0,
+    returns: 0,
+    longestLife: 0,
     decisions: 0,
     lastError: null,
     joinedAt: 0,
@@ -93,12 +102,19 @@ export class Lobby {
    * before the body was removed, since removing it changes the answer.
    */
   onDeath(participant, congested = this.isCongested()) {
-    participant.deaths += 1;
     const wait = congested ? LOBBY.congestedCooldown : LOBBY.respawnCooldown;
     participant.status = 'cooldown';
     participant.readyAt = this.world.time + wait;
     participant.lastCooldown = wait;
     return wait;
+  }
+
+  /** Sit a participant out for a fixed time - a round's own respawn timer. */
+  bench(participant, seconds) {
+    participant.status = 'cooldown';
+    participant.readyAt = this.world.time + seconds;
+    participant.lastCooldown = seconds;
+    return seconds;
   }
 
   /** Move expired cooldowns back into the queue, then fill any free slots. */
@@ -115,10 +131,14 @@ export class Lobby {
   /** Spawn queued participants while slots remain. Returns the ids spawned. */
   pump() {
     const spawned = [];
+    // Between rounds the arena stays empty however long the queue is.
+    if (!this.world.allowSpawning) return spawned;
+
     while (this.queue.length && !this.isFull) {
       const id = this.queue.shift();
       const participant = this.participants.get(id);
       if (!participant || participant.status === 'live') continue;
+      if (participant.status === 'eliminated') continue;       // watching the rest
       if (participant.status === 'cooldown' && this.world.time < participant.readyAt) continue;
       this.world.spawnAgent(participant);
       participant.status = 'live';

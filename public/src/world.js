@@ -1,14 +1,18 @@
 // The simulation: bodies, bullets, loot, damage and the decision loop.
 
-import { WORLD, MOVE, WEAPONS, AGENT, HEALTH_PACKS, LOOT, VISION, BRAIN, AGENT_COLORS, CHAT, COMMS, PULSE, HARD_RULES } from './config.js';
+import { WORLD, MOVE, WEAPONS, AGENT, HEALTH_PACKS, LOOT, VISION, BRAIN, AGENT_COLORS, CHAT, COMMS, PULSE, HARD_RULES, TEAMS } from './config.js';
 import { makeRng, clamp, dist, toRad, normalizeDeg, randRange, weightedPick, pointSegmentDistance, round0 } from './util.js';
-import { findOpenPosition, resolveCollision, hasLineOfSight, castRay } from './arena.js';
+import { findOpenPosition, resolveCollision, hasLineOfSight, castRay, baseOf } from './arena.js';
 import { buildSnapshot, bearingTo } from './sensors.js';
 import { buildQueue, stepAction, describeAction, describeOutcome } from './actions.js';
 import { enforce, hasConstraints, describeConstraints } from './constraints.js';
 import { Lobby } from './lobby.js';
 
 const SPAWN_PROTECTION = 1.5;
+
+/** Facing from a base toward the middle of the arena. */
+const bearingFromBase = (home) =>
+  (Math.atan2(WORLD.size / 2 - home.y, WORLD.size / 2 - home.x) * 180) / Math.PI;
 let nextAgentId = 1;
 let nextNetId = 1;
 let nextPickupId = 1;
@@ -31,6 +35,12 @@ export class World {
     this.onReply = null;                // set by the client to deliver a private answer to an operator
     this.nextLootAt = randRange(this.rng, ...LOOT.spawnCooldown);
     this.paused = false;
+    // The match owns the rules of the round; the world owns the bodies. Set by
+    // main.js once both exist. With no match attached the arena behaves exactly
+    // as it did before there were modes: open, endless, drop-in.
+    this.match = null;
+    // Bodies only enter the arena while a round is running.
+    this.allowSpawning = true;
   }
 
   get queue() {
@@ -97,9 +107,13 @@ export class World {
 
   spawnAgent(participant) {
     const weapon = WEAPONS[AGENT.startWeapon];
+    // In a team mode you come back in at your own base, facing the arena;
+    // in a free-for-all you appear anywhere there is room.
+    const home = participant.team ? baseOf(participant.team) : null;
     const spot = findOpenPosition(this.rng, {
       avoid: this.agents.filter((a) => a.alive),
-      minAvoidDistance: 300,
+      minAvoidDistance: home ? 90 : 300,
+      near: home ? { ...home, radius: 180 } : null,
     });
 
     const agent = {
@@ -108,10 +122,15 @@ export class World {
       netId: nextNetId++,
       participant,
       name: participant.name,
+      team: participant.team ?? null,
+      // The flag this body is carrying, in a mode that has flags.
+      carrying: null,
       color: AGENT_COLORS[participant.colorIndex % AGENT_COLORS.length],
       x: spot.x,
       y: spot.y,
-      facing: randRange(this.rng, -180, 180),
+      // Spawning at your own base, you look out across the arena rather than
+      // into the wall behind you.
+      facing: home ? bearingFromBase(home) : randRange(this.rng, -180, 180),
       aimOffset: 0,
       hp: AGENT.maxHp,
       alive: true,
@@ -197,15 +216,103 @@ export class World {
     }
 
     this.recordChampion(agent);
+    this.match?.onKill(agent, killer);
+
+    const participant = agent.participant;
+    participant.deaths += 1;
+    participant.longestLife = Math.max(participant.longestLife ?? 0, this.time - agent.spawnedAt);
 
     // A life's conversation dies with it: the next life starts with no memory.
     for (const brain of Object.values(this.brains ?? {})) brain.endSession?.(agent.id);
 
-    const wait = this.lobby.onDeath(agent.participant, congested);
-    agent.participant.agent = null;
+    participant.agent = null;
     this.agents = this.agents.filter((a) => a !== agent);
-    this.addLog(`${agent.name} may rejoin in ${Math.round(wait)}s.`, 'info');
+
+    // Who decides when you come back: the match, when a round is running, and
+    // otherwise the open arena's own drop-in timers.
+    const verdict = this.match?.spendLife(participant) ?? null;
+
+    if (verdict?.eliminated) {
+      this.addLog(`${agent.name} is out of lives — spectating.`, 'kill');
+    } else if (verdict?.respawn && verdict.wait !== null && verdict.wait !== undefined) {
+      this.lobby.bench(participant, verdict.wait);
+      this.addLog(`${agent.name} respawns in ${Math.round(verdict.wait)}s.`, 'info');
+    } else {
+      const wait = this.lobby.onDeath(participant, congested);
+      this.addLog(`${agent.name} may rejoin in ${Math.round(wait)}s.`, 'info');
+    }
     this.lobby.pump();
+  }
+
+  /**
+   * Strip the arena back to nothing: no bodies, no bullets, no loot. Used
+   * between rounds, and by the owner's clear button.
+   */
+  clearArena({ keepParticipants = false } = {}) {
+    for (const participant of this.lobby.list()) {
+      if (keepParticipants) {
+        this.removeAgentFor(participant.id);
+        participant.agent = null;
+        participant.status = 'queued';
+      } else {
+        this.lobby.remove(participant.id);
+      }
+    }
+    this.agents = keepParticipants ? [] : this.agents;
+    this.lobby.queue = keepParticipants ? this.lobby.list().map((p) => p.id) : [];
+    this.projectiles = [];
+    this.pickups = [];
+    this.effects = [];
+  }
+
+  /**
+   * A round is starting. Everyone in the lobby comes in with a clean sheet and
+   * a full set of lives; the scoreboard from the last round is already on the
+   * post-game screen, so nothing is lost by resetting it here.
+   */
+  beginRound(settings, mode) {
+    this.clearArena({ keepParticipants: true });
+    this.log = [];
+    this.time = 0;
+    this.nextLootAt = randRange(this.rng, ...LOOT.spawnCooldown);
+
+    for (const participant of this.lobby.list()) {
+      participant.kills = 0;
+      participant.deaths = 0;
+      participant.assists = 0;
+      participant.damageDealt = 0;
+      participant.damageTaken = 0;
+      participant.shotsFired = 0;
+      participant.pelletsFired = 0;
+      participant.hits = 0;
+      participant.decisions = 0;
+      participant.captures = 0;
+      participant.returns = 0;
+      participant.longestLife = 0;
+      participant.lastError = null;
+      participant.livesLeft = settings.lives > 0 ? settings.lives : Infinity;
+      participant.status = 'queued';
+      if (!mode?.teams) participant.team = null;
+
+      // What this fighter is told about the round. Fixed for its whole life,
+      // so it belongs with the orders rather than in every observation.
+      participant.mission = mode
+        ? {
+            modeId: mode.id,
+            modeName: mode.name,
+            briefing: mode.briefing,
+            team: participant.team,
+            teamName: participant.team ? TEAMS[participant.team].name : null,
+            roundSeconds: settings.roundSeconds,
+            lives: settings.lives > 0 ? settings.lives : 0,
+          }
+        : null;
+    }
+
+    this.allowSpawning = true;
+    this.lobby.queue = this.lobby.list().map((p) => p.id);
+    this.lobby.pump();
+    this.addLog(`${mode?.name ?? 'Round'} started.`, 'join');
   }
 
   /** Every life ends with a score; the board keeps the ten best. */
@@ -230,6 +337,9 @@ export class World {
   applyDamage(target, amount, attacker, weaponName) {
     if (!target.alive) return;
     if (this.time < target.spawnProtectedUntil) return;
+    // Your own side is not a wall: shots pass through a teammate rather than
+    // punishing an agent for having one in front of it.
+    if (this.match && !this.match.canDamage(attacker, target)) return;
 
     const dealt = Math.min(amount, target.hp);
     target.hp -= amount;
@@ -238,6 +348,7 @@ export class World {
 
     if (attacker) {
       attacker.participant.damageDealt += dealt;
+      attacker.participant.hits = (attacker.participant.hits ?? 0) + 1;
       const record = target.recentDamage.get(attacker.participant.id) ?? { damage: 0, at: 0 };
       record.damage += dealt;
       record.at = this.time;
@@ -279,6 +390,8 @@ export class World {
     agent.ammo -= 1;
     agent.nextShotAt = this.time + weapon.timeBetweenShots;
     agent.participant.shotsFired += 1;
+    // Counted per pellet, so a shotgun's accuracy means the same as a pistol's.
+    agent.participant.pelletsFired = (agent.participant.pelletsFired ?? 0) + weapon.pellets;
     this.pulse(agent, 'fire');
 
     const baseAngle = agent.facing + agent.aimOffset;

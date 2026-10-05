@@ -122,6 +122,8 @@ const BARKS = {
     retreat: ['Falling back!', 'Not today.', 'Regrouping.'],
     loot: ['Mine.', 'Grabbing that.', 'Restocking.'],
     hurt: ['Where was that from?', 'Still up.', 'That stung.'],
+    flag: ['Got their flag!', 'Running it home!', 'Flag is mine!'],
+    defend: ['Our flag is out!', 'Getting it back.', 'Cover the base!'],
   },
   wary: {
     engage: ['Enemy spotted: {enemy}.', 'Contact, {enemy}.', 'Holding on {enemy}.', 'I see something.'],
@@ -130,6 +132,8 @@ const BARKS = {
     retreat: ['Breaking off.', 'Too exposed.', 'Backing away.'],
     loot: ['Medkit in reach.', 'Picking that up.', 'Supplies.'],
     hurt: ['Taking fire.', 'Hit.', 'Under fire.'],
+    flag: ['Flag taken. Moving.', 'Carrying — escort me.', 'Heading home.'],
+    defend: ['Our flag is down.', 'Recovering our flag.', 'Falling back to base.'],
   },
 };
 
@@ -248,6 +252,59 @@ export function decideFromTraits(s, traits, rng, state = {}) {
   const magazine = WEAPONS[s.self.weaponId]?.magazine ?? 3;
   if (!enemy && traits.eagerReload > 0.2 && s.self.ammo < magazine) {
     return { actions: [{ name: 'reload', input: {} }], note: 'topping up while clear' };
+  }
+
+  // --- the objective, in a mode that has one -------------------------------
+  // Kills score nothing in capture the flag, so an interpreter that only knows
+  // how to fight would wander a flag match for ten minutes. It plays the
+  // objective, and breaks off only for something already in its face.
+  if (s.objective) {
+    const o = s.objective;
+    const target = o.carrying
+      ? o.yourBase                                        // run it home
+      : o.yourFlag?.state === 'dropped' && o.yourFlag.distance < 420
+        ? o.yourFlag                                      // ours is out and close: get it back
+        : o.enemyFlag?.known
+          ? o.enemyFlag                                   // we can see theirs
+          : !o.yourFlag && enemy
+            ? null                                        // a fight in front of us is the objective
+            : o.enemyBase;                                // otherwise push toward their side
+
+    const cornered = enemy && enemy.distance < (o.carrying ? 170 : 260);
+    if (target && target.distance !== null && !cornered) {
+      // Walking into a wall for ten minutes is not an objective. This branch
+      // runs before the general wall-avoidance below, so it has to do its own.
+      if (s.walls.proximity.front < 80 && target.distance > 60) {
+        const side = s.walls.proximity.left > s.walls.proximity.right ? 'left' : 'right';
+        return {
+          actions: [
+            { name: 'turn', input: { direction: side, degrees: 55 } },
+            { name: 'move', input: { direction: 'forward', steps: 3 } },
+          ],
+          note: 'wall between me and the objective',
+          chat: eventLine,
+        };
+      }
+      const line = o.carrying
+        ? bark('flag', s, traits, rng, state)
+        : target === o.yourFlag ? bark('defend', s, traits, rng, state) : null;
+
+      if (Math.abs(target.bearing) > 22) {
+        return {
+          actions: [
+            { name: 'turn', input: { direction: target.bearing < 0 ? 'left' : 'right', degrees: clamp(Math.abs(target.bearing), 5, 180) } },
+            { name: 'move', input: { direction: 'forward', steps: 3 } },
+          ],
+          note: o.carrying ? 'carrying - turning for home' : 'turning toward the flag',
+          chat: eventLine ?? line,
+        };
+      }
+      return {
+        actions: [{ name: 'move', input: { direction: 'forward', steps: clamp(Math.round(target.distance / MOVE.stepDistance), 2, 8) } }],
+        note: o.carrying ? 'running the flag home' : 'moving on the flag',
+        chat: eventLine ?? line,
+      };
+    }
   }
 
   // --- fight ---------------------------------------------------------------
@@ -412,6 +469,15 @@ export function acknowledge(messages, before, after) {
     : 'Copy. Nothing in that I can act on.';
 }
 
+/**
+ * A line for the podium. The offline interpreter has no words of its own, so it
+ * picks from the voice its prompt reads in - the same split the barks use.
+ */
+const SPEECHES = {
+  bold: ['Told you.', 'Anyone else?', 'Easy.', 'Built for this.', 'Next arena.'],
+  wary: ['Good round.', 'That will do.', 'Held it together.', 'Job done.', 'Close one.'],
+};
+
 /** Brain object consumed by the world. */
 export function createLocalBrain({ thinkTime = [0.25, 0.6] } = {}) {
   const cache = new WeakMap();
@@ -438,6 +504,13 @@ export function createLocalBrain({ thinkTime = [0.25, 0.6] } = {}) {
         cache.set(participant, entry);
       }
       return entry;
+    },
+
+    /** @returns {Promise<string>} at most MATCH.speechLength characters. */
+    async victorySpeech(participant) {
+      const entry = this.traitsFor(participant);
+      const voice = entry.traits.aggression >= 0.5 ? SPEECHES.bold : SPEECHES.wary;
+      return voice[Math.floor(entry.rng() * voice.length)];
     },
 
     async decide(snapshot, participant, memory) {

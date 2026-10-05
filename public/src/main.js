@@ -11,10 +11,23 @@ import { PRESETS, DEMO_NAMES } from './presets.js';
 import { AGENT_COLORS, WORLD } from './config.js';
 import { createChatLog, createDirectLog } from './chatlog.js';
 import { messageAgent } from './comms.js';
+import { createMatch, PHASES, MODES } from './match.js';
+import { createScreens } from './screens.js';
 
 const usage = createUsageMeter({ onChange: (state) => ui?.renderUsage(state) });
 const brains = createBrains({ usage });
 const world = new World({ brains });
+
+// The match owns the phase, the rules and the clock; the world owns the bodies.
+const match = createMatch({
+  world,
+  onPhase: (state) => onPhaseChanged(state),
+  onEvent: (text, kind) => world.addLog(text, kind ?? 'info'),
+});
+world.match = match;
+// Nothing enters the arena until a round is actually being fought. The World's
+// own default is open, for the tests and for anyone using it without a match.
+world.allowSpawning = false;
 const renderer = new Renderer(document.getElementById('arena'));
 const chatLog = createChatLog();
 // The private channel. It has its own store because it has its own audience:
@@ -62,7 +75,7 @@ function uniqueName(base) {
   return name;
 }
 
-function join({ name, prompt, brainKind, tier, focus = true, ownerPeer = null, ownerId = null, mine = true }) {
+function join({ name, prompt, brainKind, tier, team = null, focus = true, ownerPeer = null, ownerId = null, mine = true }) {
   if (!name) return { ok: false, message: 'Give your agent a name.', tone: 'bad' };
   if (prompt.length < 12) {
     return { ok: false, message: 'Write a real prompt — at least a sentence of tactics.', tone: 'bad' };
@@ -84,6 +97,9 @@ function join({ name, prompt, brainKind, tier, focus = true, ownerPeer = null, o
     colorIndex: pickColorIndex(),
   });
   participant.tier = tier ?? DEFAULT_TIER;
+  // In a team mode a fighter joins whichever side is thinner, unless the owner
+  // has already put them somewhere.
+  participant.team = team ?? match.thinnestTeam();
   participant.ownerPeer = ownerPeer;
   participant.ownerId = ownerId;
   // Agents I deployed: only these may lock my tier selector or bill my account.
@@ -101,7 +117,11 @@ function join({ name, prompt, brainKind, tier, focus = true, ownerPeer = null, o
   // Deploying your own agent follows it in the focus bar. Filler agents must
   // not steal that focus back.
   if (focus) ui.focus(participant.id);
+  screens.renderLobby();
 
+  if (match.phase === PHASES.briefing) {
+    return { ok: true, message: `${participant.name} is ready. The round starts when the clock runs out.`, tone: 'ok' };
+  }
   return outcome === 'spawned'
     ? { ok: true, message: `${participant.name} is in the arena.`, tone: 'ok' }
     : {
@@ -111,19 +131,16 @@ function join({ name, prompt, brainKind, tier, focus = true, ownerPeer = null, o
       };
 }
 
-function addDemoAgents(count = 4) {
+function addDemoAgents(count = 4, team = null) {
   for (let i = 0; i < count; i++) {
     const preset = PRESETS[Math.floor(Math.random() * PRESETS.length)];
     const base = DEMO_NAMES[Math.floor(Math.random() * DEMO_NAMES.length)];
-    join({ name: base, prompt: preset.prompt, brainKind: 'local', focus: false, mine: false });
+    join({ name: base, prompt: preset.prompt, brainKind: 'local', focus: false, mine: false, team });
   }
 }
 
 function clearArena() {
-  for (const participant of world.lobby.list()) world.lobby.remove(participant.id);
-  world.projectiles = [];
-  world.pickups = [];
-  world.effects = [];
+  world.clearArena();
   world.log = [];
   world.champions = [];
   usedColors = new Set();
@@ -132,14 +149,21 @@ function clearArena() {
   // Those agents are gone, and so are the channels to them.
   directLog.clear();
   world.addLog('Arena cleared.', 'info');
+  screens.renderLobby();
 }
 
 const ui = new UI({
   world,
+  match,
   chatLog,
   directLog,
   onJoin: join,
   onMessage: deliver,
+  onSkipBrief: () => {
+    if (!role.canEdit) return;
+    if (net?.state.available && !net.isHost) return net.send(TOPICS.setup, { go: true });
+    match.goLive();
+  },
   onDemo: () => {
     if (net?.state.available && !net.isHost) return net.send(TOPICS.bots, { count: 4 });
     addDemoAgents(4);
@@ -157,6 +181,68 @@ const ui = new UI({
     return world.paused;
   },
 });
+
+// Who is at the keyboard. Resolved below once the viewer answers; until then a
+// page running on its own is its own owner.
+let role = { isOwner: true, canEdit: true, known: false };
+
+// The lobby, the title card and the post-game report. Everything that changes
+// the shared game is the owner's, and goes through the host.
+const screens = createScreens({
+  world,
+  match,
+  onConfigure: (patch) => {
+    if (!role.canEdit) return;
+    if (net?.state.available && !net.isHost) return net.send(TOPICS.setup, { settings: patch });
+    match.configure(patch);
+    screens.renderLobby();
+  },
+  onAddBot: () => {
+    if (!role.canEdit) return;
+    if (net?.state.available && !net.isHost) return net.send(TOPICS.bots, { count: 1 });
+    addDemoAgents(1, match.thinnestTeam());
+  },
+  onClearLobby: () => {
+    if (!role.canEdit) return;
+    if (net?.state.available && !net.isHost) return net.send(TOPICS.clear, {});
+    clearArena();
+  },
+  onStart: () => {
+    if (!role.canEdit) return;
+    if (net?.state.available && !net.isHost) return net.send(TOPICS.setup, { start: true });
+    match.openBriefing();
+  },
+  onReturn: () => {
+    if (!role.canEdit) return;
+    if (net?.state.available && !net.isHost) return net.send(TOPICS.setup, { lobby: true });
+    match.toLobby();
+  },
+  onSetTeam: (participantId, team) => {
+    if (!role.canEdit) return;
+    if (net?.state.available && !net.isHost) return net.send(TOPICS.setup, { team: { id: participantId, team } });
+    const participant = world.lobby.get(participantId);
+    if (participant) match.assign(participant, team);
+    screens.renderLobby();
+  },
+});
+
+/**
+ * One phase change, one place. Bodies only exist while a round is being
+ * fought, the canvas is only sized when it is actually on screen, and the
+ * host tells everyone else what just happened.
+ */
+function onPhaseChanged(state) {
+  world.allowSpawning = state.phase === PHASES.live;
+  screens.render();
+  ui.renderMatch();
+
+  if (state.phase === PHASES.live || state.phase === PHASES.briefing) {
+    // The canvas was display:none a moment ago, so it has no size yet.
+    requestAnimationFrame(() => renderer.resize());
+  }
+  if (state.phase === PHASES.postgame) askForVictorySpeech();
+  if (net?.isHost) net.send(TOPICS.phase, match.state);
+}
 
 // --------------------------------------------------------------- model check
 const REPO = 'https://github.com/zamFe/Prompt-Wars';
@@ -226,6 +312,7 @@ const net = createNet({
   makeGhost,
   onState: (state) => {
     ui.renderRoom(state);
+    screens.setRoom(state);
     // A guest never simulates: it renders what the host sends.
     simulating = state.isHost;
   },
@@ -304,27 +391,85 @@ net.onClearRequest = () => {
   if (net.isHost) clearArena();
 };
 
+// Guests follow the host's phase, score and clock rather than running any of
+// it themselves.
+net.onPhase = (state) => {
+  if (net.isHost) return;
+  match.applyState(state);
+  match.setRemaining(state?.remaining ?? null);
+  screens.render();
+  ui.renderMatch();
+};
+
+// Everything the owner decides in the lobby arrives here, on a topic the
+// platform already refuses from anyone below Editor.
+net.onSetupRequest = (data) => {
+  if (!net.isHost || !data) return;
+  if (data.settings) match.configure(data.settings);
+  if (data.team?.id) {
+    const participant = world.lobby.get(data.team.id);
+    if (participant) match.assign(participant, data.team.team);
+  }
+  if (data.start) match.openBriefing();
+  if (data.go) match.goLive();
+  if (data.lobby) match.toLobby();
+  screens.renderLobby();
+  net.send(TOPICS.phase, match.state);
+};
+
 net.connect().then((joined) => {
-  if (joined) ui.renderRoom(net.state);
+  if (joined) {
+    ui.renderRoom(net.state);
+    screens.setRoom(net.state);
+    // A page that joins late, or misses a message, is never more than a beat
+    // behind: the host repeats where everyone is once a second.
+    setInterval(() => {
+      if (net.isHost) net.send(TOPICS.phase, match.state);
+    }, 1000);
+  }
 });
 
 // --------------------------------------------------------------- who is here
 // Owner, Editor, Contributor and Viewer are different things on an artifact,
 // and the controls that change the shared arena belong to the first two.
 (async () => {
-  let role = { isOwner: false, canEdit: false, known: false };
+  let resolved = { isOwner: false, canEdit: false, known: false };
   try {
     const user = await globalThis.claude?.use?.('user');
     if (user) {
       const [isOwner, canEdit] = await Promise.all([user.isOwner(), user.canEdit()]);
-      role = { isOwner, canEdit, known: true };
+      resolved = { isOwner, canEdit, known: true };
     }
   } catch {
     // No viewer to ask: treat this as a page running on its own.
   }
   // Opened outside a viewer there is nobody to be below, so nothing is hidden.
-  ui.setRole(role.known ? role : { isOwner: true, canEdit: true, known: false });
+  role = resolved.known ? resolved : { isOwner: true, canEdit: true, known: false };
+  ui.setRole(role);
+  screens.setRole(role);
 })();
+
+/**
+ * The round is over and somebody won it. Ask that agent - not the page, the
+ * agent - for a line, on its own account, and put it on the podium.
+ */
+async function askForVictorySpeech() {
+  const results = match.results;
+  if (!results?.winner || results.speech) return;
+  const participant = world.lobby.get(results.winner.id);
+  if (!participant) return;
+
+  const brain = world.brains[participant.brainKind] ?? world.brains.local;
+  try {
+    const line = await (brain.victorySpeech?.(participant, results) ?? world.brains.local.victorySpeech(participant, results));
+    if (!line || match.phase !== PHASES.postgame) return;
+    results.speech = line;
+    screens.renderPostgame();
+    if (net?.isHost) net.send(TOPICS.phase, match.state);
+  } catch {
+    // A winner with nothing to say is not a broken game.
+  }
+}
 
 // The comms history lives on the server when there is one, so it survives a
 // reload; a static page keeps the same store in memory instead.
@@ -354,17 +499,22 @@ function frame(now) {
   previous = now;
   accumulator += elapsed;
 
+  // The match clock runs in every phase - that is what makes the briefing
+  // count down. Only the host advances it; a guest is told where it is.
+  if (simulating) match.update(elapsed);
+
   let guard = 0;
   while (accumulator >= STEP && guard++ < 8) {
-    if (simulating) world.update(STEP);
+    if (simulating && match.phase === PHASES.live) world.update(STEP);
     accumulator -= STEP;
   }
 
-  renderer.draw(world, { selectedId: ui.selectedId });
+  renderer.draw(world, { selectedId: ui.selectedId, match });
 
   // The focus bar carries sub-second action flashes, so it tracks the frame
   // rate; it diffs every field, so an unchanged frame writes no DOM at all.
   ui.renderFocusBar();
+  ui.renderMatch();
 
   // The heavier panels do not need 60 Hz.
   uiClock += elapsed;
@@ -376,9 +526,11 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 
-// The arena starts empty: the first thing in it is whatever someone deploys.
+// Nothing is in the arena, and nothing happens, until someone presses a key on
+// the title card and sets a game up.
 ui.update();
+screens.render();
 requestAnimationFrame(frame);
 
 // Handy for poking at the simulation from the console.
-window.promptWars = { world, brains, ui, renderer, join, addDemoAgents, clearArena, deliver, directLog, chatLog };
+window.promptWars = { world, match, brains, ui, screens, renderer, join, addDemoAgents, clearArena, deliver, directLog, chatLog };

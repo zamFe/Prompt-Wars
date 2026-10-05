@@ -142,6 +142,31 @@ export const PULSE = {
   championRows: 10,
 };
 
+// The two sides in a team mode. Agents keep their own sphere colour - you
+// still recognise a fighter by its colour - and wear the team as a ring.
+export const TEAMS = {
+  a: { id: 'a', name: 'Vermillion', short: 'VER', color: '#ff5c7a' },
+  b: { id: 'b', name: 'Azure', short: 'AZU', color: '#38bdf8' },
+};
+
+// What a round is, before the owner changes any of it in the lobby.
+export const MATCH = {
+  defaults: {
+    mode: 'ffa',
+    map: 'crossfire',
+    roundSeconds: 600,      // ten minutes
+    briefSeconds: 60,       // time to write the prompt your fighter carries in
+    lives: 3,               // 0 means endless, which is the old drop-in arena
+    respawnSeconds: 5,
+  },
+  limits: {
+    roundSeconds: [60, 1800],
+    briefSeconds: [15, 300],
+    lives: [0, 10],
+  },
+  speechLength: 50,         // the winner's victory speech
+};
+
 export const LOBBY = {
   respawnCooldown: 60,          // seconds before a dead agent may rejoin
   congestedCooldown: 600,       // when the arena is full and the queue is long

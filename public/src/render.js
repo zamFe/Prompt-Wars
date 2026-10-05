@@ -1,6 +1,6 @@
 // Canvas rendering. The arena is drawn in world units and scaled to fit.
 
-import { WORLD, VISION, COLORS, WEAPONS, AGENT, CHAT } from './config.js';
+import { WORLD, VISION, COLORS, WEAPONS, AGENT, CHAT, TEAMS } from './config.js';
 import { wrapChat } from './chat.js';
 import { WALLS, BORDER_THICKNESS, arenaSize } from './arena.js';
 import { toRad } from './util.js';
@@ -33,15 +33,17 @@ export class Renderer {
     };
   }
 
-  draw(world, { selectedId = null } = {}) {
+  draw(world, { selectedId = null, match = null } = {}) {
     const { ctx } = this;
     ctx.save();
     ctx.setTransform(this.scale, 0, 0, this.scale, 0, 0);
 
     this.drawFloor(ctx);
+    this.drawBases(ctx, match);
     this.drawWalls(ctx);
     for (const agent of world.agents) this.drawVisionCone(ctx, agent, agent.participant.id === selectedId);
     this.drawPickups(ctx, world);
+    this.drawFlags(ctx, world, match);
     this.drawProjectiles(ctx, world);
     for (const agent of world.agents) this.drawAgent(ctx, agent, agent.participant.id === selectedId, world.time);
     this.drawEffects(ctx, world);
@@ -118,6 +120,71 @@ export class Renderer {
     }
   }
 
+  /** The two home pads, in a team mode. Drawn under everything else. */
+  drawBases(ctx, match) {
+    if (!match?.isTeamMode) return;
+
+    for (const team of ['a', 'b']) {
+      const base = match.baseFor?.(team);
+      if (!base) continue;
+      const color = TEAMS[team].color;
+
+      ctx.fillStyle = this.withAlpha(color, 0.08);
+      ctx.beginPath();
+      ctx.arc(base.x, base.y, 46, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.strokeStyle = this.withAlpha(color, 0.5);
+      ctx.lineWidth = 2.5;
+      ctx.setLineDash([11, 9]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  }
+
+  /**
+   * Flags. A flag at home sits on its pad, a dropped one lies where its carrier
+   * fell, and a carried one rides just above whoever is running with it.
+   */
+  drawFlags(ctx, world, match) {
+    const flags = match?.flags;
+    if (!flags) return;
+
+    for (const flag of Object.values(flags)) {
+      const color = TEAMS[flag.team].color;
+      const carried = flag.state === 'carried';
+      const dropped = flag.state === 'dropped';
+      const y = flag.y - (carried ? WORLD.agentRadius + 20 : 0);
+
+      // A dropped flag pulses, because somebody has to go and get it.
+      ctx.globalAlpha = dropped ? 0.55 + 0.45 * Math.abs(Math.sin(world.time * 3)) : 1;
+
+      ctx.strokeStyle = '#0c0f16';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(flag.x, y + 13);
+      ctx.lineTo(flag.x, y - 15);
+      ctx.stroke();
+
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.moveTo(flag.x + 1, y - 15);
+      ctx.lineTo(flag.x + 19, y - 9);
+      ctx.lineTo(flag.x + 1, y - 2);
+      ctx.closePath();
+      ctx.fill();
+
+      if (dropped) {
+        ctx.strokeStyle = this.withAlpha(color, 0.6);
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(flag.x, flag.y, 22, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+    }
+  }
+
   drawPickups(ctx, world) {
     for (const item of world.pickups) {
       const fading = item.expiresAt - world.time < 6;
@@ -191,6 +258,16 @@ export class Renderer {
     ctx.beginPath();
     ctx.arc(agent.x, agent.y, r, 0, Math.PI * 2);
     ctx.fill();
+
+    // The side you are on, outside the health ring. The sphere keeps its own
+    // colour: you still recognise a fighter by it.
+    if (agent.team && TEAMS[agent.team]) {
+      ctx.strokeStyle = TEAMS[agent.team].color;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(agent.x, agent.y, r + 8.5, 0, Math.PI * 2);
+      ctx.stroke();
+    }
 
     // Health ring.
     const fraction = Math.max(0, agent.hp / AGENT.maxHp);
