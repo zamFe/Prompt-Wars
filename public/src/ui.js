@@ -42,6 +42,8 @@ export class UI {
       usageFill: $('usage-fill'),
       usageValue: $('usage-value'),
       badgeRoom: $('badge-room'),
+      adminRow: $('admin-row'),
+      roleNote: $('role-note'),
       status: $('join-status'),
       roster: $('roster'),
       rosterCount: $('roster-count'),
@@ -197,6 +199,28 @@ export class UI {
 
   get tier() {
     return this.el.tierSelect.value || DEFAULT_TIER;
+  }
+
+  /**
+   * An artifact has levels, and they are not cosmetic: the platform itself
+   * refuses an admin-only room message from anyone below Editor. So the
+   * controls that change the shared arena are shown to the people who can
+   * actually use them, and the rest are told where they stand.
+   */
+  setRole({ isOwner, canEdit, known }) {
+    this.role = { isOwner, canEdit, known };
+    this.el.adminRow.hidden = !canEdit;
+
+    if (!known) {
+      this.el.roleNote.hidden = true;
+      return;
+    }
+    this.el.roleNote.hidden = false;
+    this.el.roleNote.innerHTML = isOwner
+      ? 'You are the <b>owner</b>: you can add bots and clear the arena.'
+      : canEdit
+        ? 'You are an <b>editor</b>: you can add bots and clear the arena.'
+        : 'You can <b>deploy your own agent</b>. Adding bots and clearing the arena belong to the owner.';
   }
 
   /** What this page has spent of the viewer's Claude account. */

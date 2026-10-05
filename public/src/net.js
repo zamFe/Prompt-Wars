@@ -16,7 +16,12 @@
 
 import { WEAPONS } from './config.js';
 
-export const TOPICS = { tick: 'tick', roster: 'roster', join: 'join', plan: 'plan', need: 'need', part: 'part' };
+export const TOPICS = {
+  tick: 'tick', roster: 'roster', join: 'join', plan: 'plan', need: 'need', part: 'part',
+  // Admin-only: these are deliberately NOT opened to the interact level at
+  // publish time, so the platform refuses them from anyone below Editor.
+  bots: 'bots', clear: 'clear',
+};
 const TICK_HZ = 8;
 const WEAPON_IDS = Object.keys(WEAPONS);
 
@@ -159,6 +164,14 @@ export function createNet({ world, makeGhost, onState = () => {} } = {}) {
       }));
 
       // --- as a player: answer the host's request for my agent's decision ---
+      unsubscribes.push(room.on(TOPICS.bots, (msg) => {
+        if (state.isHost) this.onBotsRequest?.(msg.data, msg);
+      }));
+
+      unsubscribes.push(room.on(TOPICS.clear, (msg) => {
+        if (state.isHost) this.onClearRequest?.(msg.data, msg);
+      }));
+
       unsubscribes.push(room.on(TOPICS.need, (msg) => {
         if (state.isHost) return;
         this.onDecisionNeeded?.(msg.data);

@@ -396,6 +396,14 @@ button.ghost:hover { border-color: #394462; }
 
 #badge-room.live { color: var(--good); border-color: rgba(74, 222, 128, 0.4); }
 
+.role-note {
+  margin: -4px 0 0;
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+.role-note b { color: var(--text); font-weight: 600; }
+
 .tier-note {
   margin: -4px 0 0;
   color: var(--muted);
@@ -701,10 +709,11 @@ button:focus-visible, .roster li:focus-visible {
           </div>
           <p class="form-note" id="join-status"></p>
         </form>
-        <div class="row">
-          <button type="button" class="ghost" id="btn-demo">Add 4 demo agents</button>
+        <div class="row" id="admin-row">
+          <button type="button" class="ghost" id="btn-demo">Add 4 bots</button>
           <button type="button" class="ghost" id="btn-clear">Clear arena</button>
         </div>
+        <p class="role-note" id="role-note" hidden></p>
       </section>
 
       <section class="card">
@@ -3433,7 +3442,12 @@ function createUsageMeter({ budget = DEFAULT_BUDGET, onChange = () => {} } = {})
 //
 // Every failure here degrades to playing alone: the page is complete on its
 // own and the room only ever lights it up.
-const TOPICS = { tick: 'tick', roster: 'roster', join: 'join', plan: 'plan', need: 'need', part: 'part' };
+const TOPICS = {
+  tick: 'tick', roster: 'roster', join: 'join', plan: 'plan', need: 'need', part: 'part',
+  // Admin-only: these are deliberately NOT opened to the interact level at
+  // publish time, so the platform refuses them from anyone below Editor.
+  bots: 'bots', clear: 'clear',
+};
 const TICK_HZ = 8;
 const WEAPON_IDS = Object.keys(WEAPONS);
 
@@ -3575,6 +3589,14 @@ function createNet({ world, makeGhost, onState = () => {} } = {}) {
       }));
 
       // --- as a player: answer the host's request for my agent's decision ---
+      unsubscribes.push(room.on(TOPICS.bots, (msg) => {
+        if (state.isHost) this.onBotsRequest?.(msg.data, msg);
+      }));
+
+      unsubscribes.push(room.on(TOPICS.clear, (msg) => {
+        if (state.isHost) this.onClearRequest?.(msg.data, msg);
+      }));
+
       unsubscribes.push(room.on(TOPICS.need, (msg) => {
         if (state.isHost) return;
         this.onDecisionNeeded?.(msg.data);
@@ -4224,6 +4246,8 @@ class UI {
       usageFill: $('usage-fill'),
       usageValue: $('usage-value'),
       badgeRoom: $('badge-room'),
+      adminRow: $('admin-row'),
+      roleNote: $('role-note'),
       status: $('join-status'),
       roster: $('roster'),
       rosterCount: $('roster-count'),
@@ -4379,6 +4403,28 @@ class UI {
 
   get tier() {
     return this.el.tierSelect.value || DEFAULT_TIER;
+  }
+
+  /**
+   * An artifact has levels, and they are not cosmetic: the platform itself
+   * refuses an admin-only room message from anyone below Editor. So the
+   * controls that change the shared arena are shown to the people who can
+   * actually use them, and the rest are told where they stand.
+   */
+  setRole({ isOwner, canEdit, known }) {
+    this.role = { isOwner, canEdit, known };
+    this.el.adminRow.hidden = !canEdit;
+
+    if (!known) {
+      this.el.roleNote.hidden = true;
+      return;
+    }
+    this.el.roleNote.hidden = false;
+    this.el.roleNote.innerHTML = isOwner
+      ? 'You are the <b>owner</b>: you can add bots and clear the arena.'
+      : canEdit
+        ? 'You are an <b>editor</b>: you can add bots and clear the arena.'
+        : 'You can <b>deploy your own agent</b>. Adding bots and clearing the arena belong to the owner.';
   }
 
   /** What this page has spent of the viewer's Claude account. */
@@ -5078,8 +5124,14 @@ const ui = new UI({
   world,
   chatLog,
   onJoin: join,
-  onDemo: () => addDemoAgents(4),
-  onClear: clearArena,
+  onDemo: () => {
+    if (net?.state.available && !net.isHost) return net.send(TOPICS.bots, { count: 4 });
+    addDemoAgents(4);
+  },
+  onClear: () => {
+    if (net?.state.available && !net.isHost) return net.send(TOPICS.clear, {});
+    clearArena();
+  },
   onSelect: () => {
     ui.applyChatFocus();
     ui.update();
@@ -5211,9 +5263,36 @@ net.onDecisionNeeded = async (request) => {
   }
 };
 
+// Admin-only topics: the platform refuses these from anyone below Editor, so
+// the gate is enforced there and not merely hidden in this page.
+net.onBotsRequest = (data) => {
+  if (net.isHost) addDemoAgents(Math.min(6, Math.max(1, Number(data?.count) || 4)));
+};
+net.onClearRequest = () => {
+  if (net.isHost) clearArena();
+};
+
 net.connect().then((joined) => {
   if (joined) ui.renderRoom(net.state);
 });
+
+// --------------------------------------------------------------- who is here
+// Owner, Editor, Contributor and Viewer are different things on an artifact,
+// and the controls that change the shared arena belong to the first two.
+(async () => {
+  let role = { isOwner: false, canEdit: false, known: false };
+  try {
+    const user = await globalThis.claude?.use?.('user');
+    if (user) {
+      const [isOwner, canEdit] = await Promise.all([user.isOwner(), user.canEdit()]);
+      role = { isOwner, canEdit, known: true };
+    }
+  } catch {
+    // No viewer to ask: treat this as a page running on its own.
+  }
+  // Opened outside a viewer there is nobody to be below, so nothing is hidden.
+  ui.setRole(role.known ? role : { isOwner: true, canEdit: true, known: false });
+})();
 
 // The comms history lives on the server when there is one, so it survives a
 // reload; a static page keeps the same store in memory instead.
@@ -5265,7 +5344,7 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 
-addDemoAgents(4);
+// The arena starts empty: the first thing in it is whatever someone deploys.
 ui.update();
 requestAnimationFrame(frame);
 

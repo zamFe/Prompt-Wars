@@ -114,8 +114,14 @@ const ui = new UI({
   world,
   chatLog,
   onJoin: join,
-  onDemo: () => addDemoAgents(4),
-  onClear: clearArena,
+  onDemo: () => {
+    if (net?.state.available && !net.isHost) return net.send(TOPICS.bots, { count: 4 });
+    addDemoAgents(4);
+  },
+  onClear: () => {
+    if (net?.state.available && !net.isHost) return net.send(TOPICS.clear, {});
+    clearArena();
+  },
   onSelect: () => {
     ui.applyChatFocus();
     ui.update();
@@ -247,9 +253,36 @@ net.onDecisionNeeded = async (request) => {
   }
 };
 
+// Admin-only topics: the platform refuses these from anyone below Editor, so
+// the gate is enforced there and not merely hidden in this page.
+net.onBotsRequest = (data) => {
+  if (net.isHost) addDemoAgents(Math.min(6, Math.max(1, Number(data?.count) || 4)));
+};
+net.onClearRequest = () => {
+  if (net.isHost) clearArena();
+};
+
 net.connect().then((joined) => {
   if (joined) ui.renderRoom(net.state);
 });
+
+// --------------------------------------------------------------- who is here
+// Owner, Editor, Contributor and Viewer are different things on an artifact,
+// and the controls that change the shared arena belong to the first two.
+(async () => {
+  let role = { isOwner: false, canEdit: false, known: false };
+  try {
+    const user = await globalThis.claude?.use?.('user');
+    if (user) {
+      const [isOwner, canEdit] = await Promise.all([user.isOwner(), user.canEdit()]);
+      role = { isOwner, canEdit, known: true };
+    }
+  } catch {
+    // No viewer to ask: treat this as a page running on its own.
+  }
+  // Opened outside a viewer there is nobody to be below, so nothing is hidden.
+  ui.setRole(role.known ? role : { isOwner: true, canEdit: true, known: false });
+})();
 
 // The comms history lives on the server when there is one, so it survives a
 // reload; a static page keeps the same store in memory instead.
@@ -301,7 +334,7 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 
-addDemoAgents(4);
+// The arena starts empty: the first thing in it is whatever someone deploys.
 ui.update();
 requestAnimationFrame(frame);
 
