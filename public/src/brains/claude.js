@@ -27,7 +27,8 @@ export function createClaudeBrain({ endpoint = '/api/decide', fallback = null } 
 
     /** Tell the server a life is over so its conversation can be dropped. */
     endSession(agentId) {
-      if (!agentId) return;
+      // No server behind this page: there is no conversation to end.
+      if (!agentId || !available || !location.protocol.startsWith('http')) return;
       fetch(`/api/session?agentId=${encodeURIComponent(agentId)}`, { method: 'DELETE' }).catch(() => {});
     },
 

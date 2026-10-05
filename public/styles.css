@@ -354,6 +354,52 @@ button.ghost:hover { border-color: #394462; }
 }
 .brain-note a { color: var(--accent); }
 
+/* --------------------------------------------------------------- usage meter */
+.usage { display: flex; align-items: center; gap: 7px; }
+.usage-label {
+  font-family: var(--font-display);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.11em;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.usage-bar {
+  width: 86px;
+  height: 7px;
+  border-radius: 4px;
+  background: #2a3042;
+  overflow: hidden;
+}
+.usage-bar i {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+  transition: width 0.25s ease-out;
+}
+.usage.warn .usage-bar i { background: var(--warn); }
+.usage.full .usage-bar i { background: var(--bad); }
+.usage-value {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  min-width: 34px;
+}
+.usage.full .usage-value { color: var(--bad); }
+
+#badge-room.live { color: var(--good); border-color: rgba(74, 222, 128, 0.4); }
+
+.tier-note {
+  margin: -4px 0 0;
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+#tier-row em { font-style: normal; color: var(--warn); font-size: 11px; }
+select:disabled { opacity: 0.55; cursor: not-allowed; }
+
 /* ---------------------------------------------------------------- focus bar */
 .focusbar {
   width: 100%;

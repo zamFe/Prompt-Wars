@@ -10,6 +10,7 @@ import { Lobby } from './lobby.js';
 
 const SPAWN_PROTECTION = 1.5;
 let nextAgentId = 1;
+let nextNetId = 1;
 let nextPickupId = 1;
 let nextProjectileId = 1;
 
@@ -71,6 +72,8 @@ export class World {
 
     const agent = {
       id: `a${nextAgentId++}`,
+      // A short numeric id, because it travels in every network snapshot.
+      netId: nextNetId++,
       participant,
       name: participant.name,
       color: AGENT_COLORS[participant.colorIndex % AGENT_COLORS.length],

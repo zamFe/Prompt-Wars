@@ -12,6 +12,10 @@ export function createParticipant({ name, prompt, brainKind, colorIndex }) {
     prompt,
     brainKind,
     colorIndex,
+    // Which viewer deployed this agent: their decisions are billed to them.
+    ownerId: null,
+    ownerPeer: null,
+    tier: null,
     // Hard rules the prompt stated outright, enforced by the simulation.
     constraints: parseConstraints(prompt),
     status: 'queued',      // 'live' | 'queued' | 'cooldown'

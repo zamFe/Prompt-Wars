@@ -2,14 +2,17 @@
 
 import { World } from './world.js';
 import { createParticipant } from './lobby.js';
-import { createBrains } from './brains/index.js';
+import { createBrains, createRemoteBrain, DEFAULT_TIER } from './brains/index.js';
+import { createUsageMeter } from './usage.js';
+import { createNet, TOPICS } from './net.js';
 import { Renderer } from './render.js';
 import { UI } from './ui.js';
 import { PRESETS, DEMO_NAMES } from './presets.js';
 import { AGENT_COLORS, WORLD } from './config.js';
 import { createChatLog } from './chatlog.js';
 
-const brains = createBrains();
+const usage = createUsageMeter({ onChange: (state) => ui?.renderUsage(state) });
+const brains = createBrains({ usage });
 const world = new World({ brains });
 const renderer = new Renderer(document.getElementById('arena'));
 const chatLog = createChatLog();
@@ -37,13 +40,19 @@ function uniqueName(base) {
   return name;
 }
 
-function join({ name, prompt, brainKind, focus = true }) {
+function join({ name, prompt, brainKind, tier, focus = true, ownerPeer = null, ownerId = null, mine = true }) {
   if (!name) return { ok: false, message: 'Give your agent a name.', tone: 'bad' };
   if (prompt.length < 12) {
     return { ok: false, message: 'Write a real prompt — at least a sentence of tactics.', tone: 'bad' };
   }
   if (brainKind === 'claude' && !brains.claude.available) {
-    return { ok: false, message: 'The live model backend is not available. Use the offline interpreter.', tone: 'bad' };
+    return { ok: false, message: 'The server backend is not available. Use the offline interpreter.', tone: 'bad' };
+  }
+  if (brainKind === 'sample' && !brains.sample.available) {
+    return { ok: false, message: 'Claude is not available in this view. Use the offline interpreter.', tone: 'bad' };
+  }
+  if (brainKind === 'sample' && usage.state.exhausted) {
+    return { ok: false, message: 'Call budget spent. Raise it, or deploy on the offline interpreter.', tone: 'bad' };
   }
 
   const participant = createParticipant({
@@ -52,6 +61,19 @@ function join({ name, prompt, brainKind, focus = true }) {
     brainKind,
     colorIndex: pickColorIndex(),
   });
+  participant.tier = tier ?? DEFAULT_TIER;
+  participant.ownerPeer = ownerPeer;
+  participant.ownerId = ownerId;
+  // Agents I deployed: only these may lock my tier selector or bill my account.
+  participant.isMine = mine;
+
+  if (mine && !net?.isHost && net?.state.available) {
+    // Someone else is simulating: ask them to put this agent in.
+    net.send(TOPICS.join, { name: participant.name, prompt, tier: participant.tier });
+    world.lobby.participants.set(participant.id, participant);
+    participant.status = 'queued';
+    return { ok: true, message: `${participant.name} sent to the host.`, tone: 'ok' };
+  }
 
   const outcome = world.lobby.add(participant);
   // Deploying your own agent follows it in the focus bar. Filler agents must
@@ -71,7 +93,7 @@ function addDemoAgents(count = 4) {
   for (let i = 0; i < count; i++) {
     const preset = PRESETS[Math.floor(Math.random() * PRESETS.length)];
     const base = DEMO_NAMES[Math.floor(Math.random() * DEMO_NAMES.length)];
-    join({ name: base, prompt: preset.prompt, brainKind: 'local', focus: false });
+    join({ name: base, prompt: preset.prompt, brainKind: 'local', focus: false, mine: false });
   }
 }
 
@@ -149,6 +171,86 @@ async function checkModelBackend() {
 }
 checkModelBackend();
 
+// ------------------------------------------------------- Claude, this viewer's
+// `sample` spends the viewer's own Claude usage, so it is offered only once the
+// runtime has actually handed it over.
+brains.sample.ready.then(() => {
+  const option = ui.el.brain.querySelector('option[value="sample"]');
+  if (brains.sample.available) {
+    option.disabled = false;
+    ui.el.brain.value = 'sample';
+    ui.setModelBadge('ok', 'Claude · your account');
+    ui.renderUsage(usage.state);
+  } else {
+    option.disabled = true;
+    option.textContent = 'Claude — not available here';
+  }
+  ui.syncTierRow();
+});
+
+// ------------------------------------------------------------------ the room
+const net = createNet({
+  world,
+  makeGhost,
+  onState: (state) => {
+    ui.renderRoom(state);
+    // A guest never simulates: it renders what the host sends.
+    simulating = state.isHost;
+  },
+});
+
+world.brains.remote = createRemoteBrain({ net, fallback: brains.local });
+
+/** A body a guest renders but does not own. */
+function makeGhost(netId) {
+  const participant = createParticipant({ name: '…', prompt: '', brainKind: 'remote', colorIndex: netId });
+  participant.isMine = false;
+  world.lobby.participants.set(participant.id, participant);
+  const agent = {
+    id: `ghost${netId}`, netId, participant, name: '…',
+    color: AGENT_COLORS[netId % AGENT_COLORS.length],
+    x: 0, y: 0, facing: 0, aimOffset: 0, hp: 100, alive: true,
+    weapon: 'pistol', ammo: 3, nextShotAt: 0, reloadUntil: 0, spawnProtectedUntil: 0,
+    queue: [], current: null, thinking: false, pendingEvents: [], planResults: [],
+    lastActions: [], lastRefused: [], pulses: { fire: -Infinity, reload: -Infinity, hurt: -Infinity, heal: -Infinity, kill: -Infinity, pickup: -Infinity },
+    recentDamage: new Map(), lifeKills: 0, lifeAssists: 0, chat: null, spawnedAt: 0,
+  };
+  participant.agent = agent;
+  return agent;
+}
+
+// As host: take in players who deployed from another page.
+net.onJoinRequest = (data, msg) => {
+  if (!net.isHost || !data?.prompt) return;
+  join({
+    name: String(data.name ?? 'Guest').slice(0, 14),
+    prompt: String(data.prompt).slice(0, 1200),
+    brainKind: 'remote',
+    tier: data.tier,
+    focus: false,
+    mine: false,
+    ownerPeer: msg.peer,
+    ownerId: msg.by ?? null,
+  });
+};
+
+// As a player: my agent's turn to think, on my account.
+net.onDecisionNeeded = async (request) => {
+  if (!request?.id) return;
+  const participant = world.lobby.list().find((p) => p.isMine && p.name === request.name);
+  if (!participant) return;
+  try {
+    const decision = await brains.sample.decideForOwned(request, participant);
+    net.send(TOPICS.plan, { id: request.id, ...decision });
+  } catch {
+    net.send(TOPICS.plan, { id: request.id, actions: [] });
+  }
+};
+
+net.connect().then((joined) => {
+  if (joined) ui.renderRoom(net.state);
+});
+
 // The comms history lives on the server when there is one, so it survives a
 // reload; a static page keeps the same store in memory instead.
 chatLog.connect().then(() => {
@@ -166,6 +268,8 @@ window.addEventListener('resize', () => renderer.resize());
 
 // ---------------------------------------------------------------- main loop
 const STEP = 1 / WORLD.tickRate;
+// Host pages run the physics; guests render the host's word.
+let simulating = true;
 let accumulator = 0;
 let previous = performance.now();
 let uiClock = 0;
@@ -177,7 +281,7 @@ function frame(now) {
 
   let guard = 0;
   while (accumulator >= STEP && guard++ < 8) {
-    world.update(STEP);
+    if (simulating) world.update(STEP);
     accumulator -= STEP;
   }
 

@@ -4,6 +4,7 @@ import { WORLD, LOBBY, WEAPONS, HEALTH_PACKS, LOOT, VISION, MOVE, AGENT, AGENT_C
 import { renderSnapshotText } from './sensors.js';
 import { TOOL_SCHEMAS, TOOL_SUMMARIES } from './actions.js';
 import { hasConstraints } from './constraints.js';
+import { MODEL_TIERS, DEFAULT_TIER } from './brains/sample.js';
 import { formatClock, round0 } from './util.js';
 import { PRESETS } from './presets.js';
 
@@ -33,6 +34,14 @@ export class UI {
       preset: $('field-preset'),
       count: $('prompt-count'),
       brainNote: $('brain-note'),
+      tierRow: $('tier-row'),
+      tierSelect: $('field-tier'),
+      tierNote: $('tier-note'),
+      tierLock: $('tier-lock'),
+      usage: $('usage'),
+      usageFill: $('usage-fill'),
+      usageValue: $('usage-value'),
+      badgeRoom: $('badge-room'),
       status: $('join-status'),
       roster: $('roster'),
       rosterCount: $('roster-count'),
@@ -85,6 +94,7 @@ export class UI {
 
     this.el.max.textContent = String(WORLD.maxAgents);
     this.fillPresets();
+    this.fillTiers();
     this.fillTools();
     this.fillRules();
 
@@ -94,6 +104,7 @@ export class UI {
         name: this.el.name.value.trim(),
         prompt: this.el.prompt.value.trim(),
         brainKind: this.el.brain.value,
+        tier: this.tier,
       });
       this.showStatus(result.message, result.tone);
       if (result.ok) {
@@ -146,6 +157,78 @@ export class UI {
       this.el.fbWeapons.append(slot);
       this.weaponSlots.set(weapon.id, slot);
     }
+  }
+
+  /** The thinking tiers the runtime offers. Not model names - it has none. */
+  fillTiers() {
+    this.el.tierSelect.innerHTML = MODEL_TIERS
+      .map((t) => `<option value="${t.id}">${escapeHtml(t.label)}</option>`)
+      .join('');
+    this.el.tierSelect.value = DEFAULT_TIER;
+    this.el.tierNote.hidden = false;
+    this.el.tierSelect.addEventListener('change', () => this.describeTier());
+    this.el.brain.addEventListener('change', () => this.syncTierRow());
+    this.describeTier();
+  }
+
+  describeTier() {
+    const tier = MODEL_TIERS.find((t) => t.id === this.el.tierSelect.value);
+    this.el.tierNote.textContent = tier?.note ?? '';
+    this.el.tierNote.hidden = !tier;
+  }
+
+  /** The tier only applies to a brain that actually calls Claude. */
+  syncTierRow() {
+    const usesClaude = this.el.brain.value === 'sample' || this.el.brain.value === 'claude';
+    this.el.tierRow.hidden = !usesClaude;
+    this.el.tierNote.hidden = !usesClaude;
+    this.lockTierIfDeployed();
+  }
+
+  /**
+   * A character's tier is fixed for its life: it is baked into a conversation
+   * that is already running, so switching mid-fight would be incoherent.
+   */
+  lockTierIfDeployed() {
+    const mine = this.world.lobby.list().some((p) => p.isMine && p.status !== 'gone');
+    this.el.tierSelect.disabled = mine;
+    this.el.tierLock.textContent = mine ? 'locked while you are in the arena' : '';
+  }
+
+  get tier() {
+    return this.el.tierSelect.value || DEFAULT_TIER;
+  }
+
+  /** What this page has spent of the viewer's Claude account. */
+  renderUsage(state) {
+    if (!state) {
+      this.el.usage.hidden = true;
+      return;
+    }
+    this.el.usage.hidden = false;
+    const percent = Math.round(state.fraction * 100);
+    this.el.usageFill.style.width = `${percent}%`;
+    this.el.usageValue.textContent = `${percent}%`;
+    this.el.usage.classList.toggle('warn', state.fraction >= 0.7 && !state.exhausted);
+    this.el.usage.classList.toggle('full', state.exhausted || state.rateLimited);
+    this.el.usage.title = state.rateLimited
+      ? 'Your Claude account hit its own limit — agents fell back to the offline brain.'
+      : `${state.calls} of ${state.budget} calls this session (quick ${state.byTier.quick}, balanced ${state.byTier.default}, deep ${state.byTier.complex}). ` +
+        'This counts what this page asked for, not your account balance.';
+  }
+
+  renderRoom(state) {
+    const badge = this.el.badgeRoom;
+    if (!state?.available) {
+      badge.hidden = true;
+      return;
+    }
+    badge.hidden = false;
+    const others = Math.max(0, state.peers - 1);
+    badge.textContent = others === 0
+      ? 'solo'
+      : `${state.peers} here · ${state.isHost ? 'hosting' : 'guest'}`;
+    badge.classList.toggle('live', others > 0);
   }
 
   fillPresets() {
@@ -268,6 +351,7 @@ export class UI {
     this.el.clock.textContent = `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
 
     this.renderRoster(participants);
+    this.lockTierIfDeployed();
     this.renderBoards();
     this.renderInspector();
     this.renderLog();
@@ -303,7 +387,7 @@ export class UI {
 
     const hp = agent ? Math.max(0, agent.hp / AGENT.maxHp) : 0;
     const hpColor = hp > 0.5 ? 'var(--good)' : hp > 0.25 ? 'var(--warn)' : 'var(--bad)';
-    const brainTag = p.brainKind === 'claude' ? ' · Claude' : '';
+    const brainTag = { sample: ' · Claude', claude: ' · Claude', remote: ' · remote' }[p.brainKind] ?? '';
 
     return `
       <li data-id="${p.id}" class="${p.status !== 'live' ? 'waiting' : ''} ${this.selectedId === p.id ? 'selected' : ''}">
@@ -421,7 +505,8 @@ export class UI {
     const color = AGENT_COLORS[participant.colorIndex % AGENT_COLORS.length];
     set('color', color, (v) => { this.el.fbDot.style.background = v; });
     set('name', participant.name, (v) => { this.el.fbName.textContent = v; });
-    set('brain', participant.brainKind === 'claude' ? 'live model' : 'offline', (v) => { this.el.fbBrain.textContent = v; });
+    const brainLabel = { sample: 'your account', claude: 'server', remote: 'their account', local: 'offline' };
+    set('brain', brainLabel[participant.brainKind] ?? 'offline', (v) => { this.el.fbBrain.textContent = v; });
 
     const hp = agent ? Math.max(0, Math.round(agent.hp)) : 0;
     set('hp', hp, (v) => {

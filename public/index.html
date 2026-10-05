@@ -22,6 +22,12 @@
       <span class="stat"><b id="stat-queue">0</b> queued</span>
       <span class="stat"><b id="stat-cooldown">0</b> on timer</span>
       <span class="stat"><b id="stat-clock">0:00</b></span>
+      <span class="badge" id="badge-room" hidden>solo</span>
+      <div class="usage" id="usage" hidden>
+        <span class="usage-label">Claude calls</span>
+        <div class="usage-bar"><i id="usage-fill"></i></div>
+        <span class="usage-value" id="usage-value">0%</span>
+      </div>
       <span class="badge" id="badge-model">checking model…</span>
       <button id="btn-pause" class="ghost" type="button">Pause</button>
     </div>
@@ -97,10 +103,16 @@
               <span>Brain</span>
               <select id="field-brain">
                 <option value="local">Offline interpreter</option>
-                <option value="claude">Claude (live)</option>
+                <option value="sample">Claude — your account</option>
+                <option value="claude">Claude (server)</option>
               </select>
             </label>
           </div>
+          <label id="tier-row" hidden>
+            <span>Thinking <em id="tier-lock"></em></span>
+            <select id="field-tier"></select>
+          </label>
+          <p class="tier-note" id="tier-note" hidden></p>
           <p class="brain-note" id="brain-note" hidden></p>
           <label>
             <span>Prompt <em id="prompt-count">0 / 1200</em></span>

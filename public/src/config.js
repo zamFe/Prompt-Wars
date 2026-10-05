@@ -142,6 +142,12 @@ export const BRAIN = {
   maxActionsPerDecision: 4,
   decisionTimeout: 25,          // seconds before a pending decision is abandoned
   memoryTurns: 12,              // how many past exchanges an agent carries
+  // Pacing for the viewer-paid brain. The runtime asks pages not to sample
+  // from a loop, and an unpaced agent re-decides as fast as the model answers -
+  // spending someone's real money several times a second. A decision costs at
+  // least this long, and only a couple are ever in flight at once.
+  sampleInterval: 2.5,
+  sampleConcurrency: 2,
   localThinkTime: [0.25, 0.6],  // simulated deliberation for the offline brain
   damageInterruptCooldown: 0.6, // getting shot flushes the action queue, at most this often
 };
