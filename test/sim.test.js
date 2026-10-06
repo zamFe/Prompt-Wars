@@ -13,7 +13,7 @@ import { normalizeAction, buildQueue, stepAction, describeAction, MOVE_DIRECTION
 import { hasLineOfSight, castRay, clearance, resolveCollision, MAPS, setMap, baseOf, currentMap } from '../public/src/arena.js';
 import { createMatch, PHASES, MODES, missionBriefing, CODENAMES } from '../public/src/match.js';
 import { compassFrom, emitSound, takeHeard, describeHeard } from '../public/src/sound.js';
-import { electHost, TOPICS } from '../public/src/net.js';
+import { electHost, createNet, TOPICS } from '../public/src/net.js';
 import { colorOf, shade, luminance, isHex } from '../public/src/colors.js';
 import { parseOrder, orderTarget, ORDER_KINDS } from '../public/src/orders.js';
 import { ordersHeard } from '../public/src/brains/local.js';
@@ -1700,6 +1700,110 @@ test('a peer that cannot send is never elected to run the game', () => {
   // The publishing session is never a candidate.
   assert.equal(electHost([{ peer: 'a', kind: 'agent', presence: {} }, viewer('b')]), 'b');
   assert.equal(electHost([], 'me'), 'me', 'alone, you host');
+});
+
+test('a game already running stays with the page running it', () => {
+  const viewer = (peer, presence = {}) => ({ peer, kind: 'viewer', presence });
+  // The owner set the lobby up; a friend arrives with a label that sorts first.
+  const owner = viewer('mmm', { canHost: true, admin: true, hosting: true });
+  const friend = viewer('aaa', { canHost: true });
+  assert.equal(electHost([owner, friend]), 'mmm', 'a newcomer never takes the lobby away');
+
+  // The owner reloads mid-round while a player hosts: the round stays put.
+  const player = viewer('zzz', { canHost: true, hosting: true });
+  assert.equal(electHost([viewer('bbb', { canHost: true, admin: true }), player]), 'zzz');
+
+  // Nobody hosting yet: whoever can set the game up goes first.
+  assert.equal(electHost([viewer('aaa', { canHost: true }), viewer('qqq', { admin: true })]), 'qqq');
+
+  // Two pages that both think they host settle on one, the same one everywhere.
+  assert.equal(electHost([viewer('kkk', { hosting: true }), viewer('ddd', { hosting: true })]), 'ddd');
+
+  // A claim from a page that cannot send counts for nothing.
+  assert.equal(electHost([viewer('aaa', { canHost: false, hosting: true }), viewer('bbb')]), 'bbb');
+});
+
+/** A stand-in for the platform's room, enough for one page. */
+function fakeRoom({ label = 'me', refuse = null, others = [] } = {}) {
+  const peerFns = [];
+  const errorFns = [];
+  const presence = {};
+  const room = {
+    presence: async (patch) => {
+      if (refuse) throw { code: refuse };
+      for (const [k, v] of Object.entries(patch)) { if (v === null) delete presence[k]; else presence[k] = v; }
+      room.fire();
+    },
+    emit: async () => { if (refuse) throw { code: refuse }; },
+    on: (topic, fn, onError) => { if (onError) errorFns.push(onError); return () => {}; },
+    onConnection: (fn, onError) => { if (onError) errorFns.push(onError); return () => {}; },
+    onPeers: (fn, onError) => {
+      peerFns.push(fn);
+      if (onError) errorFns.push(onError);
+      queueMicrotask(() => room.fire());
+      return () => {};
+    },
+    fire: () => {
+      const peers = [{ peer: label, kind: 'viewer', isMe: true, sameTab: true, presence: { ...presence } }, ...others];
+      for (const fn of peerFns) fn({ peers });
+    },
+    refuseAll: (code) => { for (const fn of errorFns) fn({ code }); },
+    presenceOf: () => ({ ...presence }),
+  };
+  return room;
+}
+
+async function withRoom(room, fn) {
+  const before = globalThis.claude;
+  globalThis.claude = { use: async (name) => (name === 'room' ? room : null) };
+  try { await fn(); } finally { globalThis.claude = before; }
+}
+
+await asyncTest('a page the room turns away plays alone, and knows it', async () => {
+  const room = fakeRoom({ refuse: 'not_granted' });
+  await withRoom(room, async () => {
+    const states = [];
+    const net = createNet({ world: makeWorld(), makeGhost: () => null, onState: (s) => states.push(s), settleMs: 5 });
+    let lost = null;
+    net.onRoomLost = (code) => { lost = code; };
+    net.setPresence({ name: 'Felix' });
+    await net.connect();
+    await new Promise((r) => setTimeout(r, 20));
+    assert.equal(lost, 'not_granted');
+    assert.equal(net.state.available, false, 'not counted as connected');
+    assert.equal(net.state.isHost, true, 'it runs its own game');
+    assert.equal(net.state.canSend, null, 'a refusal is not mistaken for permission to send');
+    net.disconnect();
+  });
+});
+
+await asyncTest('a page claims the game only after it has heard the room', async () => {
+  // Somebody is already hosting: the newcomer never claims.
+  const busy = fakeRoom({ label: 'aaa', others: [{ peer: 'zzz', kind: 'viewer', isMe: false, sameTab: false, presence: { hosting: true } }] });
+  await withRoom(busy, async () => {
+    const net = createNet({ world: makeWorld(), makeGhost: () => null, settleMs: 5 });
+    await net.connect();
+    await new Promise((r) => setTimeout(r, 30));
+    assert.equal(net.isHost, false);
+    assert.equal(net.hostPeer, 'zzz');
+    assert.equal(busy.presenceOf().hosting, undefined, 'a guest claims nothing');
+    net.disconnect();
+  });
+
+  // Alone: it hosts, and after settling says so, so nobody arriving takes over.
+  const empty = fakeRoom({ label: 'mmm' });
+  await withRoom(empty, async () => {
+    const net = createNet({ world: makeWorld(), makeGhost: () => null, settleMs: 20 });
+    net.setPresence({ name: 'Felix', admin: true });
+    await net.connect();
+    await new Promise((r) => setTimeout(r, 5));
+    assert.equal(empty.presenceOf().hosting, undefined, 'not before it has listened');
+    assert.equal(empty.presenceOf().name, 'Felix', 'presence set before connecting still arrives');
+    await new Promise((r) => setTimeout(r, 40));
+    assert.equal(net.isHost, true);
+    assert.equal(empty.presenceOf().hosting, true);
+    net.disconnect();
+  });
 });
 
 test('every topic a non-owner must send on is listed, so it can be opened to Contributors', () => {

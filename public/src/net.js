@@ -65,27 +65,55 @@ export function encodeRoster(world) {
 }
 
 /**
- * Who simulates. Lowest peer label wins, so every page agrees without a
- * negotiation - but only among peers that can actually SEND. A Viewer on an
- * artifact may not send on any topic at all, so a Viewer elected host would
- * broadcast nothing and freeze the game for everyone. Each page finds out
- * whether it can send and says so in its presence; a peer that has not said
- * yet is given the benefit of the doubt, so the room is never left hostless.
+ * Who simulates. Every page runs this on the same list of peers and gets the
+ * same answer, so there is nothing to negotiate. In order:
+ *
+ *  - Only peers that can actually SEND. A Viewer may not send on any topic, so
+ *    a Viewer elected host would broadcast nothing and freeze the game. Each
+ *    page finds out whether it can send and says so in its presence; one that
+ *    has not said yet gets the benefit of the doubt.
+ *  - A page already hosting keeps it. Without this, the host was simply the
+ *    lowest peer label - and labels are random, so a friend arriving, or the
+ *    owner reloading, could win the election with a page that had only just
+ *    opened, and replace the lobby everyone was in with its own empty one.
+ *  - With nobody hosting yet, a page that can run the lobby (Editor and up)
+ *    goes first, so the game everyone sees is the one the owner set up.
+ *  - Then the lowest label, to break any tie.
  */
 export function electHost(peers, me = null) {
   const viewers = peers.filter((p) => p.kind === 'viewer');
   const able = viewers.filter((p) => p.presence?.canHost !== false);
-  return (able.length ? able : viewers).map((p) => p.peer).sort()[0] ?? me;
+  const pool = able.length ? able : viewers;
+  const hosting = pool.filter((p) => p.presence?.hosting === true);
+  const admins = pool.filter((p) => p.presence?.admin === true);
+  const pick = hosting.length ? hosting : admins.length ? admins : pool;
+  return pick.map((p) => p.peer).sort()[0] ?? me;
 }
 
-export function createNet({ world, makeGhost, onState = () => {} } = {}) {
+/**
+ * How long a page listens before it will claim to be hosting. The room's
+ * first answer lists only yourself, and everyone else answers over the next
+ * second or two; a page that claimed at once would claim against a host it
+ * had not heard from yet.
+ */
+export const SETTLE_MS = 2500;
+
+/** Codes after which the room is gone for this page load. */
+const TERMINAL = new Set(['revoked', 'not_granted', 'capability_disabled', 'capability_removed', 'transform_error']);
+
+export function createNet({ world, makeGhost, onState = () => {}, settleMs = SETTLE_MS } = {}) {
   let room = null;
   let me = null;                 // my peer label
   let hostPeer = null;
   let unsubscribes = [];
   let tickTimer = null;
   let lastRosterKey = '';
+  let settled = false;
+  let claimed = false;
   const pendingNeeds = new Map();
+  // What this page has told the room about itself. Kept here as well, so a
+  // field set before the room answered is not lost: it is sent on connect.
+  const mine = {};
 
   // `canSend` is null until this page has found out, then true or false. False
   // means this viewer is here at Viewer level: it can watch, never act.
@@ -141,6 +169,28 @@ export function createNet({ world, makeGhost, onState = () => {} } = {}) {
       }
       state.available = true;
 
+      // The room can also refuse this page after handing it a namespace: a
+      // viewer the platform will not connect gets a terminal code from every
+      // call and every listener. From then on this page plays alone, and says
+      // so, rather than quietly running a lobby nobody else can see.
+      const lose = (code) => {
+        if (!room || !TERMINAL.has(code)) return;
+        stopTicking();
+        for (const off of unsubscribes) {
+          try { off(); } catch { /* already gone */ }
+        }
+        unsubscribes = [];
+        room = null;
+        hostPeer = null;
+        Object.assign(state, { available: false, connected: false, isHost: true, peers: 1, canSend: null, error: code });
+        publish();
+        this.onRoomLost?.(code);
+      };
+      const onError = (error) => lose(error?.code);
+
+      // Whatever was set before the room answered.
+      if (Object.keys(mine).length) room.presence({ ...mine }).catch(onError);
+
       // Can this page send at all? There is no call that answers it, so ask
       // the platform the only way it answers: send something nobody acts on.
       // A tick from a non-host is ignored by every page, and a host ignores
@@ -148,35 +198,57 @@ export function createNet({ world, makeGhost, onState = () => {} } = {}) {
       // presence, so this page is never elected to run a game it cannot
       // broadcast.
       room.emit(TOPICS.tick, { probe: true })
-        .then(() => true, (error) => error?.code !== 'not_permitted')
+        .then(() => true, (error) => {
+          if (TERMINAL.has(error?.code)) { lose(error.code); return null; }
+          return error?.code !== 'not_permitted';
+        })
         .then((canSend) => {
+          if (canSend === null || !room) return;
           state.canSend = canSend;
-          room.presence({ canHost: canSend }).catch(() => {});
+          this.setPresence({ canHost: canSend });
           publish();
         });
 
-      unsubscribes.push(room.onConnection((connected) => {
-        state.connected = connected;
-        publish();
-      }));
-
-      unsubscribes.push(room.onPeers((change) => {
-        const peers = change.peers;
-        me ??= peers.find((p) => p.isMe && p.sameTab)?.peer ?? null;
-        state.peers = peers.filter((p) => p.kind === 'viewer').length || 1;
-
-        const elected = electHost(peers, me);
+      // Who is host, worked out again whenever the room changes, and once more
+      // when this page has listened long enough to claim it.
+      let lastPeers = [];
+      const elect = () => {
+        const elected = electHost(lastPeers, me);
         const wasHost = state.isHost;
         hostPeer = elected;
         state.isHost = elected === me || !elected;
 
         if (state.isHost && !wasHost) startTicking();
         if (!state.isHost && wasHost) stopTicking();
+        // Say so once it is safe to: from then on, nobody who arrives later
+        // takes the game away from this page.
+        const claim = state.isHost && settled;
+        if (claim !== claimed) {
+          claimed = claim;
+          this.setPresence({ hosting: claim ? true : null });
+        }
         publish();
+      };
+      setTimeout(() => {
+        settled = true;
+        if (room) elect();
+      }, settleMs);
+
+      unsubscribes.push(room.onConnection((connected) => {
+        state.connected = connected;
+        publish();
+      }, onError));
+
+      unsubscribes.push(room.onPeers((change) => {
+        const peers = change.peers;
+        me ??= peers.find((p) => p.isMe && p.sameTab)?.peer ?? null;
+        state.peers = peers.filter((p) => p.kind === 'viewer').length || 1;
+        lastPeers = peers;
+        elect();
         // Who is here, and what they called themselves. Presence is display
         // data, never authority - it only ever seats someone as a spectator.
         this.onPeopleChanged?.(peers.filter((p) => p.kind === 'viewer'));
-      }));
+      }, onError));
 
       unsubscribes.push(room.on(TOPICS.seat, (msg) => {
         if (state.isHost) this.onSeatRequest?.(msg.data, msg);
@@ -261,6 +333,10 @@ export function createNet({ world, makeGhost, onState = () => {} } = {}) {
     },
 
     setPresence(patch) {
+      for (const [key, value] of Object.entries(patch)) {
+        if (value === null) delete mine[key];
+        else mine[key] = value;
+      }
       return room?.presence(patch).catch(() => {}) ?? Promise.resolve();
     },
 

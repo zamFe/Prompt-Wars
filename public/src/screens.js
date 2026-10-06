@@ -37,6 +37,7 @@ export function createScreens({
     profilePreview: byId('profile-preview-name'),
     lobbySub: byId('lobby-sub'),
     lobbyRoom: byId('lobby-room'),
+    lobbyConn: byId('lobby-conn'),
     modeCards: byId('mode-cards'),
     mapCards: byId('map-cards'),
     round: byId('set-round'),
@@ -243,14 +244,21 @@ export function createScreens({
           : `${MODES[settings.mode].name} on ${MAPS.find((m) => m.id === settings.map)?.name}, ` +
             `${minutes(settings.roundSeconds)}.`;
 
-      if (room?.available) {
-        const others = Math.max(0, room.peers - 1);
-        el.lobbyRoom.hidden = false;
-        el.lobbyRoom.textContent = others === 0 ? 'solo' : `${room.peers} here`;
-        el.lobbyRoom.classList.toggle('live', others > 0);
-      } else {
-        el.lobbyRoom.hidden = true;
-      }
+      // Whether anyone else can see this lobby. Two people in two lobbies that
+      // look exactly alike is the worst way to find out they are not connected.
+      const others = room?.available ? Math.max(0, room.peers - 1) : 0;
+      const offline = room !== null && !room.available;
+      el.lobbyRoom.textContent = room === null ? 'connecting…' : offline ? 'not connected' : others === 0 ? 'only you' : `${room.peers} here`;
+      el.lobbyRoom.classList.toggle('live', others > 0);
+      el.lobbyRoom.classList.toggle('off', offline);
+      el.lobbyConn.hidden = room === null || others > 0;
+      el.lobbyConn.classList.toggle('off', offline);
+      el.lobbyConn.textContent = offline
+        ? 'This page is not connected to other players, so this lobby is only on your screen.'
+        : role.canEdit
+          ? 'Waiting for players. People join this lobby when they open the artifact signed in, ' +
+            'shared to them directly — anyone arriving by a public link gets a separate game.'
+          : 'Nobody else is here yet.';
     },
 
     /**

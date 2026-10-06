@@ -1405,6 +1405,26 @@ body[data-phase="briefing"] #join-form button[type="submit"] { min-width: 110px;
   }
   body[data-phase="briefing"] #field-prompt { min-height: 180px; }
 }
+
+/* ----------------------------------------------------- who can see the lobby */
+#lobby-room.live { color: var(--good); border-color: rgba(74, 222, 128, 0.4); }
+#lobby-room.off { color: var(--warn); border-color: rgba(250, 204, 21, 0.45); }
+.lobby-conn {
+  margin: 6px 0 0;
+  padding: 6px 10px;
+  border-radius: 7px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--muted);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  max-width: 62ch;
+}
+.lobby-conn.off {
+  color: var(--text);
+  background: rgba(250, 204, 21, 0.07);
+  border-color: rgba(250, 204, 21, 0.4);
+}
 </style>
 <!--
     Four screens, one page. `data-phase` on the body is the only thing that
@@ -1447,6 +1467,7 @@ body[data-phase="briefing"] #join-form button[type="submit"] { min-width: 110px;
         <div>
           <h2>Lobby</h2>
           <p class="lobby-sub" id="lobby-sub">Choose the game. Everyone writes their prompt once it starts.</p>
+          <p class="lobby-conn" id="lobby-conn" hidden></p>
         </div>
         <span class="badge" id="lobby-room">solo</span>
       </header>
@@ -6640,26 +6661,54 @@ function encodeRoster(world) {
 }
 
 /**
- * Who simulates. Lowest peer label wins, so every page agrees without a
- * negotiation - but only among peers that can actually SEND. A Viewer on an
- * artifact may not send on any topic at all, so a Viewer elected host would
- * broadcast nothing and freeze the game for everyone. Each page finds out
- * whether it can send and says so in its presence; a peer that has not said
- * yet is given the benefit of the doubt, so the room is never left hostless.
+ * Who simulates. Every page runs this on the same list of peers and gets the
+ * same answer, so there is nothing to negotiate. In order:
+ *
+ *  - Only peers that can actually SEND. A Viewer may not send on any topic, so
+ *    a Viewer elected host would broadcast nothing and freeze the game. Each
+ *    page finds out whether it can send and says so in its presence; one that
+ *    has not said yet gets the benefit of the doubt.
+ *  - A page already hosting keeps it. Without this, the host was simply the
+ *    lowest peer label - and labels are random, so a friend arriving, or the
+ *    owner reloading, could win the election with a page that had only just
+ *    opened, and replace the lobby everyone was in with its own empty one.
+ *  - With nobody hosting yet, a page that can run the lobby (Editor and up)
+ *    goes first, so the game everyone sees is the one the owner set up.
+ *  - Then the lowest label, to break any tie.
  */
 function electHost(peers, me = null) {
   const viewers = peers.filter((p) => p.kind === 'viewer');
   const able = viewers.filter((p) => p.presence?.canHost !== false);
-  return (able.length ? able : viewers).map((p) => p.peer).sort()[0] ?? me;
+  const pool = able.length ? able : viewers;
+  const hosting = pool.filter((p) => p.presence?.hosting === true);
+  const admins = pool.filter((p) => p.presence?.admin === true);
+  const pick = hosting.length ? hosting : admins.length ? admins : pool;
+  return pick.map((p) => p.peer).sort()[0] ?? me;
 }
-function createNet({ world, makeGhost, onState = () => {} } = {}) {
+
+/**
+ * How long a page listens before it will claim to be hosting. The room's
+ * first answer lists only yourself, and everyone else answers over the next
+ * second or two; a page that claimed at once would claim against a host it
+ * had not heard from yet.
+ */
+const SETTLE_MS = 2500;
+
+/** Codes after which the room is gone for this page load. */
+const TERMINAL = new Set(['revoked', 'not_granted', 'capability_disabled', 'capability_removed', 'transform_error']);
+function createNet({ world, makeGhost, onState = () => {}, settleMs = SETTLE_MS } = {}) {
   let room = null;
   let me = null;                 // my peer label
   let hostPeer = null;
   let unsubscribes = [];
   let tickTimer = null;
   let lastRosterKey = '';
+  let settled = false;
+  let claimed = false;
   const pendingNeeds = new Map();
+  // What this page has told the room about itself. Kept here as well, so a
+  // field set before the room answered is not lost: it is sent on connect.
+  const mine = {};
 
   // `canSend` is null until this page has found out, then true or false. False
   // means this viewer is here at Viewer level: it can watch, never act.
@@ -6715,6 +6764,28 @@ function createNet({ world, makeGhost, onState = () => {} } = {}) {
       }
       state.available = true;
 
+      // The room can also refuse this page after handing it a namespace: a
+      // viewer the platform will not connect gets a terminal code from every
+      // call and every listener. From then on this page plays alone, and says
+      // so, rather than quietly running a lobby nobody else can see.
+      const lose = (code) => {
+        if (!room || !TERMINAL.has(code)) return;
+        stopTicking();
+        for (const off of unsubscribes) {
+          try { off(); } catch { /* already gone */ }
+        }
+        unsubscribes = [];
+        room = null;
+        hostPeer = null;
+        Object.assign(state, { available: false, connected: false, isHost: true, peers: 1, canSend: null, error: code });
+        publish();
+        this.onRoomLost?.(code);
+      };
+      const onError = (error) => lose(error?.code);
+
+      // Whatever was set before the room answered.
+      if (Object.keys(mine).length) room.presence({ ...mine }).catch(onError);
+
       // Can this page send at all? There is no call that answers it, so ask
       // the platform the only way it answers: send something nobody acts on.
       // A tick from a non-host is ignored by every page, and a host ignores
@@ -6722,35 +6793,57 @@ function createNet({ world, makeGhost, onState = () => {} } = {}) {
       // presence, so this page is never elected to run a game it cannot
       // broadcast.
       room.emit(TOPICS.tick, { probe: true })
-        .then(() => true, (error) => error?.code !== 'not_permitted')
+        .then(() => true, (error) => {
+          if (TERMINAL.has(error?.code)) { lose(error.code); return null; }
+          return error?.code !== 'not_permitted';
+        })
         .then((canSend) => {
+          if (canSend === null || !room) return;
           state.canSend = canSend;
-          room.presence({ canHost: canSend }).catch(() => {});
+          this.setPresence({ canHost: canSend });
           publish();
         });
 
-      unsubscribes.push(room.onConnection((connected) => {
-        state.connected = connected;
-        publish();
-      }));
-
-      unsubscribes.push(room.onPeers((change) => {
-        const peers = change.peers;
-        me ??= peers.find((p) => p.isMe && p.sameTab)?.peer ?? null;
-        state.peers = peers.filter((p) => p.kind === 'viewer').length || 1;
-
-        const elected = electHost(peers, me);
+      // Who is host, worked out again whenever the room changes, and once more
+      // when this page has listened long enough to claim it.
+      let lastPeers = [];
+      const elect = () => {
+        const elected = electHost(lastPeers, me);
         const wasHost = state.isHost;
         hostPeer = elected;
         state.isHost = elected === me || !elected;
 
         if (state.isHost && !wasHost) startTicking();
         if (!state.isHost && wasHost) stopTicking();
+        // Say so once it is safe to: from then on, nobody who arrives later
+        // takes the game away from this page.
+        const claim = state.isHost && settled;
+        if (claim !== claimed) {
+          claimed = claim;
+          this.setPresence({ hosting: claim ? true : null });
+        }
         publish();
+      };
+      setTimeout(() => {
+        settled = true;
+        if (room) elect();
+      }, settleMs);
+
+      unsubscribes.push(room.onConnection((connected) => {
+        state.connected = connected;
+        publish();
+      }, onError));
+
+      unsubscribes.push(room.onPeers((change) => {
+        const peers = change.peers;
+        me ??= peers.find((p) => p.isMe && p.sameTab)?.peer ?? null;
+        state.peers = peers.filter((p) => p.kind === 'viewer').length || 1;
+        lastPeers = peers;
+        elect();
         // Who is here, and what they called themselves. Presence is display
         // data, never authority - it only ever seats someone as a spectator.
         this.onPeopleChanged?.(peers.filter((p) => p.kind === 'viewer'));
-      }));
+      }, onError));
 
       unsubscribes.push(room.on(TOPICS.seat, (msg) => {
         if (state.isHost) this.onSeatRequest?.(msg.data, msg);
@@ -6835,6 +6928,10 @@ function createNet({ world, makeGhost, onState = () => {} } = {}) {
     },
 
     setPresence(patch) {
+      for (const [key, value] of Object.entries(patch)) {
+        if (value === null) delete mine[key];
+        else mine[key] = value;
+      }
       return room?.presence(patch).catch(() => {}) ?? Promise.resolve();
     },
 
@@ -8826,6 +8923,7 @@ function createScreens({
     profilePreview: byId('profile-preview-name'),
     lobbySub: byId('lobby-sub'),
     lobbyRoom: byId('lobby-room'),
+    lobbyConn: byId('lobby-conn'),
     modeCards: byId('mode-cards'),
     mapCards: byId('map-cards'),
     round: byId('set-round'),
@@ -9032,14 +9130,21 @@ function createScreens({
           : `${MODES[settings.mode].name} on ${MAPS.find((m) => m.id === settings.map)?.name}, ` +
             `${minutes(settings.roundSeconds)}.`;
 
-      if (room?.available) {
-        const others = Math.max(0, room.peers - 1);
-        el.lobbyRoom.hidden = false;
-        el.lobbyRoom.textContent = others === 0 ? 'solo' : `${room.peers} here`;
-        el.lobbyRoom.classList.toggle('live', others > 0);
-      } else {
-        el.lobbyRoom.hidden = true;
-      }
+      // Whether anyone else can see this lobby. Two people in two lobbies that
+      // look exactly alike is the worst way to find out they are not connected.
+      const others = room?.available ? Math.max(0, room.peers - 1) : 0;
+      const offline = room !== null && !room.available;
+      el.lobbyRoom.textContent = room === null ? 'connecting…' : offline ? 'not connected' : others === 0 ? 'only you' : `${room.peers} here`;
+      el.lobbyRoom.classList.toggle('live', others > 0);
+      el.lobbyRoom.classList.toggle('off', offline);
+      el.lobbyConn.hidden = room === null || others > 0;
+      el.lobbyConn.classList.toggle('off', offline);
+      el.lobbyConn.textContent = offline
+        ? 'This page is not connected to other players, so this lobby is only on your screen.'
+        : role.canEdit
+          ? 'Waiting for players. People join this lobby when they open the artifact signed in, ' +
+            'shared to them directly — anyone arriving by a public link gets a separate game.'
+          : 'Nobody else is here yet.';
     },
 
     /**
@@ -9506,6 +9611,9 @@ const ui = new UI({
 // Who is at the keyboard. Resolved below once the viewer answers; until then a
 // page running on its own is its own owner.
 let role = { isOwner: true, canEdit: true, known: false };
+// What the platform said about this viewer, and whether the room has answered.
+let platformRole = role;
+let roomAnswered = false;
 
 // The lobby, the title card and the post-game report. Everything that changes
 // the shared game is the owner's, and goes through the host.
@@ -9804,7 +9912,17 @@ net.onSetupRequest = (data) => {
   net.send(TOPICS.phase, match.state);
 };
 
+// The platform turned this page away after all. It plays alone from here, in
+// a lobby of one, and the lobby says so.
+net.onRoomLost = () => {
+  match.syncSeats([{ id: 'local', name: profile?.name, color: profile?.color, canPlay: true }]);
+  applyRole();
+  screens.render();
+};
+
 net.connect().then((joined) => {
+  roomAnswered = true;
+  applyRole();
   if (joined) {
     ui.renderRoom(net.state);
     screens.setRoom(net.state);
@@ -9831,10 +9949,27 @@ net.connect().then((joined) => {
     // No viewer to ask: treat this as a page running on its own.
   }
   // Opened outside a viewer there is nobody to be below, so nothing is hidden.
-  role = resolved.known ? resolved : { isOwner: true, canEdit: true, known: false };
+  platformRole = resolved.known ? resolved : { isOwner: true, canEdit: true, known: false };
+  // Told to the room so that, with nobody hosting yet, the page that can set
+  // the game up runs it. Presence is never authority: this only decides who
+  // simulates, and the platform still refuses lobby changes from anyone below
+  // Editor whoever that is.
+  if (resolved.known) net.setPresence({ admin: resolved.canEdit ? true : null });
+  applyRole();
+})();
+
+/**
+ * The role this page acts on. In a shared room it is what the platform says.
+ * A page the room cannot reach is a game of one, nothing it does reaches
+ * anybody, and the one person in it runs it - otherwise a Contributor turned
+ * away by the room would sit in a lobby they could never start.
+ */
+function applyRole() {
+  const alone = roomAnswered && !net.state.available;
+  role = alone ? { ...platformRole, isOwner: true, canEdit: true } : platformRole;
   ui.setRole(role);
   screens.setRole(role);
-})();
+}
 
 /**
  * The round is over and somebody won it. Ask that agent - not the page, the

@@ -1400,3 +1400,23 @@ body[data-phase="briefing"] #join-form button[type="submit"] { min-width: 110px;
   }
   body[data-phase="briefing"] #field-prompt { min-height: 180px; }
 }
+
+/* ----------------------------------------------------- who can see the lobby */
+#lobby-room.live { color: var(--good); border-color: rgba(74, 222, 128, 0.4); }
+#lobby-room.off { color: var(--warn); border-color: rgba(250, 204, 21, 0.45); }
+.lobby-conn {
+  margin: 6px 0 0;
+  padding: 6px 10px;
+  border-radius: 7px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--muted);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  max-width: 62ch;
+}
+.lobby-conn.off {
+  color: var(--text);
+  background: rgba(250, 204, 21, 0.07);
+  border-color: rgba(250, 204, 21, 0.4);
+}

@@ -297,6 +297,9 @@ const ui = new UI({
 // Who is at the keyboard. Resolved below once the viewer answers; until then a
 // page running on its own is its own owner.
 let role = { isOwner: true, canEdit: true, known: false };
+// What the platform said about this viewer, and whether the room has answered.
+let platformRole = role;
+let roomAnswered = false;
 
 // The lobby, the title card and the post-game report. Everything that changes
 // the shared game is the owner's, and goes through the host.
@@ -595,7 +598,17 @@ net.onSetupRequest = (data) => {
   net.send(TOPICS.phase, match.state);
 };
 
+// The platform turned this page away after all. It plays alone from here, in
+// a lobby of one, and the lobby says so.
+net.onRoomLost = () => {
+  match.syncSeats([{ id: 'local', name: profile?.name, color: profile?.color, canPlay: true }]);
+  applyRole();
+  screens.render();
+};
+
 net.connect().then((joined) => {
+  roomAnswered = true;
+  applyRole();
   if (joined) {
     ui.renderRoom(net.state);
     screens.setRoom(net.state);
@@ -622,10 +635,27 @@ net.connect().then((joined) => {
     // No viewer to ask: treat this as a page running on its own.
   }
   // Opened outside a viewer there is nobody to be below, so nothing is hidden.
-  role = resolved.known ? resolved : { isOwner: true, canEdit: true, known: false };
+  platformRole = resolved.known ? resolved : { isOwner: true, canEdit: true, known: false };
+  // Told to the room so that, with nobody hosting yet, the page that can set
+  // the game up runs it. Presence is never authority: this only decides who
+  // simulates, and the platform still refuses lobby changes from anyone below
+  // Editor whoever that is.
+  if (resolved.known) net.setPresence({ admin: resolved.canEdit ? true : null });
+  applyRole();
+})();
+
+/**
+ * The role this page acts on. In a shared room it is what the platform says.
+ * A page the room cannot reach is a game of one, nothing it does reaches
+ * anybody, and the one person in it runs it - otherwise a Contributor turned
+ * away by the room would sit in a lobby they could never start.
+ */
+function applyRole() {
+  const alone = roomAnswered && !net.state.available;
+  role = alone ? { ...platformRole, isOwner: true, canEdit: true } : platformRole;
   ui.setRole(role);
   screens.setRole(role);
-})();
+}
 
 /**
  * The round is over and somebody won it. Ask that agent - not the page, the

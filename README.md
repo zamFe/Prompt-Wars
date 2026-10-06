@@ -578,17 +578,36 @@ takes the seat from the platform-stamped sender, never from the message, so
 nobody can move anyone but themselves that way; moving other people is
 `setup`, which only the owner can send.
 
-The page that simulates is the **host**, elected without a negotiation — the
-lowest peer label wins — but only among pages that can actually send. Each page
-probes once on connecting and announces in its presence whether it can; a
-Viewer that happened to sort first would otherwise be elected to broadcast a
-game it is not allowed to broadcast, and freeze it for everyone. A Viewer is
-told plainly why its deploy button is disabled.
+The page that simulates is the **host**. Every page works it out from the same
+list of who is here, so they all agree without negotiating:
+
+1. Only pages that can actually **send**. Each page probes once on connecting
+   and says in its presence whether it can; a Viewer elected host would
+   broadcast nothing and freeze the game. A Viewer is told plainly why its
+   deploy button is disabled.
+2. A page **already hosting keeps it**. It says so in its presence once it has
+   listened to the room for a couple of seconds, and nobody who arrives later
+   takes over — not a friend joining, and not the owner reloading mid-round.
+   Before this the host was just the lowest peer label, and labels are random:
+   a friend arriving could win the election with a page that had only just
+   opened, and everyone's lobby was replaced by that page's empty one.
+3. With nobody hosting yet, a page that can **run the lobby** (Editor and up).
+4. The lowest peer label, to break a tie.
+
+When the host leaves, whoever is left picks again by the same rules and carries
+on from the state they had been following.
 
 Multiplayer needs people the platform admits to the room: **signed-in members
-of your organization, or guests you invite by email**. Someone arriving through
-a public *anyone with the link* share cannot join the room at all — they get a
-complete page of their own, with an arena nobody else is in.
+of your organization, or people you invite to the artifact directly**. Someone
+arriving through a public *anyone with the link* share, or signed out, cannot
+join the room at all — they get a complete page of their own. The lobby says
+which it is, in its corner and under its title:
+
+| Badge | Meaning |
+|---|---|
+| **not connected** | this page cannot reach anyone; the lobby is only on this screen, and its one player runs it |
+| **only you** | connected, nobody else here yet — the owner is told how people join |
+| **2 here** | connected, and everyone listed sees the same lobby |
 
 Each player's fighters think on **their own** Claude account; the first call
 asks them to allow it, and if they decline, or their organization does not
