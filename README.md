@@ -488,6 +488,38 @@ full *and* more than 10 were already queued at the moment of your death, that
 becomes **10 minutes** — dying in a crowd costs you your place for a long while.
 In a round with lives, a death costs five seconds instead, until your last one.
 
+## Sharing it
+
+Share the artifact from its **Share** menu, and give players **Contributor**.
+
+| Level | What they can do |
+|---|---|
+| **Owner / Editor** | everything, including the lobby: mode, map, rules, teams, bots, start |
+| **Contributor** | deploy a fighter, talk to it, and host the simulation if elected |
+| **Viewer / Commenter** | watch only — the platform refuses everything their page would send |
+
+The level is enforced by the platform, not the page. Room topics are admin-only
+unless the artifact opens them to Contributors at publish time, so the lobby
+controls (`setup`, `bots`, `clear`) are left closed and everything a host or a
+player must send (`tick`, `roster`, `phase`, `need`, `plan`, `join`, `part`) is
+opened.
+
+The page that simulates is the **host**, elected without a negotiation — the
+lowest peer label wins — but only among pages that can actually send. Each page
+probes once on connecting and announces in its presence whether it can; a
+Viewer that happened to sort first would otherwise be elected to broadcast a
+game it is not allowed to broadcast, and freeze it for everyone. A Viewer is
+told plainly why its deploy button is disabled.
+
+Multiplayer needs people the platform admits to the room: **signed-in members
+of your organization, or guests you invite by email**. Someone arriving through
+a public *anyone with the link* share cannot join the room at all — they get a
+complete page of their own, with an arena nobody else is in.
+
+Each player's fighters think on **their own** Claude account; the first call
+asks them to allow it, and if they decline, or their organization does not
+allow it, their fighters run on the offline interpreter instead.
+
 ## The two brains
 
 **Offline interpreter** (default, no API key). It reads your prompt for intent —

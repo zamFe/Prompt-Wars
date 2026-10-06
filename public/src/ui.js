@@ -297,10 +297,20 @@ export class UI {
     }
     badge.hidden = false;
     const others = Math.max(0, state.peers - 1);
-    badge.textContent = others === 0
-      ? 'solo'
-      : `${state.peers} here · ${state.isHost ? 'hosting' : 'guest'}`;
+    badge.textContent = state.canSend === false
+      ? `${state.peers} here · watching`
+      : others === 0
+        ? 'solo'
+        : `${state.peers} here · ${state.isHost ? 'hosting' : 'guest'}`;
     badge.classList.toggle('live', others > 0);
+
+    // At Viewer level the platform refuses everything this page would send,
+    // so the deploy form would only ever fail silently. Say so instead.
+    const watching = state.canSend === false;
+    this.el.form.querySelector('button[type=submit]').disabled = watching;
+    if (watching) {
+      this.showStatus('You are here as a Viewer: you can watch, but deploying a fighter needs Contributor access. Ask the owner to raise it from the Share menu.', 'warn');
+    }
   }
 
   fillPresets() {

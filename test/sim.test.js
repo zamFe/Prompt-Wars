@@ -13,6 +13,7 @@ import { normalizeAction, buildQueue, stepAction, describeAction, MOVE_DIRECTION
 import { hasLineOfSight, castRay, clearance, resolveCollision, MAPS, setMap, baseOf, currentMap } from '../public/src/arena.js';
 import { createMatch, PHASES, MODES, missionBriefing, CODENAMES } from '../public/src/match.js';
 import { compassFrom, emitSound, takeHeard, describeHeard } from '../public/src/sound.js';
+import { electHost, TOPICS } from '../public/src/net.js';
 import { ordersHeard } from '../public/src/brains/local.js';
 import { SOUND, TEAMS } from '../public/src/config.js';
 import { WEAPONS, AGENT, WORLD, LOBBY, VISION, MOVE, CHAT, COMMS, PULSE, HARD_RULES } from '../public/src/config.js';
@@ -1680,6 +1681,32 @@ test('commander mode gives each side its own channel', () => {
   assert.ok(!MODES.ffa.teamChat);
   assert.equal(MODES.commander.squad, 4);
   assert.ok(TEAMS.a.name && TEAMS.b.name);
+});
+
+console.log('\n-- sharing -------------------------------------------------------');
+
+test('a peer that cannot send is never elected to run the game', () => {
+  const viewer = (peer, presence = {}) => ({ peer, kind: 'viewer', presence });
+  // "aaa" sorts first, but it is here at Viewer level and can broadcast nothing.
+  const peers = [viewer('aaa', { canHost: false }), viewer('mmm', { canHost: true }), viewer('zzz')];
+  assert.equal(electHost(peers), 'mmm', 'the lowest label among those who can send');
+
+  // Not yet known counts as able, so a fresh room is never left hostless.
+  assert.equal(electHost([viewer('bbb'), viewer('ccc')]), 'bbb');
+  // Everyone a Viewer: still pick someone, rather than nobody.
+  assert.equal(electHost([viewer('q', { canHost: false }), viewer('p', { canHost: false })]), 'p');
+  // The publishing session is never a candidate.
+  assert.equal(electHost([{ peer: 'a', kind: 'agent', presence: {} }, viewer('b')]), 'b');
+  assert.equal(electHost([], 'me'), 'me', 'alone, you host');
+});
+
+test('every topic a non-owner must send on is listed, so it can be opened to Contributors', () => {
+  // Kept in step with the capability declaration at publish time: a topic
+  // left out of it is admin-only, and the host is not always the owner.
+  const hostOrPlayer = ['tick', 'roster', 'join', 'plan', 'need', 'part', 'phase'];
+  for (const topic of hostOrPlayer) assert.ok(Object.values(TOPICS).includes(topic), topic);
+  const ownerOnly = ['bots', 'clear', 'setup'];
+  for (const topic of ownerOnly) assert.ok(Object.values(TOPICS).includes(topic), topic);
 });
 
 console.log('\n-- a full match --------------------------------------------------');

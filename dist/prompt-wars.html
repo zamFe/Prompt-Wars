@@ -5981,6 +5981,20 @@ function encodeRoster(world) {
     a.team ?? null, a.carrying ?? null,
   ]);
 }
+
+/**
+ * Who simulates. Lowest peer label wins, so every page agrees without a
+ * negotiation - but only among peers that can actually SEND. A Viewer on an
+ * artifact may not send on any topic at all, so a Viewer elected host would
+ * broadcast nothing and freeze the game for everyone. Each page finds out
+ * whether it can send and says so in its presence; a peer that has not said
+ * yet is given the benefit of the doubt, so the room is never left hostless.
+ */
+function electHost(peers, me = null) {
+  const viewers = peers.filter((p) => p.kind === 'viewer');
+  const able = viewers.filter((p) => p.presence?.canHost !== false);
+  return (able.length ? able : viewers).map((p) => p.peer).sort()[0] ?? me;
+}
 function createNet({ world, makeGhost, onState = () => {} } = {}) {
   let room = null;
   let me = null;                 // my peer label
@@ -5990,14 +6004,10 @@ function createNet({ world, makeGhost, onState = () => {} } = {}) {
   let lastRosterKey = '';
   const pendingNeeds = new Map();
 
-  const state = { connected: false, isHost: true, peers: 1, available: false, error: null };
+  // `canSend` is null until this page has found out, then true or false. False
+  // means this viewer is here at Viewer level: it can watch, never act.
+  const state = { connected: false, isHost: true, peers: 1, available: false, canSend: null, error: null };
   const publish = () => onState({ ...state });
-
-  /** Lowest peer label wins. Every page computes the same answer. */
-  const electHost = (peers) => {
-    const viewers = peers.filter((p) => p.kind === 'viewer').map((p) => p.peer).sort();
-    return viewers[0] ?? me;
-  };
 
   const stopTicking = () => {
     if (tickTimer) clearInterval(tickTimer);
@@ -6048,6 +6058,20 @@ function createNet({ world, makeGhost, onState = () => {} } = {}) {
       }
       state.available = true;
 
+      // Can this page send at all? There is no call that answers it, so ask
+      // the platform the only way it answers: send something nobody acts on.
+      // A tick from a non-host is ignored by every page, and a host ignores
+      // ticks entirely. `not_permitted` means Viewer level - say so in
+      // presence, so this page is never elected to run a game it cannot
+      // broadcast.
+      room.emit(TOPICS.tick, { probe: true })
+        .then(() => true, (error) => error?.code !== 'not_permitted')
+        .then((canSend) => {
+          state.canSend = canSend;
+          room.presence({ canHost: canSend }).catch(() => {});
+          publish();
+        });
+
       unsubscribes.push(room.onConnection((connected) => {
         state.connected = connected;
         publish();
@@ -6058,7 +6082,7 @@ function createNet({ world, makeGhost, onState = () => {} } = {}) {
         me ??= peers.find((p) => p.isMe && p.sameTab)?.peer ?? null;
         state.peers = peers.filter((p) => p.kind === 'viewer').length || 1;
 
-        const elected = electHost(peers);
+        const elected = electHost(peers, me);
         const wasHost = state.isHost;
         hostPeer = elected;
         state.isHost = elected === me || !elected;
@@ -7042,10 +7066,20 @@ class UI {
     }
     badge.hidden = false;
     const others = Math.max(0, state.peers - 1);
-    badge.textContent = others === 0
-      ? 'solo'
-      : `${state.peers} here · ${state.isHost ? 'hosting' : 'guest'}`;
+    badge.textContent = state.canSend === false
+      ? `${state.peers} here · watching`
+      : others === 0
+        ? 'solo'
+        : `${state.peers} here · ${state.isHost ? 'hosting' : 'guest'}`;
     badge.classList.toggle('live', others > 0);
+
+    // At Viewer level the platform refuses everything this page would send,
+    // so the deploy form would only ever fail silently. Say so instead.
+    const watching = state.canSend === false;
+    this.el.form.querySelector('button[type=submit]').disabled = watching;
+    if (watching) {
+      this.showStatus('You are here as a Viewer: you can watch, but deploying a fighter needs Contributor access. Ask the owner to raise it from the Share menu.', 'warn');
+    }
   }
 
   fillPresets() {
