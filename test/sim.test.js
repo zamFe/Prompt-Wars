@@ -15,6 +15,7 @@ import { createMatch, PHASES, MODES, missionBriefing, CODENAMES } from '../publi
 import { compassFrom, emitSound, takeHeard, describeHeard } from '../public/src/sound.js';
 import { electHost, TOPICS } from '../public/src/net.js';
 import { colorOf, shade, luminance, isHex } from '../public/src/colors.js';
+import { parseOrder, orderTarget, ORDER_KINDS } from '../public/src/orders.js';
 import { ordersHeard } from '../public/src/brains/local.js';
 import { SOUND, TEAMS, AGENT_COLORS } from '../public/src/config.js';
 import { WEAPONS, AGENT, WORLD, LOBBY, VISION, MOVE, CHAT, COMMS, PULSE, HARD_RULES } from '../public/src/config.js';
@@ -1853,6 +1854,116 @@ test('seats travel to guests, reshaped rather than trusted', () => {
   assert.ok(seat.name.length <= 18);
   assert.equal(seat.color, '#8b93a7', 'a colour that is not a colour is replaced');
   assert.equal(seat.side, null, 'and a side that does not exist is the stands');
+});
+
+console.log('\n-- squad orders --------------------------------------------------');
+
+test('a line is read for where it sends a fighter, most specific first', () => {
+  const cases = {
+    'HAWK, hold position': 'hold',
+    'everyone regroup on me': 'follow',
+    'BISHOP: fall back to base': 'home',
+    'push their base now': 'push',
+    'take the left flank': 'left',
+    'swing right': 'right',
+    'hold the middle': 'middle',             // where, not whether to hold
+    'fall back to the middle': 'middle',
+    'spread out': 'spread',
+    'go north': 'left',
+    'nice shot': null,
+    'be careful and save ammo': null,        // how to fight, not where to go
+  };
+  for (const [line, kind] of Object.entries(cases)) assert.equal(parseOrder(line), kind, line);
+});
+
+test('left and right are read from your own base, looking at theirs', () => {
+  const base = (team) => ({ a: { x: 170, y: 700 }, b: { x: 1230, y: 700 } })[team];
+  const at = (team, kind) => orderTarget({ kind }, { team, self: { x: 700, y: 480 }, commander: null, base });
+  assert.ok(at('a', 'left').y < 700, 'west side looking east: left is north');
+  assert.ok(at('a', 'right').y > 700);
+  assert.ok(at('b', 'left').y > 700, 'east side looking west: left is south');
+  assert.ok(at('b', 'right').y < 700);
+  assert.deepEqual(at('a', 'push'), base('b'));
+  assert.deepEqual(at('a', 'home'), base('a'));
+  for (const kind of ORDER_KINDS) {
+    const t = at('a', kind);
+    assert.ok(t && clearance(t.x, t.y) > WORLD.agentRadius, `${kind} points into a wall`);
+  }
+});
+
+test('a squad hears its commander anywhere; the enemy only within earshot', () => {
+  const { world, start } = makeCommand();
+  start();
+  const commander = world.agents.find((a) => a.participant.role === 'commander' && a.team === 'a');
+  const mine = world.agents.find((a) => a.participant.commanderId === commander.participant.id);
+  const enemy = world.agents.find((a) => a.team === 'b');
+
+  Object.assign(commander, { x: 200, y: 700 });
+  Object.assign(mine, { x: 1250, y: 300 });          // far beyond a shout
+  Object.assign(enemy, { x: 1250, y: 1100 });        // just as far
+  takeHeard(mine, world.time);
+  takeHeard(enemy, world.time);
+
+  world.say(commander, 'push their base');
+  const squadHeard = takeHeard(mine, world.time);
+  assert.equal(squadHeard.length, 1, 'the squad hears it on its own channel');
+  assert.equal(squadHeard[0].radio, true);
+  assert.equal(takeHeard(enemy, world.time).length, 0, 'the enemy does not, at that range');
+
+  Object.assign(enemy, { x: 330, y: 700 });          // now within earshot
+  world.say(commander, 'hold');
+  assert.equal(takeHeard(enemy, world.time).length, 1, 'stand close and you overhear');
+});
+
+test('the radio is commander mode only; other team modes still shout', () => {
+  const { world, match } = makeMatch({ mode: 'tdm' });
+  match.openBriefing();
+  match.goLive();
+  const [one, two] = world.agents.filter((a) => a.team === 'a');
+  Object.assign(one, { x: 200, y: 700 });
+  Object.assign(two, { x: 1250, y: 300 });
+  takeHeard(two, world.time);
+  world.say(one, 'push');
+  assert.equal(takeHeard(two, world.time).length, 0);
+});
+
+asyncTest('a fighter sent somewhere goes there, and stops', async () => {
+  const { world, brain, start } = makeCommand();
+  start();
+  const commander = world.agents.find((a) => a.participant.role === 'commander' && a.team === 'a');
+  const bot = world.agents.find((a) => a.participant.commanderId === commander.participant.id);
+  const foes = world.agents.filter((a) => a.team === 'b');
+  for (const other of world.agents) if (other !== bot && other !== commander) other.alive = false;   // an empty arena
+
+  world.say(commander, `${bot.participant.codename}, push their base`);
+  const enemyBase = baseOf('b');
+  const step = async (seconds) => {
+    for (let i = 0; i < seconds * 60; i++) {
+      world.update(1 / 60);
+      if (i % 30 === 0) await new Promise((r) => setImmediate(r));
+    }
+  };
+  await step(25);
+  const arrivedAt = Math.hypot(bot.x - enemyBase.x, bot.y - enemyBase.y);
+  assert.ok(arrivedAt < 120, `got to within ${Math.round(arrivedAt)} of the base`);
+
+  const before = { x: bot.x, y: bot.y };
+  await step(6);
+  const drift = Math.hypot(bot.x - before.x, bot.y - before.y);
+  assert.ok(drift < 40, `and stayed there - moved ${Math.round(drift)} units in six seconds, not circling`);
+  void foes;
+  void brain;
+});
+
+test('a commander is told exactly the orders its squad understands', () => {
+  const brief = MODES.commander.briefing;
+  for (const phrase of ['on me', 'hold', 'push', 'fall back', 'left flank', 'right flank', 'the middle', 'spread out']) {
+    assert.ok(brief.includes(phrase), `briefing never mentions "${phrase}"`);
+    assert.ok(parseOrder(phrase) || phrase === 'the middle', `"${phrase}" is promised but not understood`);
+  }
+  assert.equal(parseOrder('the middle'), 'middle');
+  assert.match(brief, /hears it wherever/, 'and that the squad hears it anywhere');
+  assert.match(brief, /ONLY orders they understand/);
 });
 
 console.log('\n-- a full match --------------------------------------------------');

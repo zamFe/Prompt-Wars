@@ -2250,6 +2250,107 @@ const arenaSize = S;
 const clampToArena = (v, radius) =>
   clamp(v, BORDER_THICKNESS + radius, S - BORDER_THICKNESS - radius);
 
+// ---- public/src/orders.js ----------------------------------------
+// What a squad fighter does when its commander tells it something.
+//
+// An order used to change only a bot's temperament - more aggressive, more
+// inclined to camp - and nothing about WHERE it went. Where it went was decided
+// by a team-mode default ("no enemy in sight: head for their base") that ran
+// before any of that, so "hold position" made a bot more cautious on its way to
+// the enemy base, and it circled the base when it got there. An order is now a
+// destination, and arriving means stopping and watching.
+//
+// Lanes are read from your own side of the arena: "left flank" is the lane on
+// your left as you look from your base toward theirs. North and south mean the
+// top and bottom of the arena whichever side you are on - every agent's heading
+// is a compass bearing, so those words mean the same thing to everyone.
+const ORDER_KINDS = ['follow', 'hold', 'push', 'home', 'left', 'right', 'middle', 'spread'];
+
+/**
+ * Most specific first: "fall back to the middle" is about the middle, and
+ * "hold the left flank" is about the left flank, not about holding.
+ */
+const PATTERNS = [
+  ['spread', /\b(spread out|split up|fan out|cover (every|all) lanes?)\b/],
+  ['left', /\b(left|north)(ern)?\s+(flank|side|wing|lane|route)\b|\b(flank|go|move|head|swing|push|take|hold)\s+(the\s+)?(left|north)\b/],
+  ['right', /\b(right|south)(ern)?\s+(flank|side|wing|lane|route)\b|\b(flank|go|move|head|swing|push|take|hold)\s+(the\s+)?(right|south)\b/],
+  ['middle', /\b(middle|centre|center|mid(field)?)\b/],
+  ['home', /\b(fall back|retreat|pull back|withdraw|back to (base|spawn|home)|go home|return to base|defend (the |our )?base)\b/],
+  ['follow', /\b(on me|follow me|with me|regroup|rally|form up|come to me|stick (close|with me)|escort me|cover me)\b/],
+  ['hold', /\b(hold( position| here| there| that)?|stay( there| here| put| where you are)?|stop|wait|dig in|stand (still|your ground|fast)|don'?t move|guard)\b/],
+  ['push', /\b(push|attack|advance|charge|move up|go forward|rush|assault|hunt|go get|take (their|the enemy) base|engage)\b/],
+];
+
+/** The kind of order a line is, or null if it is not one. */
+function parseOrder(text) {
+  const line = ` ${String(text ?? '').toLowerCase()} `;
+  for (const [kind, pattern] of PATTERNS) {
+    if (pattern.test(line)) return kind;
+  }
+  return null;
+}
+
+/** How a fighter answers, out loud, so its commander knows it was heard. */
+const ORDER_REPLIES = {
+  follow: 'on you',
+  hold: 'holding here',
+  push: 'pushing their base',
+  home: 'falling back to base',
+  left: 'taking the left flank',
+  right: 'taking the right flank',
+  middle: 'moving to the middle',
+  spread: 'taking my lane',
+};
+
+/** Find open floor near a point, so a waypoint is never inside a wall. */
+function openNear(x, y) {
+  if (clearance(x, y) >= 45) return { x, y };
+  for (let r = 30; r <= 360; r += 30) {
+    for (let a = 0; a < 16; a++) {
+      const px = x + Math.cos((a / 16) * Math.PI * 2) * r;
+      const py = y + Math.sin((a / 16) * Math.PI * 2) * r;
+      if (clearance(px, py) >= 45) return { x: px, y: py };
+    }
+  }
+  return { x, y };
+}
+
+/**
+ * Where an order points, in the world, for one fighter. Resolved by whatever
+ * can see the arena - the fighter itself never gets coordinates.
+ *
+ * @param order    { kind, anchor? }
+ * @param context  { team, self: {x,y}, commander: {x,y}|null, base(team), lane }
+ */
+function orderTarget(order, { team, self, commander, base, lane = 0 }) {
+  const S = WORLD.size;
+  const mine = base(team);
+  const theirs = base(team === 'a' ? 'b' : 'a');
+  // "Left" as seen from your own base looking at theirs: on the west side that
+  // is north; on the east side it is south.
+  const westward = mine.x > S / 2;
+  const north = openNear(S / 2, 250);
+  const south = openNear(S / 2, S - 250);
+  const left = westward ? south : north;
+  const right = westward ? north : south;
+
+  switch (order?.kind) {
+    case 'follow': return commander ?? mine;
+    case 'hold': return order.anchor ?? self;
+    case 'push': return theirs;
+    case 'home': return mine;
+    case 'left': return left;
+    case 'right': return right;
+    case 'middle': return openNear(S / 2, S / 2);
+    // One fighter down each lane, and one straight at them.
+    case 'spread': return [left, openNear(S / 2, S / 2), right, theirs][lane % 4];
+    default: return null;
+  }
+}
+
+/** How close counts as there. Following keeps a little distance. */
+const ARRIVED = { follow: 130, default: 70 };
+
 // ---- public/src/sound.js -----------------------------------------
 // Hearing.
 //
@@ -2296,21 +2397,30 @@ const rangeFor = (kind) => (kind === 'shot' ? SOUND.shotRange : SOUND.speechRang
 function emitSound(world, { kind, x, y, source = null, name = null, text = null }) {
   const reach = rangeFor(kind);
 
+  // In commander mode a side talks over its own channel: a squad hears its
+  // commander wherever they both are, and the commander hears its squad. The
+  // other side still only hears what carries through the air.
+  const radio = kind === 'speech' && Boolean(world.match?.mode?.teamComms) && Boolean(source?.team);
+
   for (const listener of world.agents) {
     if (!listener.alive || listener === source) continue;
 
     const distance = Math.hypot(listener.x - x, listener.y - y);
-    if (distance > reach) continue;
+    const onChannel = radio && listener.team === source.team;
+    const muffled = !onChannel && !hasLineOfSight(listener.x, listener.y, x, y);
 
-    // A wall between you and it costs range rather than silencing it.
-    const muffled = !hasLineOfSight(listener.x, listener.y, x, y);
-    if (muffled && distance > reach * SOUND.wallDamping) continue;
+    if (!onChannel) {
+      if (distance > reach) continue;
+      // A wall between you and it costs range rather than silencing it.
+      if (muffled && distance > reach * SOUND.wallDamping) continue;
+    }
 
     listener.heard ??= [];
     listener.heard.push({
       kind,
       direction: compassFrom(listener, x, y),
       muffled,
+      radio: onChannel,
       name,
       text,
       at: world.time,
@@ -2345,8 +2455,8 @@ function describeHeard(heard = []) {
       shots.set(sound.direction, (shots.get(sound.direction) ?? 0) + 1);
     } else {
       lines.push(
-        `  ${sound.name ?? 'A voice'} to your ${sound.direction}${sound.muffled ? ' (muffled, through cover)' : ''}: ` +
-          `"${sound.text ?? '...'}"`,
+        `  ${sound.name ?? 'A voice'} ${sound.radio ? 'on your channel, from your' : 'to your'} ${sound.direction}` +
+          `${sound.muffled ? ' (muffled, through cover)' : ''}: "${sound.text ?? '...'}"`,
       );
     }
   }
@@ -2363,6 +2473,7 @@ function describeHeard(heard = []) {
 // Agents never receive absolute arena coordinates. They get a compass heading,
 // bearings and distances to what is inside their vision cone, and wall probes -
 // so working out where you are is itself part of the prompt's job.
+
 
 
 
@@ -2505,6 +2616,7 @@ function buildSnapshot(agent, world) {
     },
     vision: { fovDegrees: VISION.fov, range: VISION.range },
     mission: buildMission(agent, world),
+    order: buildOrder(agent, world),
     objective: buildObjective(agent, world),
     enemies,
     allies,
@@ -2542,6 +2654,35 @@ function buildMission(agent, world) {
     theirScore: mine ? scores[mine === 'a' ? 'b' : 'a'] : null,
     livesLeft: Number.isFinite(agent.participant.livesLeft) ? agent.participant.livesLeft : null,
     secondsLeft: match.remaining === null ? null : Math.round(match.remaining),
+  };
+}
+
+/**
+ * Where a squad fighter's standing order points, as a bearing and a distance
+ * like everything else it senses. Resolved here because this is the only place
+ * that knows where things are; the fighter itself never gets coordinates.
+ */
+function buildOrder(agent, world) {
+  const p = agent.participant;
+  if (p?.role !== 'squad' || !p.order?.kind) return null;
+
+  // "Hold" means here - wherever here was when the order arrived.
+  if (p.order.kind === 'hold' && !p.order.anchor) p.order.anchor = { x: agent.x, y: agent.y };
+
+  const commander = world.lobby?.get?.(p.commanderId)?.agent ?? null;
+  const target = orderTarget(p.order, {
+    team: agent.team,
+    self: agent,
+    commander: commander?.alive ? commander : null,
+    base: (team) => baseOf(team),
+    lane: p.lane ?? 0,
+  });
+  if (!target) return null;
+
+  return {
+    kind: p.order.kind,
+    bearing: round1(bearingTo(agent, target.x, target.y)),
+    distance: round0(dist(agent.x, agent.y, target.x, target.y)),
   };
 }
 
@@ -2636,6 +2777,10 @@ function renderSnapshotText(s) {
       lines.push(`  Enemy base: ${where(o.enemyBase)}` +
         `${o.enemyFlag ? ' (where their flag stands when it is home)' : ' (their side of the arena)'}`);
     }
+  }
+
+  if (s.order) {
+    lines.push(`ORDERS: ${s.order.kind} — ${s.order.distance} away, bearing ${s.order.bearing > 0 ? '+' : ''}${s.order.bearing}°`);
   }
 
   if (s.allies?.length) {
@@ -3711,6 +3856,17 @@ class World {
    * rather than about the lobby.
    */
   briefSquads() {
+    // A squad starts the round on its commander, and stays there until told
+    // otherwise - which keeps it where the commander can see what it is doing.
+    const lanes = new Map();
+    for (const p of this.lobby.list()) {
+      if (p.role !== 'squad') continue;
+      const lane = lanes.get(p.commanderId) ?? 0;
+      lanes.set(p.commanderId, lane + 1);
+      p.lane = lane;
+      p.order = { kind: 'follow', at: this.time };
+    }
+
     for (const commander of this.lobby.list()) {
       if (commander.role !== 'commander' || !commander.agent || !commander.mission) continue;
 
@@ -4372,6 +4528,7 @@ function recordAmendments(list, messages) {
 
 
 
+
 /** Keyword -> trait nudges. Each entry may push several traits at once. */
 const RULES = [
   // --- posture -------------------------------------------------------------
@@ -4581,6 +4738,38 @@ function shotsToFire(s, traits) {
   if (traits.trigger < -0.2) return 1;
   return Math.min(s.self.ammo, 2);
 }
+
+/**
+ * Walk to a sensed point and no further. The old version always took at least
+ * two strides, so within fifty units of a point it stepped past it, turned
+ * round, and stepped past it again - which is the circling you saw at a base.
+ */
+function walkToward(target, s, { note, chat = null }) {
+  if (s.walls.proximity.front < 80 && target.distance > 60) {
+    const side = s.walls.proximity.left > s.walls.proximity.right ? 'left' : 'right';
+    return {
+      actions: [
+        { name: 'turn', input: { direction: side, degrees: 55 } },
+        { name: 'move', input: { direction: 'forward', steps: 3 } },
+      ],
+      note: `${note} - a wall is in the way`,
+      chat,
+    };
+  }
+
+  const steps = clamp(Math.round(target.distance / MOVE.stepDistance), 1, 8);
+  if (Math.abs(target.bearing) > 22) {
+    return {
+      actions: [
+        { name: 'turn', input: { direction: target.bearing < 0 ? 'left' : 'right', degrees: clamp(Math.abs(target.bearing), 5, 180) } },
+        { name: 'move', input: { direction: 'forward', steps: Math.min(steps, 3) } },
+      ],
+      note,
+      chat,
+    };
+  }
+  return { actions: [{ name: 'move', input: { direction: 'forward', steps } }], note, chat };
+}
 function decideFromTraits(s, traits, rng, state = {}) {
   const actions = [];
   const enemy = nearestEnemy(s);
@@ -4615,6 +4804,30 @@ function decideFromTraits(s, traits, rng, state = {}) {
     return { actions: [{ name: 'reload', input: {} }], note: 'topping up while clear' };
   }
 
+  // --- orders from a commander ---------------------------------------------
+  // A squad fighter goes where it was told, and stops when it gets there. It
+  // still fights what turns up in front of it - except when falling back,
+  // which means going, and shooting only what is already in its face.
+  if (s.order) {
+    const o = s.order;
+    const radius = o.kind === 'follow' ? ARRIVED.follow : ARRIVED.default;
+    const threat = enemy && enemy.distance < (o.kind === 'home' ? 170 : 380);
+    if (!threat) {
+      if (o.distance > radius) {
+        return walkToward(o, s, { note: `${o.kind}: on my way, ${o.distance} out`, chat: eventLine });
+      }
+      // There. Stop and watch, sweeping the cone rather than circling the spot.
+      return {
+        actions: [
+          { name: 'turn', input: { direction: rng() < 0.5 ? 'left' : 'right', degrees: 35 + rng() * 40 } },
+          { name: 'hold', input: { seconds: 1 + rng() } },
+        ],
+        note: `${o.kind}: in position, watching`,
+        chat: eventLine,
+      };
+    }
+  }
+
   // --- the objective, in a mode that has one -------------------------------
   // Kills score nothing in capture the flag, so an interpreter that only knows
   // how to fight would wander a flag match for ten minutes. It plays the
@@ -4631,40 +4844,22 @@ function decideFromTraits(s, traits, rng, state = {}) {
             ? null                                        // a fight in front of us is the objective
             : o.enemyBase;                                // otherwise push toward their side
 
+    // A base is a direction to head in, not a spot to stand on. Once you are on
+    // their side, stop walking at the point and start looking for people; only
+    // a flag carrier needs to reach the pad itself.
+    const arrived = target && !o.carrying && (target === o.enemyBase || target === o.yourBase) && target.distance < 170;
     const cornered = enemy && enemy.distance < (o.carrying ? 170 : 260);
-    if (target && target.distance !== null && !cornered) {
-      // Walking into a wall for ten minutes is not an objective. This branch
-      // runs before the general wall-avoidance below, so it has to do its own.
-      if (s.walls.proximity.front < 80 && target.distance > 60) {
-        const side = s.walls.proximity.left > s.walls.proximity.right ? 'left' : 'right';
-        return {
-          actions: [
-            { name: 'turn', input: { direction: side, degrees: 55 } },
-            { name: 'move', input: { direction: 'forward', steps: 3 } },
-          ],
-          note: 'wall between me and the objective',
-          chat: eventLine,
-        };
-      }
+
+    if (target && target.distance !== null && !cornered && !arrived) {
       const line = o.carrying
         ? bark('flag', s, traits, rng, state)
         : target === o.yourFlag ? bark('defend', s, traits, rng, state) : null;
-
-      if (Math.abs(target.bearing) > 22) {
-        return {
-          actions: [
-            { name: 'turn', input: { direction: target.bearing < 0 ? 'left' : 'right', degrees: clamp(Math.abs(target.bearing), 5, 180) } },
-            { name: 'move', input: { direction: 'forward', steps: 3 } },
-          ],
-          note: o.carrying ? 'carrying - turning for home' : 'turning toward the flag',
-          chat: eventLine ?? line,
-        };
-      }
-      return {
-        actions: [{ name: 'move', input: { direction: 'forward', steps: clamp(Math.round(target.distance / MOVE.stepDistance), 2, 8) } }],
-        note: o.carrying ? 'running the flag home' : 'moving on the flag',
-        chat: eventLine ?? line,
-      };
+      const note = o.carrying
+        ? 'carrying their flag home'
+        : target === o.yourFlag
+          ? 'getting our flag back'
+          : target === o.enemyFlag ? 'going for their flag' : 'pushing toward their side';
+      return walkToward(target, s, { note, chat: eventLine ?? line });
     }
   }
 
@@ -4910,8 +5105,14 @@ function createLocalBrain({ thinkTime = [0.25, 0.6] } = {}) {
       // channel - and they join the briefing this brain already reads, so a
       // commander's voice genuinely changes how its squad fights.
       const orders = ordersHeard(snapshot, participant);
+      let movement = null;
       if (orders.length) {
         participant.briefing = `${briefingFor(participant)}\n${orders.join('\n')}`.slice(-4000);
+        // Where to go is the last line that says where. The target itself is
+        // worked out by the arena on the next look, which is the only thing
+        // that knows where anything is.
+        for (const line of orders) movement = parseOrder(line) ?? movement;
+        if (movement) participant.order = { kind: movement, at: snapshot.time };
       }
 
       const previous = cache.get(participant)?.traits ?? null;
@@ -4921,9 +5122,18 @@ function createLocalBrain({ thinkTime = [0.25, 0.6] } = {}) {
       // squad fighter has - and only when it actually changed something, or
       // four bots would shout "copy" at every word.
       const acknowledged = orders.length ? acknowledge(orders, previous, entry.traits) : null;
-      const callsign = acknowledged && !/Nothing in that/.test(acknowledged)
-        ? `${participant.codename}: ${acknowledged.replace(/^Copy — /, '')}`
-        : null;
+      const callsign = movement
+        ? `${participant.codename}: ${ORDER_REPLIES[movement]}.`
+        : acknowledged && !/Nothing in that/.test(acknowledged)
+          ? `${participant.codename}: ${acknowledged.replace(/^Copy — /, '')}`
+          : null;
+
+      // A new destination: answer, and take a breath. The next look is built
+      // with the new order in it, so the walk starts from the right place
+      // instead of finishing a plan toward the old one.
+      if (movement) {
+        return { actions: [{ name: 'hold', input: { seconds: 0.3 } }], note: `order: ${movement}`, chat: callsign, ...(reply ? { reply } : {}) };
+      }
 
       // A small delay so offline agents feel like they are deciding, not twitching.
       const delay = thinkTime[0] + entry.rng() * (thinkTime[1] - thinkTime[0]);
@@ -5182,18 +5392,29 @@ const MODES = {
     // The only mode where speech is the mechanic rather than the flavour, so
     // the global chat is split into one channel per side.
     teamChat: true,
+    // A side talks over its own channel: the squad hears its commander from
+    // anywhere on the map. The enemy only hears what carries through the air.
+    teamComms: true,
     blurb: 'One agent a side, each commanding four bots. Your voice is the only thing they hear.',
     scoreWord: 'kills',
     commanderBounty: 5,
     briefing:
       'You are a COMMANDER. Four bots fight for you, listed below with their codenames and where they started. ' +
-      'They are not clever and they cannot see what you see - but they do what they are told, and the only way ' +
-      'to tell them anything is to SAY IT OUT LOUD. Your "say" line is your radio.\n' +
-      'Address one of them by codename ("HAWK, hold the left wall") and only that one acts on it. Say it without ' +
-      'a codename and the whole squad takes it. They only hear you within earshot, and so does the enemy ' +
-      'commander if they are close enough - talking gives your position away.\n' +
-      'Orders they understand are plain tactics: push, hold, fall back, regroup, go left, go right, watch the ' +
-      'flanks, spread out, conserve ammo, open fire. Keep each order to one short line.\n' +
+      'They are not clever and they cannot see what you see - but they go where they are told, and the only way ' +
+      'to tell them anything is to SAY IT OUT LOUD. Your "say" line is your radio: your squad hears it wherever ' +
+      'they are on the map. The enemy commander hears it too, but only if they are close enough to you.\n' +
+      'Name one by codename ("HAWK, left flank") and only that fighter moves. Say it with no codename and the ' +
+      'whole squad does. They answer back on the same channel.\n' +
+      'These are the ONLY orders they understand - anything else changes nothing about where they go:\n' +
+      '- "on me" / "follow me" / "regroup": stay close to you. This is what they do when the round starts.\n' +
+      '- "hold" / "stay": stop exactly where they are and watch.\n' +
+      '- "push" / "attack" / "advance": go to the enemy base.\n' +
+      '- "fall back" / "back to base": return to your base, only shooting what is in their face.\n' +
+      '- "left flank" / "right flank": the side lanes, as seen from YOUR base looking toward theirs.\n' +
+      '- "the middle": the centre of the arena.\n' +
+      '- "spread out": one fighter down each lane and one straight at their base.\n' +
+      'They fight whatever comes into view on the way, wherever they were sent. Words like "aggressive", ' +
+      '"careful", "save ammo" or "open fire" change how they fight, not where they go.\n' +
       'A kill scores for your side. Killing the enemy commander is worth five.',
   },
 };

@@ -331,6 +331,17 @@ export class World {
    * rather than about the lobby.
    */
   briefSquads() {
+    // A squad starts the round on its commander, and stays there until told
+    // otherwise - which keeps it where the commander can see what it is doing.
+    const lanes = new Map();
+    for (const p of this.lobby.list()) {
+      if (p.role !== 'squad') continue;
+      const lane = lanes.get(p.commanderId) ?? 0;
+      lanes.set(p.commanderId, lane + 1);
+      p.lane = lane;
+      p.order = { kind: 'follow', at: this.time };
+    }
+
     for (const commander of this.lobby.list()) {
       if (commander.role !== 'commander' || !commander.agent || !commander.mission) continue;
 

@@ -8,6 +8,7 @@
 import { MOVE, WEAPONS, AGENT, WORLD, CHAT } from '../config.js';
 import { clamp, toDeg, makeRng } from '../util.js';
 import { briefingFor, drainInbox } from '../comms.js';
+import { parseOrder, ORDER_REPLIES, ARRIVED } from '../orders.js';
 
 /** Keyword -> trait nudges. Each entry may push several traits at once. */
 const RULES = [
@@ -220,6 +221,38 @@ function shotsToFire(s, traits) {
   return Math.min(s.self.ammo, 2);
 }
 
+/**
+ * Walk to a sensed point and no further. The old version always took at least
+ * two strides, so within fifty units of a point it stepped past it, turned
+ * round, and stepped past it again - which is the circling you saw at a base.
+ */
+function walkToward(target, s, { note, chat = null }) {
+  if (s.walls.proximity.front < 80 && target.distance > 60) {
+    const side = s.walls.proximity.left > s.walls.proximity.right ? 'left' : 'right';
+    return {
+      actions: [
+        { name: 'turn', input: { direction: side, degrees: 55 } },
+        { name: 'move', input: { direction: 'forward', steps: 3 } },
+      ],
+      note: `${note} - a wall is in the way`,
+      chat,
+    };
+  }
+
+  const steps = clamp(Math.round(target.distance / MOVE.stepDistance), 1, 8);
+  if (Math.abs(target.bearing) > 22) {
+    return {
+      actions: [
+        { name: 'turn', input: { direction: target.bearing < 0 ? 'left' : 'right', degrees: clamp(Math.abs(target.bearing), 5, 180) } },
+        { name: 'move', input: { direction: 'forward', steps: Math.min(steps, 3) } },
+      ],
+      note,
+      chat,
+    };
+  }
+  return { actions: [{ name: 'move', input: { direction: 'forward', steps } }], note, chat };
+}
+
 export function decideFromTraits(s, traits, rng, state = {}) {
   const actions = [];
   const enemy = nearestEnemy(s);
@@ -254,6 +287,30 @@ export function decideFromTraits(s, traits, rng, state = {}) {
     return { actions: [{ name: 'reload', input: {} }], note: 'topping up while clear' };
   }
 
+  // --- orders from a commander ---------------------------------------------
+  // A squad fighter goes where it was told, and stops when it gets there. It
+  // still fights what turns up in front of it - except when falling back,
+  // which means going, and shooting only what is already in its face.
+  if (s.order) {
+    const o = s.order;
+    const radius = o.kind === 'follow' ? ARRIVED.follow : ARRIVED.default;
+    const threat = enemy && enemy.distance < (o.kind === 'home' ? 170 : 380);
+    if (!threat) {
+      if (o.distance > radius) {
+        return walkToward(o, s, { note: `${o.kind}: on my way, ${o.distance} out`, chat: eventLine });
+      }
+      // There. Stop and watch, sweeping the cone rather than circling the spot.
+      return {
+        actions: [
+          { name: 'turn', input: { direction: rng() < 0.5 ? 'left' : 'right', degrees: 35 + rng() * 40 } },
+          { name: 'hold', input: { seconds: 1 + rng() } },
+        ],
+        note: `${o.kind}: in position, watching`,
+        chat: eventLine,
+      };
+    }
+  }
+
   // --- the objective, in a mode that has one -------------------------------
   // Kills score nothing in capture the flag, so an interpreter that only knows
   // how to fight would wander a flag match for ten minutes. It plays the
@@ -270,40 +327,22 @@ export function decideFromTraits(s, traits, rng, state = {}) {
             ? null                                        // a fight in front of us is the objective
             : o.enemyBase;                                // otherwise push toward their side
 
+    // A base is a direction to head in, not a spot to stand on. Once you are on
+    // their side, stop walking at the point and start looking for people; only
+    // a flag carrier needs to reach the pad itself.
+    const arrived = target && !o.carrying && (target === o.enemyBase || target === o.yourBase) && target.distance < 170;
     const cornered = enemy && enemy.distance < (o.carrying ? 170 : 260);
-    if (target && target.distance !== null && !cornered) {
-      // Walking into a wall for ten minutes is not an objective. This branch
-      // runs before the general wall-avoidance below, so it has to do its own.
-      if (s.walls.proximity.front < 80 && target.distance > 60) {
-        const side = s.walls.proximity.left > s.walls.proximity.right ? 'left' : 'right';
-        return {
-          actions: [
-            { name: 'turn', input: { direction: side, degrees: 55 } },
-            { name: 'move', input: { direction: 'forward', steps: 3 } },
-          ],
-          note: 'wall between me and the objective',
-          chat: eventLine,
-        };
-      }
+
+    if (target && target.distance !== null && !cornered && !arrived) {
       const line = o.carrying
         ? bark('flag', s, traits, rng, state)
         : target === o.yourFlag ? bark('defend', s, traits, rng, state) : null;
-
-      if (Math.abs(target.bearing) > 22) {
-        return {
-          actions: [
-            { name: 'turn', input: { direction: target.bearing < 0 ? 'left' : 'right', degrees: clamp(Math.abs(target.bearing), 5, 180) } },
-            { name: 'move', input: { direction: 'forward', steps: 3 } },
-          ],
-          note: o.carrying ? 'carrying - turning for home' : 'turning toward the flag',
-          chat: eventLine ?? line,
-        };
-      }
-      return {
-        actions: [{ name: 'move', input: { direction: 'forward', steps: clamp(Math.round(target.distance / MOVE.stepDistance), 2, 8) } }],
-        note: o.carrying ? 'running the flag home' : 'moving on the flag',
-        chat: eventLine ?? line,
-      };
+      const note = o.carrying
+        ? 'carrying their flag home'
+        : target === o.yourFlag
+          ? 'getting our flag back'
+          : target === o.enemyFlag ? 'going for their flag' : 'pushing toward their side';
+      return walkToward(target, s, { note, chat: eventLine ?? line });
     }
   }
 
@@ -549,8 +588,14 @@ export function createLocalBrain({ thinkTime = [0.25, 0.6] } = {}) {
       // channel - and they join the briefing this brain already reads, so a
       // commander's voice genuinely changes how its squad fights.
       const orders = ordersHeard(snapshot, participant);
+      let movement = null;
       if (orders.length) {
         participant.briefing = `${briefingFor(participant)}\n${orders.join('\n')}`.slice(-4000);
+        // Where to go is the last line that says where. The target itself is
+        // worked out by the arena on the next look, which is the only thing
+        // that knows where anything is.
+        for (const line of orders) movement = parseOrder(line) ?? movement;
+        if (movement) participant.order = { kind: movement, at: snapshot.time };
       }
 
       const previous = cache.get(participant)?.traits ?? null;
@@ -560,9 +605,18 @@ export function createLocalBrain({ thinkTime = [0.25, 0.6] } = {}) {
       // squad fighter has - and only when it actually changed something, or
       // four bots would shout "copy" at every word.
       const acknowledged = orders.length ? acknowledge(orders, previous, entry.traits) : null;
-      const callsign = acknowledged && !/Nothing in that/.test(acknowledged)
-        ? `${participant.codename}: ${acknowledged.replace(/^Copy — /, '')}`
-        : null;
+      const callsign = movement
+        ? `${participant.codename}: ${ORDER_REPLIES[movement]}.`
+        : acknowledged && !/Nothing in that/.test(acknowledged)
+          ? `${participant.codename}: ${acknowledged.replace(/^Copy — /, '')}`
+          : null;
+
+      // A new destination: answer, and take a breath. The next look is built
+      // with the new order in it, so the walk starts from the right place
+      // instead of finishing a plan toward the old one.
+      if (movement) {
+        return { actions: [{ name: 'hold', input: { seconds: 0.3 } }], note: `order: ${movement}`, chat: callsign, ...(reply ? { reply } : {}) };
+      }
 
       // A small delay so offline agents feel like they are deciding, not twitching.
       const delay = thinkTime[0] + entry.rng() * (thinkTime[1] - thinkTime[0]);

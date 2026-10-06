@@ -184,6 +184,10 @@ you find out more — which costs a second of being blind to everywhere else.
 Repeated shots from one direction fold into one line, because six bangs from the
 east are one fact, not six. You never hear your own gun.
 
+The one exception to range is **commander mode's team channel**: your own side's
+speech reaches you wherever you are, marked `on your channel`. It still comes
+with a direction, so a squad can tell where its commander is shouting from.
+
 The consequence worth noticing: **speaking is now an act in the world.** A line
 that used to be pure flavour gives away roughly where you are, to anyone close
 enough, including whoever you were hiding from.
@@ -458,9 +462,10 @@ One agent a side, each with four bots. The arena holds exactly ten, which is
 what two commanders and their eight come to.
 
 Your agent cannot order anyone around privately. **Its `say` line is its radio**,
-and that is the whole mechanic: a spoken order is a sound in the world, heard by
-everyone in earshot — its own squad, and the enemy commander too if they are
-close enough. Talking gives your position away.
+and that is the whole mechanic: a spoken order goes out on the team channel, so
+its own squad hears it **wherever they are**, and it is also a sound in the
+world, so the enemy hears it too **if they are within earshot**. Talking gives
+your position away.
 
 Each bot has a call-sign — `HAWK BISHOP EMBER RUST` on one side,
 `FROST MARLIN COBALT DRIFT` on the other — and the commander is told all four
@@ -476,11 +481,31 @@ Name one in an order and only that fighter acts on it; name none and the whole
 squad does. A bot takes orders from **one voice** — its own commander's. The
 enemy shouting your call-signs is just noise that tells you where they are.
 
-An order joins the briefing a bot already parses for intent, which is why this
-works at all: *"HAWK, attack, rush them down"* genuinely makes HAWK more
-aggressive, and HAWK answers out loud with its call-sign, which is itself a
-sound. The chain — you type to your agent privately, your agent speaks, the
-squad hears — is the mode.
+A bot understands a short list of orders, and the commander's briefing lists
+exactly these, so it does not waste words on anything else:
+
+| Say | The bot |
+|---|---|
+| "on me", "follow me", "regroup" | stays with its commander — **this is what every bot does until told otherwise** |
+| "hold", "stay" | stops where it stands and watches |
+| "push", "attack", "advance" | goes to the enemy base |
+| "fall back", "back to base" | goes to its own base |
+| "left flank", "right flank" | takes that side of the map, read from **your** base looking at **theirs** |
+| "the middle" | goes to the centre |
+| "spread out" | each bot takes its own lane: left, middle, right, their base |
+
+An order is a **destination, not a direction**. The bot never gets coordinates;
+it sees `ORDERS: push — 640 away, bearing +30°` in its senses and walks
+there round the walls, and once it **arrives it stops** and watches rather than
+circling the spot. An enemy close by still comes first — a bot under fire
+fights back — and then it carries on with the order it was given. The latest
+order stands until another replaces it.
+
+Anything else in an order still joins the briefing a bot parses for intent:
+*"HAWK, push, rush them down"* both sends HAWK forward and makes it more
+aggressive. HAWK answers on the channel with its call-sign — *"HAWK: pushing
+their base."* — which is itself a sound. The chain — you type to your agent
+privately, your agent speaks, the squad hears — is the mode.
 
 This is the one mode where the second chat card is a **team channel** rather
 than a global one. You read your own side's traffic; the other side's reaches

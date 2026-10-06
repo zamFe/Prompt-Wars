@@ -6,7 +6,8 @@
 
 import { VISION, MOVE, WEAPONS, AGENT, WORLD, TEAMS } from './config.js';
 import { normalizeDeg, toRad, dist, round0, round1, clamp } from './util.js';
-import { castRay, hasLineOfSight } from './arena.js';
+import { castRay, hasLineOfSight, baseOf } from './arena.js';
+import { orderTarget } from './orders.js';
 import { takeHeard, describeHeard } from './sound.js';
 
 /** Internal facing (0 = east, clockwise) to a compass heading (0 = north). */
@@ -148,6 +149,7 @@ export function buildSnapshot(agent, world) {
     },
     vision: { fovDegrees: VISION.fov, range: VISION.range },
     mission: buildMission(agent, world),
+    order: buildOrder(agent, world),
     objective: buildObjective(agent, world),
     enemies,
     allies,
@@ -185,6 +187,35 @@ function buildMission(agent, world) {
     theirScore: mine ? scores[mine === 'a' ? 'b' : 'a'] : null,
     livesLeft: Number.isFinite(agent.participant.livesLeft) ? agent.participant.livesLeft : null,
     secondsLeft: match.remaining === null ? null : Math.round(match.remaining),
+  };
+}
+
+/**
+ * Where a squad fighter's standing order points, as a bearing and a distance
+ * like everything else it senses. Resolved here because this is the only place
+ * that knows where things are; the fighter itself never gets coordinates.
+ */
+function buildOrder(agent, world) {
+  const p = agent.participant;
+  if (p?.role !== 'squad' || !p.order?.kind) return null;
+
+  // "Hold" means here - wherever here was when the order arrived.
+  if (p.order.kind === 'hold' && !p.order.anchor) p.order.anchor = { x: agent.x, y: agent.y };
+
+  const commander = world.lobby?.get?.(p.commanderId)?.agent ?? null;
+  const target = orderTarget(p.order, {
+    team: agent.team,
+    self: agent,
+    commander: commander?.alive ? commander : null,
+    base: (team) => baseOf(team),
+    lane: p.lane ?? 0,
+  });
+  if (!target) return null;
+
+  return {
+    kind: p.order.kind,
+    bearing: round1(bearingTo(agent, target.x, target.y)),
+    distance: round0(dist(agent.x, agent.y, target.x, target.y)),
   };
 }
 
@@ -279,6 +310,10 @@ export function renderSnapshotText(s) {
       lines.push(`  Enemy base: ${where(o.enemyBase)}` +
         `${o.enemyFlag ? ' (where their flag stands when it is home)' : ' (their side of the arena)'}`);
     }
+  }
+
+  if (s.order) {
+    lines.push(`ORDERS: ${s.order.kind} — ${s.order.distance} away, bearing ${s.order.bearing > 0 ? '+' : ''}${s.order.bearing}°`);
   }
 
   if (s.allies?.length) {

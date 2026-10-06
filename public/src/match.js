@@ -75,18 +75,29 @@ export const MODES = {
     // The only mode where speech is the mechanic rather than the flavour, so
     // the global chat is split into one channel per side.
     teamChat: true,
+    // A side talks over its own channel: the squad hears its commander from
+    // anywhere on the map. The enemy only hears what carries through the air.
+    teamComms: true,
     blurb: 'One agent a side, each commanding four bots. Your voice is the only thing they hear.',
     scoreWord: 'kills',
     commanderBounty: 5,
     briefing:
       'You are a COMMANDER. Four bots fight for you, listed below with their codenames and where they started. ' +
-      'They are not clever and they cannot see what you see - but they do what they are told, and the only way ' +
-      'to tell them anything is to SAY IT OUT LOUD. Your "say" line is your radio.\n' +
-      'Address one of them by codename ("HAWK, hold the left wall") and only that one acts on it. Say it without ' +
-      'a codename and the whole squad takes it. They only hear you within earshot, and so does the enemy ' +
-      'commander if they are close enough - talking gives your position away.\n' +
-      'Orders they understand are plain tactics: push, hold, fall back, regroup, go left, go right, watch the ' +
-      'flanks, spread out, conserve ammo, open fire. Keep each order to one short line.\n' +
+      'They are not clever and they cannot see what you see - but they go where they are told, and the only way ' +
+      'to tell them anything is to SAY IT OUT LOUD. Your "say" line is your radio: your squad hears it wherever ' +
+      'they are on the map. The enemy commander hears it too, but only if they are close enough to you.\n' +
+      'Name one by codename ("HAWK, left flank") and only that fighter moves. Say it with no codename and the ' +
+      'whole squad does. They answer back on the same channel.\n' +
+      'These are the ONLY orders they understand - anything else changes nothing about where they go:\n' +
+      '- "on me" / "follow me" / "regroup": stay close to you. This is what they do when the round starts.\n' +
+      '- "hold" / "stay": stop exactly where they are and watch.\n' +
+      '- "push" / "attack" / "advance": go to the enemy base.\n' +
+      '- "fall back" / "back to base": return to your base, only shooting what is in their face.\n' +
+      '- "left flank" / "right flank": the side lanes, as seen from YOUR base looking toward theirs.\n' +
+      '- "the middle": the centre of the arena.\n' +
+      '- "spread out": one fighter down each lane and one straight at their base.\n' +
+      'They fight whatever comes into view on the way, wherever they were sent. Words like "aggressive", ' +
+      '"careful", "save ammo" or "open fire" change how they fight, not where they go.\n' +
       'A kill scores for your side. Killing the enemy commander is worth five.',
   },
 };

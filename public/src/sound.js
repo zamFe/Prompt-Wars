@@ -45,21 +45,30 @@ const rangeFor = (kind) => (kind === 'shot' ? SOUND.shotRange : SOUND.speechRang
 export function emitSound(world, { kind, x, y, source = null, name = null, text = null }) {
   const reach = rangeFor(kind);
 
+  // In commander mode a side talks over its own channel: a squad hears its
+  // commander wherever they both are, and the commander hears its squad. The
+  // other side still only hears what carries through the air.
+  const radio = kind === 'speech' && Boolean(world.match?.mode?.teamComms) && Boolean(source?.team);
+
   for (const listener of world.agents) {
     if (!listener.alive || listener === source) continue;
 
     const distance = Math.hypot(listener.x - x, listener.y - y);
-    if (distance > reach) continue;
+    const onChannel = radio && listener.team === source.team;
+    const muffled = !onChannel && !hasLineOfSight(listener.x, listener.y, x, y);
 
-    // A wall between you and it costs range rather than silencing it.
-    const muffled = !hasLineOfSight(listener.x, listener.y, x, y);
-    if (muffled && distance > reach * SOUND.wallDamping) continue;
+    if (!onChannel) {
+      if (distance > reach) continue;
+      // A wall between you and it costs range rather than silencing it.
+      if (muffled && distance > reach * SOUND.wallDamping) continue;
+    }
 
     listener.heard ??= [];
     listener.heard.push({
       kind,
       direction: compassFrom(listener, x, y),
       muffled,
+      radio: onChannel,
       name,
       text,
       at: world.time,
@@ -94,8 +103,8 @@ export function describeHeard(heard = []) {
       shots.set(sound.direction, (shots.get(sound.direction) ?? 0) + 1);
     } else {
       lines.push(
-        `  ${sound.name ?? 'A voice'} to your ${sound.direction}${sound.muffled ? ' (muffled, through cover)' : ''}: ` +
-          `"${sound.text ?? '...'}"`,
+        `  ${sound.name ?? 'A voice'} ${sound.radio ? 'on your channel, from your' : 'to your'} ${sound.direction}` +
+          `${sound.muffled ? ' (muffled, through cover)' : ''}: "${sound.text ?? '...'}"`,
       );
     }
   }
