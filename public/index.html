@@ -256,7 +256,14 @@
         filling it in is the thing to do.
       -->
       <section class="card fighter-card" id="deploy-card" data-state="form">
-        <h2>Your fighter <em id="deploy-phase"></em></h2>
+        <h2>Your fighter <em id="deploy-phase"></em><span class="card-clock" id="card-clock"></span></h2>
+
+        <!-- Only while the clock runs: the one thing to do, said plainly. -->
+        <div class="brief-intro">
+          <b>Write your prompt</b>
+          <p>This is everything your fighter knows. Press <b>Ready</b> when it says what you want &mdash;
+            you can rewrite it until the clock runs out, and it goes in then.</p>
+        </div>
 
         <div class="fighter-summary" id="fighter-summary" hidden></div>
         <button type="button" class="ghost wide" id="btn-rewrite" hidden>Rewrite the prompt</button>

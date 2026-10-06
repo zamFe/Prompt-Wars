@@ -1346,3 +1346,57 @@ button.danger:hover { border-color: var(--bad); }
   .hud-clock { min-width: 0; margin-left: auto; }
   .tagline { display: none; }
 }
+
+/* ------------------------------------------------------------ the briefing
+   While the clock runs there is one job: write the prompt. The chats have
+   nothing in them yet, so they step aside, and the fighter card takes their
+   place on the left - or the top, on a narrow screen - where it is the first
+   thing you see rather than something to scroll to. */
+.brief-intro, .card-clock { display: none; }
+
+body[data-phase="briefing"] .comms { display: none; }
+body[data-phase="briefing"] main {
+  grid-template-columns: minmax(340px, 480px) minmax(0, 1fr);
+  grid-template-areas: "rail stage";
+}
+
+body[data-phase="briefing"] .fighter-card {
+  border-color: rgba(94, 200, 255, 0.6);
+  box-shadow: 0 0 0 3px rgba(94, 200, 255, 0.1), 0 12px 40px rgba(94, 200, 255, 0.07);
+}
+body[data-phase="briefing"] .fighter-card h2 { display: flex; align-items: baseline; gap: 8px; }
+
+body[data-phase="briefing"] .card-clock {
+  display: inline;
+  margin-left: auto;
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  color: var(--accent);
+  text-transform: none;
+}
+.card-clock.urgent { color: var(--bad); }
+
+body[data-phase="briefing"] .fighter-card[data-state="form"] .brief-intro {
+  display: block;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(94, 200, 255, 0.07);
+  border-left: 3px solid var(--accent);
+}
+.brief-intro > b { font-family: var(--font-display); font-size: 17px; color: var(--text); }
+.brief-intro p { margin: 3px 0 0; font-size: 12.5px; color: var(--muted); line-height: 1.5; }
+.brief-intro p b { color: var(--text); }
+
+body[data-phase="briefing"] #field-prompt { min-height: 220px; font-size: 14px; }
+body[data-phase="briefing"] #join-form button[type="submit"] { min-width: 110px; font-size: 15px; }
+
+@media (max-width: 1080px) {
+  body[data-phase="briefing"] main {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "rail" "stage";
+  }
+  body[data-phase="briefing"] #field-prompt { min-height: 180px; }
+}

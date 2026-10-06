@@ -90,6 +90,7 @@ export class UI {
       briefCount: $('brief-count'),
       skipBrief: $('btn-skip-brief'),
       deployPhase: $('deploy-phase'),
+      cardClock: $('card-clock'),
 
       focusEmpty: $('focus-empty'),
       focusBody: $('focus-body'),
@@ -659,7 +660,8 @@ export class UI {
     const briefing = phase === PHASES.briefing;
     const live = phase === PHASES.live;
 
-    if (phase !== this.cardPhase) {
+    const entered = phase !== this.cardPhase;
+    if (entered) {
       this.cardPhase = phase;
       this.editing = false;
     }
@@ -670,9 +672,18 @@ export class UI {
     else if (!mine) state = live ? 'late' : 'form';
     else state = briefing ? 'ready' : 'fighting';
 
-    const key = `${state}:${mine?.id ?? ''}:${mine?.status ?? ''}:${mine?.livesLeft ?? ''}:${this.colorOf(mine ?? {})}`;
+    // The phase is part of the key: the form looks the same in the lobby and
+    // the briefing, but its labels do not.
+    const key = `${phase}:${state}:${mine?.id ?? ''}:${mine?.status ?? ''}:${mine?.livesLeft ?? ''}:${this.colorOf(mine ?? {})}`;
     if (key === this.cardKey) return;
     this.cardKey = key;
+
+    // The clock starting is the cue to write, so the cursor goes where the
+    // writing happens - which on a narrow screen also scrolls it into view.
+    if (entered && briefing && state === 'form') {
+      const field = this.el.name.value.trim() ? this.el.prompt : this.el.name;
+      requestAnimationFrame(() => field.focus());
+    }
 
     this.el.card.dataset.state = state;
     this.el.form.hidden = state !== 'form';
@@ -686,7 +697,7 @@ export class UI {
       late: '',
       spectating: 'spectating',
     }[state];
-    this.el.form.querySelector('button[type=submit]').textContent = mine ? 'Send the new prompt' : briefing ? 'Enter arena' : 'Join mid-round';
+    this.el.form.querySelector('button[type=submit]').textContent = briefing ? 'Ready' : mine ? 'Send the new prompt' : 'Join mid-round';
 
     if (state === 'spectating') {
       this.el.summary.innerHTML = '<p class="muted">You are spectating this round. Pick a side in the lobby to play the next one.</p>';
@@ -762,6 +773,8 @@ export class UI {
     if (briefing) {
       set('brief', left === null ? null : Math.ceil(left), (v) => {
         this.el.briefClock.textContent = v === null ? '—' : `${v}`;
+        this.el.cardClock.textContent = v === null ? '' : formatMatchClock(v);
+        this.el.cardClock.classList.toggle('urgent', v !== null && v <= 10);
       });
       const waiting = this.world.lobby.list().length;
       set('briefCount', waiting, (v) => {

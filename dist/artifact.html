@@ -1351,6 +1351,60 @@ button.danger:hover { border-color: var(--bad); }
   .hud-clock { min-width: 0; margin-left: auto; }
   .tagline { display: none; }
 }
+
+/* ------------------------------------------------------------ the briefing
+   While the clock runs there is one job: write the prompt. The chats have
+   nothing in them yet, so they step aside, and the fighter card takes their
+   place on the left - or the top, on a narrow screen - where it is the first
+   thing you see rather than something to scroll to. */
+.brief-intro, .card-clock { display: none; }
+
+body[data-phase="briefing"] .comms { display: none; }
+body[data-phase="briefing"] main {
+  grid-template-columns: minmax(340px, 480px) minmax(0, 1fr);
+  grid-template-areas: "rail stage";
+}
+
+body[data-phase="briefing"] .fighter-card {
+  border-color: rgba(94, 200, 255, 0.6);
+  box-shadow: 0 0 0 3px rgba(94, 200, 255, 0.1), 0 12px 40px rgba(94, 200, 255, 0.07);
+}
+body[data-phase="briefing"] .fighter-card h2 { display: flex; align-items: baseline; gap: 8px; }
+
+body[data-phase="briefing"] .card-clock {
+  display: inline;
+  margin-left: auto;
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  color: var(--accent);
+  text-transform: none;
+}
+.card-clock.urgent { color: var(--bad); }
+
+body[data-phase="briefing"] .fighter-card[data-state="form"] .brief-intro {
+  display: block;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(94, 200, 255, 0.07);
+  border-left: 3px solid var(--accent);
+}
+.brief-intro > b { font-family: var(--font-display); font-size: 17px; color: var(--text); }
+.brief-intro p { margin: 3px 0 0; font-size: 12.5px; color: var(--muted); line-height: 1.5; }
+.brief-intro p b { color: var(--text); }
+
+body[data-phase="briefing"] #field-prompt { min-height: 220px; font-size: 14px; }
+body[data-phase="briefing"] #join-form button[type="submit"] { min-width: 110px; font-size: 15px; }
+
+@media (max-width: 1080px) {
+  body[data-phase="briefing"] main {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "rail" "stage";
+  }
+  body[data-phase="briefing"] #field-prompt { min-height: 180px; }
+}
 </style>
 <!--
     Four screens, one page. `data-phase` on the body is the only thing that
@@ -1597,7 +1651,14 @@ button.danger:hover { border-color: var(--bad); }
         filling it in is the thing to do.
       -->
       <section class="card fighter-card" id="deploy-card" data-state="form">
-        <h2>Your fighter <em id="deploy-phase"></em></h2>
+        <h2>Your fighter <em id="deploy-phase"></em><span class="card-clock" id="card-clock"></span></h2>
+
+        <!-- Only while the clock runs: the one thing to do, said plainly. -->
+        <div class="brief-intro">
+          <b>Write your prompt</b>
+          <p>This is everything your fighter knows. Press <b>Ready</b> when it says what you want &mdash;
+            you can rewrite it until the clock runs out, and it goes in then.</p>
+        </div>
 
         <div class="fighter-summary" id="fighter-summary" hidden></div>
         <button type="button" class="ghost wide" id="btn-rewrite" hidden>Rewrite the prompt</button>
@@ -7492,6 +7553,7 @@ class UI {
       briefCount: $('brief-count'),
       skipBrief: $('btn-skip-brief'),
       deployPhase: $('deploy-phase'),
+      cardClock: $('card-clock'),
 
       focusEmpty: $('focus-empty'),
       focusBody: $('focus-body'),
@@ -8061,7 +8123,8 @@ class UI {
     const briefing = phase === PHASES.briefing;
     const live = phase === PHASES.live;
 
-    if (phase !== this.cardPhase) {
+    const entered = phase !== this.cardPhase;
+    if (entered) {
       this.cardPhase = phase;
       this.editing = false;
     }
@@ -8072,9 +8135,18 @@ class UI {
     else if (!mine) state = live ? 'late' : 'form';
     else state = briefing ? 'ready' : 'fighting';
 
-    const key = `${state}:${mine?.id ?? ''}:${mine?.status ?? ''}:${mine?.livesLeft ?? ''}:${this.colorOf(mine ?? {})}`;
+    // The phase is part of the key: the form looks the same in the lobby and
+    // the briefing, but its labels do not.
+    const key = `${phase}:${state}:${mine?.id ?? ''}:${mine?.status ?? ''}:${mine?.livesLeft ?? ''}:${this.colorOf(mine ?? {})}`;
     if (key === this.cardKey) return;
     this.cardKey = key;
+
+    // The clock starting is the cue to write, so the cursor goes where the
+    // writing happens - which on a narrow screen also scrolls it into view.
+    if (entered && briefing && state === 'form') {
+      const field = this.el.name.value.trim() ? this.el.prompt : this.el.name;
+      requestAnimationFrame(() => field.focus());
+    }
 
     this.el.card.dataset.state = state;
     this.el.form.hidden = state !== 'form';
@@ -8088,7 +8160,7 @@ class UI {
       late: '',
       spectating: 'spectating',
     }[state];
-    this.el.form.querySelector('button[type=submit]').textContent = mine ? 'Send the new prompt' : briefing ? 'Enter arena' : 'Join mid-round';
+    this.el.form.querySelector('button[type=submit]').textContent = briefing ? 'Ready' : mine ? 'Send the new prompt' : 'Join mid-round';
 
     if (state === 'spectating') {
       this.el.summary.innerHTML = '<p class="muted">You are spectating this round. Pick a side in the lobby to play the next one.</p>';
@@ -8164,6 +8236,8 @@ class UI {
     if (briefing) {
       set('brief', left === null ? null : Math.ceil(left), (v) => {
         this.el.briefClock.textContent = v === null ? '—' : `${v}`;
+        this.el.cardClock.textContent = v === null ? '' : formatMatchClock(v);
+        this.el.cardClock.classList.toggle('urgent', v !== null && v <= 10);
       });
       const waiting = this.world.lobby.list().length;
       set('briefCount', waiting, (v) => {

@@ -374,6 +374,12 @@ you are in — two lines (your fighter, its brain, lives left, what it is doing)
 and a reminder that you talk to it in Agent chat. The form only takes space
 while filling it in is the thing to do.
 
+During the briefing the chats, which have nothing in them yet, step aside, and
+the fighter card takes their place on the left — **at the top on a narrow
+screen** — outlined, with the clock in its corner, a larger box to write in and
+the cursor already in it. Its button reads **Ready**; you can rewrite until the
+clock runs out.
+
 What thinks for your fighter is decided once, from both ways of reaching Claude.
 Inside the artifact that is your own account; the server option is not even
 offered there, and the explanation of how to run one only appears — folded —
