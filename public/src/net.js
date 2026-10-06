@@ -22,6 +22,10 @@ import { WEAPONS } from './config.js';
 
 export const TOPICS = {
   tick: 'tick', roster: 'roster', join: 'join', plan: 'plan', need: 'need', part: 'part',
+  // A person choosing their own side in the lobby. Contributors may send it;
+  // the host takes the seat from the platform-stamped sender, so nobody can
+  // move anyone but themselves.
+  seat: 'seat',
   // What game is being played, and how it stands. Sent by the host, read by
   // everyone, so a guest's screen follows the host through every phase.
   phase: 'phase',
@@ -55,6 +59,8 @@ export function encodeRoster(world) {
     a.netId, a.name, a.participant.colorIndex, a.participant.ownerId ?? null,
     a.participant.kills, a.participant.assists ?? 0, a.chat?.text ?? null,
     a.team ?? null, a.carrying ?? null,
+    a.participant.seat ?? null, a.participant.favColor ?? null, a.participant.role ?? null,
+    a.participant.id, Number.isFinite(a.participant.livesLeft) ? a.participant.livesLeft : null,
   ]);
 }
 
@@ -98,7 +104,7 @@ export function createNet({ world, makeGhost, onState = () => {} } = {}) {
       room.emit(TOPICS.tick, encodeSnapshot(world)).catch(() => {});
 
       const rosterKey = world.agents
-        .map((a) => `${a.netId}:${a.participant.kills}:${a.team ?? ''}:${a.carrying ?? ''}:${a.chat?.text ?? ''}`)
+        .map((a) => `${a.netId}:${a.participant.kills}:${a.participant.livesLeft}:${a.team ?? ''}:${a.carrying ?? ''}:${a.chat?.text ?? ''}`)
         .join('|');
       if (rosterKey !== lastRosterKey) {
         lastRosterKey = rosterKey;
@@ -167,6 +173,13 @@ export function createNet({ world, makeGhost, onState = () => {} } = {}) {
         if (state.isHost && !wasHost) startTicking();
         if (!state.isHost && wasHost) stopTicking();
         publish();
+        // Who is here, and what they called themselves. Presence is display
+        // data, never authority - it only ever seats someone as a spectator.
+        this.onPeopleChanged?.(peers.filter((p) => p.kind === 'viewer'));
+      }));
+
+      unsubscribes.push(room.on(TOPICS.seat, (msg) => {
+        if (state.isHost) this.onSeatRequest?.(msg.data, msg);
       }));
 
       // --- as a guest: render what the host sends ---------------------------
@@ -177,7 +190,7 @@ export function createNet({ world, makeGhost, onState = () => {} } = {}) {
 
       unsubscribes.push(room.on(TOPICS.roster, (msg) => {
         if (state.isHost || msg.peer !== hostPeer) return;
-        applyRoster(world, msg.data, makeGhost);
+        applyRoster(world, msg.data, makeGhost, this.adoptGhost);
       }));
 
       // --- as the host: take in players and their plans ---------------------
@@ -286,6 +299,16 @@ export function applySnapshot(world, data, makeGhost) {
     agent.ammo = ammo;
     agent.alive = hp > 0;
   }
+  // A body the host no longer sends has died. Its person's record says so,
+  // rather than going on reading "live" or "waiting" forever.
+  for (const gone of world.agents.filter((a) => !seen.has(a.netId))) {
+    const person = gone.participant;
+    if (person?.agent !== gone) continue;
+    person.agent = null;
+    const left = Number.isFinite(person.livesLeft) ? person.livesLeft : null;
+    person.status = left !== null && left <= 1 ? 'eliminated' : 'cooldown';
+    if (left !== null) person.livesLeft = Math.max(0, left - 1);
+  }
   world.agents = world.agents.filter((a) => seen.has(a.netId));
 
   world.projectiles = (data.p ?? []).map(([x, y, dx, dy]) => ({
@@ -300,15 +323,32 @@ export function applySnapshot(world, data, makeGhost) {
 }
 
 /** Identities and scores, which change far less often than positions. */
-export function applyRoster(world, rows, makeGhost) {
+export function applyRoster(world, rows, makeGhost, adopt = () => null) {
   if (!Array.isArray(rows)) return;
-  for (const [netId, name, colorIndex, ownerId, kills, assists, chat, team, carrying] of rows) {
+  world.ghostOwners ??= new Map();
+
+  for (const [netId, name, colorIndex, ownerId, kills, assists, chat, team, carrying, seat, favColor, role, pid, livesLeft] of rows) {
     let agent = world.agents.find((a) => a.netId === netId);
     if (!agent) {
       agent = makeGhost(netId);
       if (!agent) continue;
       world.agents.push(agent);
     }
+
+    // One record per person, not one per body. A new life arrives as a new
+    // body, and the guest's OWN fighter already has a record on this page -
+    // the one holding its inbox and its conversation. Both are adopted rather
+    // than listed twice.
+    const hostId = typeof pid === 'string' ? pid.slice(0, 32) : null;
+    const owner = adopt?.(typeof seat === 'string' ? seat : null) ?? (hostId ? world.ghostOwners.get(hostId) : null);
+    if (owner && owner !== agent.participant) {
+      world.lobby.participants.delete(agent.participant.id);
+      agent.participant = owner;
+    }
+    agent.participant.agent = agent;
+    agent.participant.status = 'live';
+    agent.participant.livesLeft = typeof livesLeft === 'number' ? livesLeft : Infinity;
+    if (hostId) world.ghostOwners.set(hostId, agent.participant);
     agent.name = String(name ?? 'agent').slice(0, 14);
     agent.participant.name = agent.name;
     agent.participant.colorIndex = Number(colorIndex) || 0;
@@ -318,6 +358,9 @@ export function applyRoster(world, rows, makeGhost) {
     agent.team = team === 'a' || team === 'b' ? team : null;
     agent.participant.team = agent.team;
     agent.carrying = carrying === 'a' || carrying === 'b' ? carrying : null;
+    agent.participant.seat = typeof seat === 'string' ? seat.slice(0, 64) : null;
+    agent.participant.favColor = /^#[0-9a-f]{6}$/i.test(favColor ?? '') ? favColor : null;
+    agent.participant.role = role === 'commander' || role === 'squad' ? role : null;
     // Raised through say() rather than written straight onto the agent, so a
     // guest's global chat fills from the host's arena exactly as the host's own
     // does. Private replies never travel: they are produced on, and stay on,

@@ -11,6 +11,7 @@
 // never advance it themselves.
 
 import { MATCH, TEAMS } from './config.js';
+import { isHex } from './colors.js';
 import { setMap, baseOf, MAPS } from './arena.js';
 import { dist } from './util.js';
 
@@ -155,6 +156,10 @@ export function createMatch({ world, onPhase = () => {}, onEvent = () => {}, onF
   let scores = { a: 0, b: 0 };
   let flags = null;
   let results = null;
+  // The people in the lobby, keyed by seat: a peer label in a shared room,
+  // "local" on a page running alone. A seat is a person; a fighter is what
+  // they send into a round. `side` is null while they spectate.
+  let seats = {};
   let startedAt = null;
 
   const mode = () => MODES[settings.mode] ?? MODES.ffa;
@@ -295,7 +300,73 @@ export function createMatch({ world, onPhase = () => {}, onEvent = () => {}, onF
           ? Object.fromEntries(Object.entries(flags).map(([k, f]) => [k, { state: f.state, x: Math.round(f.x), y: Math.round(f.y) }]))
           : null,
         results,
+        seats: Object.fromEntries(Object.entries(seats).map(([id, seat]) => [id, { ...seat }])),
       };
+    },
+
+    get seats() {
+      return seats;
+    },
+
+    /** The sides a person can take in this mode, spectating aside. */
+    sideOptions() {
+      return mode().teams ? ['a', 'b'] : ['play'];
+    },
+
+    /**
+     * Rebuild the seat list from who is actually present. Everyone arrives
+     * spectating; a person already seated keeps their side; a person who has
+     * left takes their seat with them.
+     */
+    syncSeats(present = []) {
+      const next = {};
+      for (const person of present) {
+        if (!person?.id || !person.name) continue;
+        const kept = seats[person.id];
+        next[person.id] = {
+          name: String(person.name).slice(0, 18),
+          color: isHex(person.color) ? person.color : '#8b93a7',
+          side: kept?.side ?? null,
+          // A Viewer can watch and nothing else, so it is never offered a side.
+          canPlay: person.canPlay !== false,
+        };
+      }
+      const changed = JSON.stringify(next) !== JSON.stringify(seats);
+      seats = next;
+      if (changed) onPhase(api.state);
+      return changed;
+    },
+
+    /**
+     * Put a person on a side, or back in the stands. The owner can do this to
+     * anyone; a person can do it only to themselves, which the host enforces by
+     * taking the seat from the platform-stamped sender, never from the message.
+     */
+    setSide(seatId, side) {
+      const seat = seats[seatId];
+      if (!seat) return false;
+      const wanted = side === null || this.sideOptions().includes(side) ? side : null;
+      if (wanted && !seat.canPlay) return false;
+
+      // Commander is one person a side.
+      if (wanted && mode().squad) {
+        const taken = Object.entries(seats).some(([id, other]) => id !== seatId && other.side === wanted) ||
+          world.lobby.list().some((p) => p.role === 'commander' && !p.seat && p.team === wanted);
+        if (taken) return false;
+      }
+
+      seat.side = wanted;
+      onPhase(api.state);
+      return true;
+    },
+
+    /** A team mode's sides, or "playing", follow a change of mode. */
+    reseat(nextMode) {
+      for (const seat of Object.values(seats)) {
+        if (!seat.side) continue;
+        if (nextMode.teams && seat.side === 'play') seat.side = null;
+        if (!nextMode.teams && seat.side !== 'play') seat.side = 'play';
+      }
     },
 
     /** Any key or click leaves the title card. */
@@ -332,9 +403,28 @@ export function createMatch({ world, onPhase = () => {}, onEvent = () => {}, onF
       return kept;
     },
 
+    /**
+     * Fighters belong to people, and people sit where they sit. A fighter whose
+     * person has gone to the stands - or left - leaves with them; one whose
+     * person changed sides changes with them.
+     */
+    fieldSeats() {
+      for (const participant of world.lobby.list()) {
+        if (!participant.seat) continue;
+        const seat = seats[participant.seat];
+        if (!seat?.side) {
+          world.lobby.remove(participant.id);
+          continue;
+        }
+        participant.team = seat.side === 'a' || seat.side === 'b' ? seat.side : null;
+        participant.favColor = seat.color;
+      }
+    },
+
     /** Which sides still have room for a commander. */
     freeCommandSlot() {
-      const taken = (team) => world.lobby.list().some((p) => p.team === team && p.role === 'commander');
+      const taken = (team) => world.lobby.list().some((p) => p.team === team && p.role === 'commander') ||
+        Object.values(seats).some((seat) => seat.side === team);
       return !taken('a') ? 'a' : !taken('b') ? 'b' : null;
     },
 
@@ -355,6 +445,7 @@ export function createMatch({ world, onPhase = () => {}, onEvent = () => {}, onF
       settings = next;
 
       if (next.mode !== before) {
+        api.reseat(MODES[next.mode]);
         // Squads belong to the mode that raised them.
         api.dropSquads();
         if (MODES[next.mode].squad) api.trimToCommanders();
@@ -379,6 +470,7 @@ export function createMatch({ world, onPhase = () => {}, onEvent = () => {}, onF
     /** The owner has started the round: everyone gets the clock to write. */
     openBriefing() {
       if (phase !== PHASES.lobby) return false;
+      api.fieldSeats();
       if (mode().squad) api.trimToCommanders();
       world.clearArena?.({ keepParticipants: true });
       scores = { a: 0, b: 0 };
@@ -502,6 +594,17 @@ export function createMatch({ world, onPhase = () => {}, onEvent = () => {}, onF
       settings = { ...settings, ...state.settings };
       scores = { ...state.scores };
       results = state.results ?? null;
+      // Seats arrive from the host and are only ever displayed here, so they
+      // are reshaped rather than trusted.
+      seats = {};
+      for (const [id, seat] of Object.entries(state.seats ?? {})) {
+        seats[String(id).slice(0, 64)] = {
+          name: String(seat?.name ?? 'Someone').slice(0, 18),
+          color: isHex(seat?.color) ? seat.color : '#8b93a7',
+          side: seat?.side === 'a' || seat?.side === 'b' || seat?.side === 'play' ? seat.side : null,
+          canPlay: seat?.canPlay !== false,
+        };
+      }
       limit = 0;
       if (state.flags) {
         flags ??= { a: { team: 'a' }, b: { team: 'b' } };
@@ -544,6 +647,10 @@ export function buildResults({ world, mode, scores, settings, reason, startedAt 
       name: p.name,
       colorIndex: p.colorIndex,
       team: p.team ?? null,
+      // What a viewer needs to colour this row the way the arena coloured it.
+      seat: p.seat ?? null,
+      favColor: p.favColor ?? null,
+      role: p.role ?? null,
       brainKind: p.brainKind,
       isMine: Boolean(p.isMine),
       kills: p.kills,

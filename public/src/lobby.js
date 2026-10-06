@@ -32,6 +32,10 @@ export function createParticipant({ name, prompt, brainKind, colorIndex }) {
     readyAt: 0,
     // Which side, in a team mode. Null in a free-for-all.
     team: null,
+    // The person this fighter belongs to - their seat in the lobby - and the
+    // colour they picked. Both null for a bot.
+    seat: null,
+    favColor: null,
     // Commander mode: who this is, and who it answers to.
     role: null,              // 'commander' | 'squad'
     codename: null,          // a squad fighter's call-sign

@@ -12,14 +12,18 @@ import { PRESETS } from './presets.js';
 const $ = (id) => document.getElementById(id);
 
 export class UI {
-  constructor({ world, match, chatLog, directLog, onJoin, onDemo, onClear, onSelect, onTogglePause, onMessage, onSkipBrief }) {
+  constructor({ world, match, chatLog, directLog, onJoin, onSelect, onTogglePause, onMessage, onSkipBrief, onEndRound, mySeat }) {
     this.world = world;
     this.match = match;
+    // How a fighter is coloured on this page. main.js replaces this with the
+    // mode- and viewer-aware rule once it knows who is looking.
+    this.colorOf = (p) => AGENT_COLORS[(p?.colorIndex ?? 0) % AGENT_COLORS.length];
     this.chatLog = chatLog;
     this.directLog = directLog;
     this.onJoin = onJoin;
     this.onSelect = onSelect;
     this.onMessage = onMessage;
+    this.mySeat = mySeat ?? (() => null);
     this.selectedId = null;
     this.lastLogLength = 0;
     // Which of the five rail views is on screen. Only this one is rendered.
@@ -27,12 +31,8 @@ export class UI {
     this.directThreadId = null;
 
     this.el = {
-      alive: $('stat-alive'),
-      max: $('stat-max'),
-      queue: $('stat-queue'),
-      cooldown: $('stat-cooldown'),
-      clock: $('stat-clock'),
       badge: $('badge-model'),
+      end: $('btn-end'),
       pause: $('btn-pause'),
       form: $('join-form'),
       name: $('field-name'),
@@ -41,16 +41,20 @@ export class UI {
       preset: $('field-preset'),
       count: $('prompt-count'),
       brainNote: $('brain-note'),
+      brainWhy: $('brain-why'),
+      brainHint: $('brain-hint'),
+      card: $('deploy-card'),
+      summary: $('fighter-summary'),
+      rewrite: $('btn-rewrite'),
+      joinLate: $('btn-join-late'),
+      hudLives: $('hud-lives'),
       tierRow: $('tier-row'),
       tierSelect: $('field-tier'),
-      tierNote: $('tier-note'),
       tierLock: $('tier-lock'),
       usage: $('usage'),
       usageFill: $('usage-fill'),
       usageValue: $('usage-value'),
       badgeRoom: $('badge-room'),
-      adminRow: $('admin-row'),
-      roleNote: $('role-note'),
       status: $('join-status'),
       roster: $('roster'),
       rosterCount: $('roster-count'),
@@ -141,7 +145,6 @@ export class UI {
       this.renderDirect();
     }
 
-    this.el.max.textContent = String(WORLD.maxAgents);
     this.fillPresets();
     this.fillTiers();
     this.fillTools();
@@ -157,9 +160,10 @@ export class UI {
       });
       this.showStatus(result.message, result.tone);
       if (result.ok) {
-        this.el.name.value = '';
-        this.el.prompt.value = '';
-        this.updateCount();
+        // The prompt stays in the box: rewriting it in the briefing starts
+        // from what you sent, not from nothing.
+        this.editing = false;
+        this.renderFighterCard();
       }
     });
 
@@ -174,8 +178,10 @@ export class UI {
     });
 
     this.el.skipBrief.addEventListener('click', () => onSkipBrief?.());
-    this.el.demo.addEventListener('click', () => onDemo());
-    this.el.clear.addEventListener('click', () => onClear());
+    this.el.end.addEventListener('click', () => onEndRound?.());
+    // The form is folded away while you have a fighter; these bring it back.
+    this.el.rewrite.addEventListener('click', () => { this.editing = true; this.renderFighterCard(); });
+    this.el.joinLate.addEventListener('click', () => { this.editing = true; this.renderFighterCard(); });
     this.el.pause.addEventListener('click', () => {
       const paused = onTogglePause();
       this.el.pause.textContent = paused ? 'Resume' : 'Pause';
@@ -215,23 +221,37 @@ export class UI {
       .map((t) => `<option value="${t.id}">${escapeHtml(t.label)}</option>`)
       .join('');
     this.el.tierSelect.value = DEFAULT_TIER;
-    this.el.tierNote.hidden = false;
-    this.el.tierSelect.addEventListener('change', () => this.describeTier());
-    this.el.brain.addEventListener('change', () => this.syncTierRow());
-    this.describeTier();
+    this.el.tierSelect.addEventListener('change', () => this.describeBrain());
+    this.el.brain.addEventListener('change', () => {
+      this.chosenBrain = this.el.brain.value;
+      this.syncTierRow();
+    });
+    this.describeBrain();
   }
 
-  describeTier() {
+  /**
+   * One short line under the brain picker, and only when it says something
+   * the picker does not: how a tier thinks, or what offline means when you
+   * could have had Claude.
+   */
+  describeBrain() {
+    const brain = this.el.brain.value;
     const tier = MODEL_TIERS.find((t) => t.id === this.el.tierSelect.value);
-    this.el.tierNote.textContent = tier?.note ?? '';
-    this.el.tierNote.hidden = !tier;
+    const claudeAround = !this.el.brain.querySelector('option[value="sample"]').hidden ||
+      !this.el.brain.querySelector('option[value="claude"]').hidden;
+
+    const line = brain === 'local'
+      ? claudeAround ? 'Reads your prompt for intent with no Claude calls. Cheaper, and much less clever.' : ''
+      : tier?.note ?? '';
+    this.el.brainHint.textContent = line;
+    this.el.brainHint.hidden = !line;
   }
 
   /** The tier only applies to a brain that actually calls Claude. */
   syncTierRow() {
     const usesClaude = this.el.brain.value === 'sample' || this.el.brain.value === 'claude';
     this.el.tierRow.hidden = !usesClaude;
-    this.el.tierNote.hidden = !usesClaude;
+    this.describeBrain();
     this.lockTierIfDeployed();
   }
 
@@ -257,18 +277,7 @@ export class UI {
    */
   setRole({ isOwner, canEdit, known }) {
     this.role = { isOwner, canEdit, known };
-    this.el.adminRow.hidden = !canEdit;
-
-    if (!known) {
-      this.el.roleNote.hidden = true;
-      return;
-    }
-    this.el.roleNote.hidden = false;
-    this.el.roleNote.innerHTML = isOwner
-      ? 'You are the <b>owner</b>: you can add bots and clear the arena.'
-      : canEdit
-        ? 'You are an <b>editor</b>: you can add bots and clear the arena.'
-        : 'You can <b>deploy your own agent</b>. Adding bots and clearing the arena belong to the owner.';
+    this.renderMatch();
   }
 
   /** What this page has spent of the viewer's Claude account. */
@@ -368,20 +377,57 @@ export class UI {
     this.el.status.className = `form-note ${tone}`;
   }
 
-  setModelBadge(state, detail, { compat = false, hint = null } = {}) {
-    const badge = this.el.badge;
-    const option = this.el.brain.querySelector('option[value="claude"]');
-    if (option) option.textContent = compat ? 'Live model (via gateway)' : 'Claude (live)';
+  /**
+   * What thinks for your fighter, decided once from everything known.
+   *
+   * There are two ways to reach Claude - your own account, inside an artifact,
+   * and a server holding a key - and they report in at different times. They
+   * used to each write the badge as they arrived, so whichever answered LAST
+   * won: inside the artifact a failed server probe could land after Claude had
+   * already reported in, and replace "Claude · your account" with a paragraph
+   * about running a server. Now both feed one state and the badge is derived.
+   *
+   * @param sample  true / false once known, null while still asking
+   * @param server  { ready, model, compat, hint } once known, null while asking
+   */
+  setModelStatus({ sample = null, server = null } = {}) {
+    const brainSample = this.el.brain.querySelector('option[value="sample"]');
+    const brainServer = this.el.brain.querySelector('option[value="claude"]');
 
-    // "Off" on its own tells a visitor nothing. Say what is running instead,
-    // and what running the server would add.
-    this.el.brainNote.hidden = !hint;
-    if (hint) this.el.brainNote.innerHTML = hint;
-    badge.textContent = detail;
-    badge.className = `badge ${state}`;
-    // Only offer the live brain when the server can actually reach the model.
-    this.el.brain.querySelector('option[value="claude"]').disabled = state !== 'ok';
-    if (state !== 'ok' && this.el.brain.value === 'claude') this.el.brain.value = 'local';
+    // An option that cannot work is not offered at all, rather than shown
+    // greyed out with an explanation nobody asked for.
+    brainSample.hidden = sample !== true;
+    brainServer.hidden = !server?.ready;
+    brainServer.textContent = server?.compat ? `Model (${server.model})` : 'Claude (server)';
+
+    const best = sample === true ? 'sample' : server?.ready ? 'claude' : 'local';
+    const current = this.el.brain.value;
+    if (this.el.brain.querySelector(`option[value="${current}"]`).hidden || this.chosenBrain === undefined) {
+      this.el.brain.value = best;
+    }
+
+    const badge = this.el.badge;
+    if (sample === true) {
+      badge.textContent = 'Claude · your account';
+      badge.className = 'badge ok';
+    } else if (server?.ready) {
+      badge.textContent = server.compat ? `Model · ${server.model}` : `Claude · ${server.model}`;
+      badge.className = 'badge ok';
+    } else if (sample === null && server === null) {
+      badge.textContent = 'Checking for Claude…';
+      badge.className = 'badge';
+    } else {
+      badge.textContent = 'Offline brain';
+      badge.className = 'badge off';
+    }
+
+    // The long explanation only exists for the case it explains - nothing but
+    // the offline brain on offer - and it is folded away even then.
+    const offlineOnly = sample !== true && !server?.ready && (sample !== null || server !== null);
+    this.el.brainWhy.hidden = !offlineOnly || !server?.hint;
+    if (server?.hint) this.el.brainNote.innerHTML = server.hint;
+    this.el.brain.disabled = best === 'local' && offlineOnly;
+    this.syncTierRow();
   }
 
   /** Clicking toggles: click the focused agent again to let go of it. */
@@ -427,15 +473,9 @@ export class UI {
   update() {
     const world = this.world;
     const participants = world.lobby.list();
-    const alive = world.agents.filter((a) => a.alive);
-
-    this.el.alive.textContent = String(alive.length);
-    this.el.queue.textContent = String(world.lobby.queue.length);
-    this.el.cooldown.textContent = String(participants.filter((p) => p.status === 'cooldown').length);
-    const total = Math.floor(world.time);
-    this.el.clock.textContent = `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
 
     this.lockTierIfDeployed();
+    this.renderFighterCard();
     this.renderRail(participants);
     this.syncDirect();
   }
@@ -445,7 +485,7 @@ export class UI {
    * four behind it cost nothing until you open them.
    */
   renderRail(participants) {
-    this.el.rosterCount.textContent = participants.length ? ` ${participants.length}` : '';
+    this.el.rosterCount.textContent = participants.length ? `${participants.length}` : '';
 
     switch (this.railTab) {
       case 'roster': return this.renderRoster(participants);
@@ -478,7 +518,7 @@ export class UI {
   }
 
   rosterRow(p) {
-    const color = AGENT_COLORS[p.colorIndex % AGENT_COLORS.length];
+    const color = this.colorOf(p);
     const agent = p.agent;
     let sub;
 
@@ -498,9 +538,9 @@ export class UI {
 
     const lives = Number.isFinite(p.livesLeft) ? ` · ${p.livesLeft} ${p.livesLeft === 1 ? 'life' : 'lives'}` : '';
     sub += lives;
-    // In commander mode the name is a call-sign, so say whose it is.
+    // In commander mode the name is a call-sign, so say whose it is. A
+    // commander is marked on its name, where truncation cannot reach it.
     if (p.role === 'squad' && p.commanderName) sub += ` · ${p.commanderName}'s`;
-    if (p.role === 'commander') sub += ' · commander';
 
     const hp = agent ? Math.max(0, agent.hp / AGENT.maxHp) : 0;
     const hpColor = hp > 0.5 ? 'var(--good)' : hp > 0.25 ? 'var(--warn)' : 'var(--bad)';
@@ -511,7 +551,7 @@ export class UI {
       <li data-id="${p.id}" class="${p.status !== 'live' ? 'waiting' : ''} ${this.selectedId === p.id ? 'selected' : ''}">
         <span class="dot" style="background:${color};${teamRing}"></span>
         <span class="who">
-          <span class="name">${escapeHtml(p.name)}</span>
+          <span class="name">${p.role === 'commander' ? '<span class="star" title="Commander">★</span> ' : ''}${escapeHtml(p.name)}</span>
           <div class="sub">${escapeHtml(sub)}${brainTag}</div>
           ${p.status === 'live' ? `<div class="hpbar"><i style="width:${hp * 100}%;background:${hpColor}"></i></div>` : ''}
         </span>
@@ -526,7 +566,7 @@ export class UI {
       return;
     }
 
-    const color = AGENT_COLORS[participant.colorIndex % AGENT_COLORS.length];
+    const color = this.colorOf(participant);
     const agent = participant.agent;
     const parts = [
       `<div class="who-line"><span class="dot" style="background:${color}"></span>${escapeHtml(participant.name)}
@@ -599,6 +639,86 @@ export class UI {
     this.el.inspector.innerHTML = parts.join('');
   }
 
+  /** This viewer's own fighter, if they have one in this round. */
+  get myFighter() {
+    const mine = this.world.lobby.list().filter((p) => p.isMine && p.status !== 'gone');
+    return mine.sort((a, b) => b.joinedAt - a.joinedAt)[0] ?? null;
+  }
+
+  /**
+   * The fighter card. The form takes the space only while filling it in is
+   * the thing to do; the rest of the time this is a two-line summary, and the
+   * conversation with your fighter happens in Agent chat.
+   */
+  renderFighterCard() {
+    const match = this.match;
+    if (!match) return;
+    const phase = match.phase;
+    const seat = match.seats[this.mySeat()] ?? null;
+    const mine = this.myFighter;
+    const briefing = phase === PHASES.briefing;
+    const live = phase === PHASES.live;
+
+    if (phase !== this.cardPhase) {
+      this.cardPhase = phase;
+      this.editing = false;
+    }
+
+    let state;
+    if (!seat?.side) state = 'spectating';
+    else if (this.editing) state = 'form';
+    else if (!mine) state = live ? 'late' : 'form';
+    else state = briefing ? 'ready' : 'fighting';
+
+    const key = `${state}:${mine?.id ?? ''}:${mine?.status ?? ''}:${mine?.livesLeft ?? ''}:${this.colorOf(mine ?? {})}`;
+    if (key === this.cardKey) return;
+    this.cardKey = key;
+
+    this.el.card.dataset.state = state;
+    this.el.form.hidden = state !== 'form';
+    this.el.rewrite.hidden = state !== 'ready';
+    this.el.joinLate.hidden = state !== 'late';
+    this.el.summary.hidden = state === 'form';
+    this.el.deployPhase.textContent = {
+      form: briefing ? 'write it now' : 'join mid-round',
+      ready: 'ready',
+      fighting: 'in the round',
+      late: '',
+      spectating: 'spectating',
+    }[state];
+    this.el.form.querySelector('button[type=submit]').textContent = mine ? 'Send the new prompt' : briefing ? 'Enter arena' : 'Join mid-round';
+
+    if (state === 'spectating') {
+      this.el.summary.innerHTML = '<p class="muted">You are spectating this round. Pick a side in the lobby to play the next one.</p>';
+      return;
+    }
+    if (state === 'late') {
+      this.el.summary.innerHTML = '<p class="muted">You have no fighter in this round yet.</p>';
+      return;
+    }
+    if (!mine) return;
+
+    const brain = { sample: 'Claude', claude: 'Claude (server)', remote: 'Claude', local: 'offline interpreter' }[mine.brainKind] ?? 'offline';
+    const tier = mine.brainKind === 'sample' || mine.brainKind === 'claude'
+      ? ` · ${MODEL_TIERS.find((t) => t.id === mine.tier)?.label.toLowerCase() ?? 'quick'}`
+      : '';
+    const lives = Number.isFinite(mine.livesLeft) && live
+      ? ` · ${mine.livesLeft} ${mine.livesLeft === 1 ? 'life' : 'lives'} left`
+      : '';
+    const status = briefing
+      ? 'Ready. It goes in when the clock runs out.'
+      : mine.status === 'eliminated'
+        ? 'Out of lives — watching the rest.'
+        : mine.status === 'cooldown'
+          ? 'Down — back in a moment.'
+          : 'In the arena. Talk to it in Agent chat.';
+
+    this.el.summary.innerHTML = `
+      <div class="fs-who"><i style="background:${this.colorOf(mine)}"></i><b>${escapeHtml(mine.name)}</b>
+        <span class="muted">${escapeHtml(brain)}${tier}${lives}</span></div>
+      <p class="fs-status">${escapeHtml(status)}</p>`;
+  }
+
   /**
    * The strip over the arena: what is being played, how it stands, and how long
    * is left. Diffed like the focus bar, because it is written every frame.
@@ -618,13 +738,24 @@ export class UI {
     const mode = MODES[match.settings.mode] ?? MODES.ffa;
     const briefing = phase === PHASES.briefing;
 
-    set('phase', phase, () => {
+    set('phase', `${phase}:${this.role?.canEdit}`, () => {
       this.el.briefBanner.hidden = !briefing;
       this.el.hud.hidden = briefing;
-      this.el.deployPhase.textContent = briefing
-        ? 'write it now'
-        : phase === PHASES.live ? 'join mid-round' : '';
-      this.el.form.querySelector('button[type=submit]').textContent = briefing ? 'Enter arena' : 'Join mid-round';
+      this.el.end.hidden = !(this.role?.canEdit && phase === PHASES.live);
+      this.el.skipBrief.hidden = !this.role?.canEdit;
+      this.renderFighterCard();
+    });
+
+    // Your lives sit next to the clock: the two numbers that decide what you
+    // can still afford to do.
+    const mine = this.myFighter;
+    const lives = phase === PHASES.live && mine && Number.isFinite(mine.livesLeft) ? mine.livesLeft : null;
+    set('lives', lives, (v) => {
+      this.el.hudLives.hidden = v === null;
+      if (v !== null) {
+        this.el.hudLives.textContent = v === 0 ? 'out' : '♥'.repeat(Math.min(v, 10));
+        this.el.hudLives.title = `${v} ${v === 1 ? 'life' : 'lives'} left`;
+      }
     });
 
     const left = match.remaining;
@@ -698,7 +829,7 @@ export class UI {
     // A pulse is "live" for PULSE.duration after the world stamped it.
     const firing = (kind) => Boolean(agent) && now - agent.pulses[kind] < PULSE.duration;
 
-    const color = AGENT_COLORS[participant.colorIndex % AGENT_COLORS.length];
+    const color = this.colorOf(participant);
     set('color', color, (v) => { this.el.fbDot.style.background = v; });
     set('name', participant.name, (v) => { this.el.fbName.textContent = v; });
     const brainLabel = { sample: 'your account', claude: 'server', remote: 'their account', local: 'offline' };
@@ -767,7 +898,7 @@ export class UI {
 
     this.el.leaderboard.innerHTML = live.length
       ? live.map((p, i) => {
-          const color = AGENT_COLORS[p.colorIndex % AGENT_COLORS.length];
+          const color = this.colorOf(p);
           return `<li class="${p.id === this.selectedId ? 'selected' : ''}" data-id="${p.id}">
             <span class="rank">${i + 1}</span>
             <span class="dot" style="background:${color}"></span>
@@ -868,6 +999,9 @@ export class UI {
       : 'Deploy an agent to talk to it';
     this.el.directInput.maxLength = COMMS.messageLength;
     this.el.directEmpty.hidden = thread.length > 0;
+    this.el.directEmpty.textContent = target
+      ? `Say something to ${target.name}. It answers here, and only you two can see this.`
+      : 'Deploy a fighter, then talk to it here. Only you two can see this.';
 
     if (id !== this.directThreadId) {
       this.directThreadId = id;

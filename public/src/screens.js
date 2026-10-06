@@ -9,12 +9,17 @@ import { MODE_LIST, MODES, PHASES } from './match.js';
 import { MAPS } from './arena.js';
 import { TEAMS, AGENT_COLORS } from './config.js';
 import { formatClock } from './util.js';
+import { colorOf, isHex } from './colors.js';
 
 const byId = (id) => document.getElementById(id);
 
 export function createScreens({
   world,
   match,
+  me = () => ({ seat: null, profile: null }),
+  onProfile = () => {},
+  onPickSide = () => {},
+  onMoveSeat = () => {},
   onConfigure = () => {},
   onAddBot = () => {},
   onClearLobby = () => {},
@@ -25,6 +30,11 @@ export function createScreens({
   const el = {
     body: document.body,
     landing: byId('screen-landing'),
+    profileForm: byId('profile-form'),
+    profileName: byId('profile-name'),
+    swatches: byId('profile-swatches'),
+    profileSphere: byId('profile-sphere'),
+    profilePreview: byId('profile-preview-name'),
     lobbySub: byId('lobby-sub'),
     lobbyRoom: byId('lobby-room'),
     modeCards: byId('mode-cards'),
@@ -59,19 +69,41 @@ export function createScreens({
   let role = { canEdit: true, known: false };
   let room = null;
 
-  // --- the title card: anything at all moves on ------------------------------
-  const leaveLanding = () => {
-    if (match.phase !== PHASES.landing) return;
-    onStartPressed();
+  // --- the title card: who you are, and what colour you fight in -------------
+  let pickedColor = null;
+
+  el.swatches.innerHTML =
+    AGENT_COLORS.map((color) => `<button type="button" class="swatch" role="radio" aria-checked="false"
+        data-color="${color}" style="--swatch:${color}" title="${color}"></button>`).join('') +
+    // Anything outside the palette, for anyone who has a colour in mind.
+    `<label class="swatch custom" title="Any colour"><input type="color" id="profile-custom" value="#ffffff" />
+      <span>+</span></label>`;
+
+  const choose = (color) => {
+    if (!isHex(color)) return;
+    pickedColor = color.toLowerCase();
+    for (const swatch of el.swatches.querySelectorAll('.swatch[data-color]')) {
+      swatch.setAttribute('aria-checked', String(swatch.dataset.color.toLowerCase() === pickedColor));
+    }
+    el.profileSphere.style.background = pickedColor;
   };
-  const onStartPressed = () => {
-    match.begin();
-    api.render();
+  const preview = () => {
+    el.profilePreview.textContent = el.profileName.value.trim() || 'Rook';
   };
-  // "Any press or click" means any: a key, a tap, a click anywhere on the page.
-  // Each handler checks the phase itself, so they cost nothing afterwards.
-  window.addEventListener('keydown', leaveLanding);
-  window.addEventListener('pointerdown', leaveLanding);
+
+  el.swatches.addEventListener('click', (event) => {
+    const swatch = event.target.closest('.swatch[data-color]');
+    if (swatch) choose(swatch.dataset.color);
+  });
+  byId('profile-custom').addEventListener('input', (event) => choose(event.target.value));
+  el.profileName.addEventListener('input', preview);
+
+  el.profileForm.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const name = el.profileName.value.trim().slice(0, 14);
+    if (!name) return el.profileName.focus();
+    onProfile({ name, color: pickedColor ?? AGENT_COLORS[0] });
+  });
 
   // --- lobby controls --------------------------------------------------------
   el.modeCards.innerHTML = MODE_LIST
@@ -108,8 +140,23 @@ export function createScreens({
   el.returnBtn.addEventListener('click', () => onReturn());
 
   el.teamColumns.addEventListener('click', (event) => {
-    const button = event.target.closest('button[data-swap]');
-    if (button && role.canEdit) onSetTeam(button.dataset.swap, button.dataset.team);
+    const swap = event.target.closest('button[data-swap]');
+    if (swap && role.canEdit) return onSetTeam(swap.dataset.swap, swap.dataset.team);
+    const pick = event.target.closest('button[data-pick]');
+    if (pick) return onPickSide(pick.dataset.pick === 'none' ? null : pick.dataset.pick);
+    return undefined;
+  });
+  // The owner moves anybody, from a picker on that person's row.
+  el.teamColumns.addEventListener('change', (event) => {
+    const move = event.target.closest('select[data-move]');
+    if (move && role.canEdit) onMoveSeat(move.dataset.move, move.value === 'none' ? null : move.value);
+  });
+
+  /** The rules a finished round's colours are drawn by, for this viewer. */
+  const viewFor = (results) => ({
+    mode: MODES[results.mode],
+    mySeat: me().seat,
+    myColor: me().profile?.color,
   });
 
   const api = {
@@ -135,10 +182,26 @@ export function createScreens({
         : `Lose ${lives} ${lives === 1 ? 'life' : 'lives'} and you spectate the rest of the round.`;
     },
 
+    /** Fill the form from a profile this viewer saved last time. */
+    setProfile(profile) {
+      if (profile?.name) el.profileName.value = profile.name;
+      choose(profile?.color ?? AGENT_COLORS[Math.floor(Math.random() * AGENT_COLORS.length)]);
+      preview();
+    },
+
     render() {
-      el.body.dataset.phase = match.phase;
-      if (match.phase === PHASES.lobby) api.renderLobby();
-      if (match.phase === PHASES.postgame) api.renderPostgame();
+      // The profile screen is this page's own gate, in front of whatever the
+      // room is doing - a newcomer names themselves before anything else.
+      const { profile } = me();
+      const shown = !profile ? PHASES.landing : match.phase === PHASES.landing ? PHASES.lobby : match.phase;
+      el.body.dataset.phase = shown;
+      if (shown === PHASES.landing) {
+        requestAnimationFrame(() => {
+          if (document.activeElement !== el.profileName) el.profileName.focus();
+        });
+      }
+      if (shown === PHASES.lobby) api.renderLobby();
+      if (shown === PHASES.postgame) api.renderPostgame();
     },
 
     renderLobby() {
@@ -167,12 +230,16 @@ export function createScreens({
       el.lobbyRoleNote.innerHTML = 'The owner sets the game up and starts it. ' +
         'You write your own fighter’s prompt once the round begins.';
 
-      const fighters = world.lobby.list().length;
+      const playing = Object.values(match.seats).filter((seat) => seat.side).length;
+      const fighters = world.lobby.list().filter((p) => !p.seat).length + playing;
+      const mySide = match.seats[me().seat]?.side ?? null;
       el.start.disabled = fighters === 0;
       el.lobbyHint.textContent = !role.canEdit
-        ? 'Waiting for the owner to start the round…'
+        ? mySide
+          ? 'You are in. You write your prompt once the owner starts the round…'
+          : 'Pick a side to play, or stay in the stands and watch.'
         : fighters === 0
-          ? 'Add a bot, or just start — everyone writes a prompt in the next minute either way.'
+          ? 'Pick a side yourself, or add a bot. Prompts are written in the minute after you press Start.'
           : `${MODES[settings.mode].name} on ${MAPS.find((m) => m.id === settings.map)?.name}, ` +
             `${minutes(settings.roundSeconds)}.`;
 
@@ -186,35 +253,83 @@ export function createScreens({
       }
     },
 
+    /**
+     * Everyone in the lobby, by where they sit: the stands, then each side.
+     * People are seats; bots are fighters with no seat. The owner can move
+     * anyone; a person can move themselves; a Viewer can only watch.
+     */
     renderRoster() {
-      const everyone = world.lobby.list();
-      el.lobbyCount.textContent = everyone.length ? `${everyone.length} in` : 'nobody yet';
+      const { seat: mySeat, profile } = me();
+      const seats = match.seats;
+      const people = Object.entries(seats);
+      const bots = world.lobby.list().filter((p) => !p.seat && p.role !== 'squad');
+      const mode = match.mode;
+      const view = { mode, mySeat, myColor: profile?.color };
 
-      const row = (p) => {
-        const color = AGENT_COLORS[p.colorIndex % AGENT_COLORS.length];
-        const tag = p.isMine ? 'yours' : p.brainKind === 'local' ? 'bot' : 'theirs';
-        const swap = match.isTeamMode && role.canEdit
-          ? `<button class="swap" data-swap="${p.id}" data-team="${p.team === 'a' ? 'b' : 'a'}" title="Move to the other side">&#8644;</button>`
+      el.lobbyCount.textContent = `${people.length} ${people.length === 1 ? 'person' : 'people'}` +
+        (bots.length ? ` · ${bots.length} bot${bots.length === 1 ? '' : 's'}` : '');
+
+      const sides = mode.teams
+        ? [
+            { id: null, name: 'Spectating', color: null },
+            { id: 'a', name: TEAMS.a.name, color: TEAMS.a.color },
+            { id: 'b', name: TEAMS.b.name, color: TEAMS.b.color },
+          ]
+        : [
+            { id: null, name: 'Spectating', color: null },
+            { id: 'play', name: 'In the fight', color: null },
+          ];
+
+      const options = (current) => sides
+        .map((side) => `<option value="${side.id ?? 'none'}" ${side.id === (current ?? null) ? 'selected' : ''}>${esc(side.name)}</option>`)
+        .join('');
+
+      const personRow = ([id, seat]) => {
+        const isMe = id === mySeat;
+        const tag = isMe ? 'you' : seat.canPlay ? '' : 'watching only';
+        const control = role.canEdit && seat.canPlay
+          ? `<select class="move" data-move="${esc(id)}" aria-label="Move ${esc(seat.name)}">${options(seat.side)}</select>`
           : '<span></span>';
-        return `<li class="${p.isMine ? 'mine' : ''}">
-            <i class="dot" style="background:${color}"></i>
-            <span class="who"><span class="name">${esc(p.name)}</span></span>
-            <span class="tag">${tag}</span>${swap}</li>`;
+        return `<li class="${isMe ? 'mine' : ''}">
+            <i class="dot" style="background:${esc(seat.color)}"></i>
+            <span class="who"><span class="name">${esc(seat.name)}</span></span>
+            <span class="tag">${tag}</span>${control}</li>`;
       };
 
-      if (!match.isTeamMode) {
-        el.teamColumns.innerHTML = `<div class="team-col solo"><ul>${
-          everyone.map(row).join('') || '<li class="empty">Nobody has joined yet.</li>'
-        }</ul></div>`;
-        return;
-      }
+      const botRow = (p) => {
+        const color = colorOf(p, view);
+        const swap = mode.teams && role.canEdit
+          ? `<button class="swap" data-swap="${p.id}" data-team="${p.team === 'a' ? 'b' : 'a'}" title="Move to the other side">&#8644;</button>`
+          : '<span></span>';
+        return `<li class="bot">
+            <i class="dot" style="background:${color}"></i>
+            <span class="who"><span class="name">${esc(p.name)}</span></span>
+            <span class="tag">${p.role === 'commander' ? 'bot commander' : 'bot'}</span>${swap}</li>`;
+      };
 
-      el.teamColumns.innerHTML = ['a', 'b'].map((team) => {
-        const members = everyone.filter((p) => p.team === team);
-        return `<div class="team-col">
-            <h4><i style="background:${TEAMS[team].color}"></i>${esc(TEAMS[team].name)}
-              <span class="tag">${members.length}</span></h4>
-            <ul>${members.map(row).join('') || '<li class="empty">Nobody yet.</li>'}</ul>
+      const mine = seats[mySeat];
+      const canJoin = (side) => {
+        if (!mine || !mine.canPlay || (mine.side ?? null) === side.id) return false;
+        // Commander is one person a side, and a bot commander counts.
+        if (side.id && mode.squad) {
+          const held = people.some(([id, other]) => id !== mySeat && other.side === side.id) ||
+            bots.some((b) => b.role === 'commander' && b.team === side.id);
+          if (held) return false;
+        }
+        return true;
+      };
+
+      el.teamColumns.innerHTML = sides.map((side) => {
+        const here = people.filter(([, seat]) => (seat.side ?? null) === side.id);
+        const hereBots = side.id === null ? [] : bots.filter((b) => (mode.teams ? b.team === side.id : true));
+        const join = canJoin(side)
+          ? `<button type="button" class="pick-side" data-pick="${side.id ?? 'none'}">${side.id ? 'Join' : 'Spectate'}</button>`
+          : '';
+        const rows = here.map(personRow).join('') + hereBots.map(botRow).join('');
+        return `<div class="team-col ${side.id === null ? 'stands' : ''}">
+            <h4>${side.color ? `<i style="background:${side.color}"></i>` : ''}${esc(side.name)}
+              <span class="tag">${here.length + hereBots.length}</span>${join}</h4>
+            <ul>${rows || `<li class="empty">${side.id === null ? 'Nobody watching.' : 'Nobody yet.'}</li>`}</ul>
           </div>`;
       }).join('');
     },
@@ -241,7 +356,7 @@ export function createScreens({
       el.podium.innerHTML = order.map((entry, index) => {
         const place = index === 1 ? 1 : index === 0 ? 2 : 3;
         if (!entry) return `<div class="step empty"><span class="place">${ordinal(place)}</span></div>`;
-        const color = AGENT_COLORS[entry.colorIndex % AGENT_COLORS.length];
+        const color = colorOf(entry, viewFor(results));
         return `<div class="step ${place === 1 ? 'first' : ''}">
             <span class="place">${ordinal(place)}</span>
             <div class="sphere" style="background:${color}"></div>
@@ -264,8 +379,8 @@ export function createScreens({
         `<thead><tr><th>Fighter</th>${ctf ? '<th>Caps</th><th>Ret</th>' : ''}<th>K</th><th>D</th><th>A</th>` +
         `<th>Dmg</th><th>Acc</th><th>Best life</th></tr></thead><tbody>` +
         results.rows.map((r) => {
-          const color = AGENT_COLORS[r.colorIndex % AGENT_COLORS.length];
-          return `<tr class="${r.isMine ? 'mine' : ''}">
+          const color = colorOf(r, viewFor(results));
+          return `<tr class="${r.seat && r.seat === me().seat ? 'mine' : ''}">
             <td class="name"><i style="background:${color}"></i>${esc(r.name)}
               ${r.team ? `<span class="team-tag">${esc(TEAMS[r.team].short)}</span>` : ''}</td>
             ${ctf ? `<td>${r.captures}</td><td>${r.returns}</td>` : ''}

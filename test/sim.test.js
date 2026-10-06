@@ -14,8 +14,9 @@ import { hasLineOfSight, castRay, clearance, resolveCollision, MAPS, setMap, bas
 import { createMatch, PHASES, MODES, missionBriefing, CODENAMES } from '../public/src/match.js';
 import { compassFrom, emitSound, takeHeard, describeHeard } from '../public/src/sound.js';
 import { electHost, TOPICS } from '../public/src/net.js';
+import { colorOf, shade, luminance, isHex } from '../public/src/colors.js';
 import { ordersHeard } from '../public/src/brains/local.js';
-import { SOUND, TEAMS } from '../public/src/config.js';
+import { SOUND, TEAMS, AGENT_COLORS } from '../public/src/config.js';
 import { WEAPONS, AGENT, WORLD, LOBBY, VISION, MOVE, CHAT, COMMS, PULSE, HARD_RULES } from '../public/src/config.js';
 import { extractChat, extractSpeech, wrapChat, tidy } from '../public/src/chat.js';
 import { messageAgent, drainInbox, operatorBlock, briefingFor, amendmentsBlock, ORDER_AUTHORITY } from '../public/src/comms.js';
@@ -1703,10 +1704,155 @@ test('a peer that cannot send is never elected to run the game', () => {
 test('every topic a non-owner must send on is listed, so it can be opened to Contributors', () => {
   // Kept in step with the capability declaration at publish time: a topic
   // left out of it is admin-only, and the host is not always the owner.
-  const hostOrPlayer = ['tick', 'roster', 'join', 'plan', 'need', 'part', 'phase'];
+  const hostOrPlayer = ['tick', 'roster', 'join', 'plan', 'need', 'part', 'phase', 'seat'];
   for (const topic of hostOrPlayer) assert.ok(Object.values(TOPICS).includes(topic), topic);
   const ownerOnly = ['bots', 'clear', 'setup'];
   for (const topic of ownerOnly) assert.ok(Object.values(TOPICS).includes(topic), topic);
+});
+
+console.log('\n-- colours ------------------------------------------------------');
+
+test('a squad is a shade off its commander: darker if it can be, lighter if not', () => {
+  for (const light of ['#ffd166', '#4ade80', '#f5f5f5', '#ff5c7a']) {
+    assert.ok(luminance(shade(light)) < luminance(light), `${light} -> ${shade(light)} should be darker`);
+  }
+  for (const dark of ['#111111', '#1e3a8a', '#3b0a45']) {
+    assert.ok(luminance(shade(dark)) > luminance(dark), `${dark} -> ${shade(dark)} should be lighter`);
+  }
+  assert.ok(isHex(shade('#ffd166')), 'still a colour');
+  assert.notEqual(shade('#ffd166'), '#ffd166', 'and visibly a different one');
+});
+
+test('in a team game everyone wears their side, except you on your own screen', () => {
+  const tdm = MODES.tdm;
+  const me = { seat: 's1', team: 'a', favColor: '#4ade80', colorIndex: 0 };
+  const mate = { seat: 's2', team: 'a', favColor: '#c084fc', colorIndex: 1 };
+  const bot = { seat: null, team: 'b', favColor: null, colorIndex: 2 };
+  const mine = { mode: tdm, mySeat: 's1', myColor: '#4ade80' };
+  const theirs = { mode: tdm, mySeat: 's2', myColor: '#c084fc' };
+
+  assert.equal(colorOf(me, mine), '#4ade80', 'I see myself in my colour');
+  assert.equal(colorOf(mate, mine), TEAMS.a.color, 'and my teammate in our side\'s');
+  assert.equal(colorOf(bot, mine), TEAMS.b.color, 'and a bot in its side\'s');
+  assert.equal(colorOf(me, theirs), TEAMS.a.color, 'while my teammate sees me in our side\'s');
+  assert.equal(colorOf(mate, theirs), '#c084fc', 'and themselves in theirs');
+});
+
+test('free-for-all is your colour for everyone; commander is the army\'s', () => {
+  const person = { seat: 's1', team: null, favColor: '#4ade80', colorIndex: 3 };
+  const bot = { seat: null, team: null, favColor: null, colorIndex: 3 };
+  assert.equal(colorOf(person, { mode: MODES.ffa, mySeat: 'someone-else' }), '#4ade80');
+  assert.equal(colorOf(bot, { mode: MODES.ffa }), AGENT_COLORS[3], 'a bot wears the palette');
+
+  const commander = { seat: 's1', team: 'a', role: 'commander', favColor: '#ffd166' };
+  const squad = { seat: null, team: 'a', role: 'squad', favColor: shade('#ffd166') };
+  const view = { mode: MODES.commander, mySeat: 'someone-else' };
+  assert.equal(colorOf(commander, view), '#ffd166', 'everyone sees the commander in its player\'s colour');
+  assert.equal(colorOf(squad, view), shade('#ffd166'), 'and its squad a shade off it');
+  const botCommander = { seat: null, team: 'b', role: 'commander', favColor: null };
+  assert.equal(colorOf(botCommander, view), TEAMS.b.color, 'a bot commander falls back to its side');
+});
+
+test('a colour that is not a colour is never drawn', () => {
+  const evil = { seat: 's1', team: null, favColor: 'red;background:url(x)', colorIndex: 1 };
+  assert.equal(colorOf(evil, { mode: MODES.ffa }), AGENT_COLORS[1]);
+  assert.equal(isHex('#12345'), false);
+  assert.equal(isHex('#123456'), true);
+});
+
+console.log('\n-- the lobby: seats ----------------------------------------------');
+
+test('everyone who arrives sits in the stands until they pick a side', () => {
+  const { match } = makeMatch({ mode: 'tdm' }, { fighters: 0 });
+  match.syncSeats([
+    { id: 'p1', name: 'Felix', color: '#4ade80' },
+    { id: 'p2', name: 'Mira', color: '#c084fc' },
+  ]);
+  assert.deepEqual(Object.values(match.seats).map((s) => s.side), [null, null]);
+
+  assert.ok(match.setSide('p1', 'a'));
+  match.syncSeats([
+    { id: 'p1', name: 'Felix', color: '#4ade80' },
+    { id: 'p2', name: 'Mira', color: '#c084fc' },
+    { id: 'p3', name: 'Ola', color: '#38bdf8' },
+  ]);
+  assert.equal(match.seats.p1.side, 'a', 'a seated person keeps their side when someone new arrives');
+  assert.equal(match.seats.p3.side, null);
+
+  match.syncSeats([{ id: 'p1', name: 'Felix', color: '#4ade80' }]);
+  assert.deepEqual(Object.keys(match.seats), ['p1'], 'and a person who leaves takes their seat with them');
+});
+
+test('a side has to be a real side, and a Viewer can only watch', () => {
+  const { match } = makeMatch({ mode: 'tdm' }, { fighters: 0 });
+  match.syncSeats([
+    { id: 'p1', name: 'Felix', color: '#4ade80' },
+    { id: 'v1', name: 'Watcher', color: '#38bdf8', canPlay: false },
+  ]);
+  assert.equal(match.setSide('p1', 'play'), true, 'an unknown side is taken as spectating');
+  assert.equal(match.seats.p1.side, null);
+  assert.equal(match.setSide('v1', 'a'), false, 'the platform would refuse everything they send');
+  assert.equal(match.seats.v1.side, null);
+  assert.equal(match.setSide('nobody', 'a'), false);
+});
+
+test('commander is one person a side', () => {
+  const { match } = makeMatch({ mode: 'commander' }, { fighters: 0 });
+  match.syncSeats([
+    { id: 'p1', name: 'Felix', color: '#4ade80' },
+    { id: 'p2', name: 'Mira', color: '#c084fc' },
+  ]);
+  assert.ok(match.setSide('p1', 'a'));
+  assert.equal(match.setSide('p2', 'a'), false, 'that chair is taken');
+  assert.ok(match.setSide('p2', 'b'));
+  assert.equal(match.freeCommandSlot(), null, 'and both are now taken');
+});
+
+test('changing the mode moves people sensibly between sides', () => {
+  const { match } = makeMatch({ mode: 'tdm' }, { fighters: 0 });
+  match.syncSeats([{ id: 'p1', name: 'Felix', color: '#4ade80' }, { id: 'p2', name: 'Mira', color: '#c084fc' }]);
+  match.setSide('p1', 'a');
+  match.configure({ mode: 'ffa' });
+  assert.equal(match.seats.p1.side, 'play', 'a player stays a player');
+  assert.equal(match.seats.p2.side, null, 'a spectator stays a spectator');
+  match.configure({ mode: 'ctf' });
+  assert.equal(match.seats.p1.side, null, 'with no side chosen in the new mode, they are asked to choose again');
+});
+
+test('a fighter follows its person: to a new side, or out with them', () => {
+  const { world, match } = makeMatch({ mode: 'tdm' }, { fighters: 0 });
+  match.syncSeats([{ id: 'p1', name: 'Felix', color: '#4ade80' }, { id: 'p2', name: 'Mira', color: '#c084fc' }]);
+  match.setSide('p1', 'a');
+  match.setSide('p2', 'b');
+
+  const felix = createParticipant({ name: 'Felix', prompt: 'fight', brainKind: 'local', colorIndex: 0 });
+  Object.assign(felix, { seat: 'p1', team: 'a' });
+  const mira = createParticipant({ name: 'Mira', prompt: 'fight', brainKind: 'local', colorIndex: 1 });
+  Object.assign(mira, { seat: 'p2', team: 'b' });
+  world.lobby.participants.set(felix.id, felix);
+  world.lobby.participants.set(mira.id, mira);
+
+  match.setSide('p1', 'b');       // the owner moves Felix
+  match.setSide('p2', null);      // Mira goes to the stands
+  match.openBriefing();
+
+  assert.equal(felix.team, 'b', 'Felix\'s fighter goes where Felix went');
+  assert.equal(felix.favColor, '#4ade80');
+  assert.ok(!world.lobby.get(mira.id), 'and a spectator has no fighter in the round');
+});
+
+test('seats travel to guests, reshaped rather than trusted', () => {
+  const { match } = makeMatch({ mode: 'tdm' }, { fighters: 0 });
+  match.applyState({
+    phase: PHASES.lobby,
+    settings: { mode: 'tdm', map: 'crossfire' },
+    scores: { a: 0, b: 0 },
+    seats: { p1: { name: 'x'.repeat(80), color: 'javascript:alert(1)', side: 'everyone' } },
+  });
+  const seat = match.seats.p1;
+  assert.ok(seat.name.length <= 18);
+  assert.equal(seat.color, '#8b93a7', 'a colour that is not a colour is replaced');
+  assert.equal(seat.side, null, 'and a side that does not exist is the stands');
 });
 
 console.log('\n-- a full match --------------------------------------------------');

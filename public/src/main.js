@@ -8,11 +8,12 @@ import { createNet, TOPICS } from './net.js';
 import { Renderer } from './render.js';
 import { UI } from './ui.js';
 import { PRESETS, DEMO_NAMES } from './presets.js';
-import { AGENT_COLORS, WORLD } from './config.js';
+import { AGENT_COLORS, WORLD, TEAMS } from './config.js';
 import { createChatLog, createDirectLog } from './chatlog.js';
 import { messageAgent } from './comms.js';
 import { createMatch, PHASES, MODES, CODENAMES } from './match.js';
 import { createScreens } from './screens.js';
+import { colorOf, shade, isHex } from './colors.js';
 
 const usage = createUsageMeter({ onChange: (state) => ui?.renderUsage(state) });
 const brains = createBrains({ usage });
@@ -56,6 +57,36 @@ function deliver(participant, text) {
   return line;
 }
 
+// ------------------------------------------------------------ who you are
+// A name and a favourite colour, asked for on the title card and remembered in
+// this browser for next time. Kept per viewer, so it is only ever a
+// convenience: it never reaches another viewer except through presence.
+const PROFILE_KEY = 'prompt-wars:profile';
+let profile = null;
+
+function loadProfile() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(PROFILE_KEY) ?? 'null');
+    return saved?.name && isHex(saved.color) ? { name: String(saved.name).slice(0, 14), color: saved.color } : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveProfile(next) {
+  try {
+    localStorage.setItem(PROFILE_KEY, JSON.stringify(next));
+  } catch {
+    // Private windows and blocked storage: the profile still works this visit.
+  }
+}
+
+/** This page's seat: its peer label in a shared room, or "local" alone. */
+const mySeat = () => (net?.state.available ? net.me ?? null : 'local');
+
+/** How a fighter is coloured on THIS page. */
+const colorFor = (participant) => colorOf(participant, { mode: match.mode, mySeat: mySeat(), myColor: profile?.color });
+
 let usedColors = new Set();
 let usedNames = new Set();
 
@@ -91,10 +122,19 @@ function join({ name, prompt, brainKind, tier, team = null, role = null, focus =
     return { ok: false, message: 'Call budget spent. Raise it, or deploy on the offline interpreter.', tone: 'bad' };
   }
 
+  // A person fights where they sit. Their seat - picked in the lobby, or moved
+  // by the owner - decides the side, so there is nothing to guess here. A
+  // spectator does not get a fighter at all.
+  const seatId = mine ? mySeat() : ownerPeer;
+  const seat = seatId && role !== 'squad' && (mine || ownerPeer) ? match.seats[seatId] : null;
+  if (seatId && (mine || ownerPeer) && role !== 'squad' && !seat?.side) {
+    return { ok: false, message: 'You are spectating this round. Pick a side in the lobby to play the next one.', tone: 'warn' };
+  }
+
   // Commander mode is one agent a side. A commander takes a free chair or is
   // turned away; the squads it is given are not commanders and skip all this.
-  let side = team;
-  if (match.mode.squad && role !== 'squad') {
+  let side = seat ? (seat.side === 'play' ? null : seat.side) : team;
+  if (match.mode.squad && role !== 'squad' && !seat) {
     const free = match.freeCommandSlot();
     side = team && free !== null ? team : free;
     if (!side) {
@@ -117,12 +157,24 @@ function join({ name, prompt, brainKind, tier, team = null, role = null, focus =
   participant.ownerId = ownerId;
   // Agents I deployed: only these may lock my tier selector or bill my account.
   participant.isMine = mine;
+  if (seat) {
+    participant.seat = seatId;
+    participant.favColor = mine ? profile?.color ?? seat.color : seat.color;
+    // One fighter per person: writing a new prompt replaces the old fighter
+    // rather than sending in a second one.
+    for (const old of world.lobby.list()) {
+      if (old.seat === seatId && old !== participant) world.lobby.remove(old.id);
+    }
+  }
 
   if (mine && !net?.isHost && net?.state.available) {
     // Someone else is simulating: ask them to put this agent in.
     net.send(TOPICS.join, { name: participant.name, prompt, tier: participant.tier });
     world.lobby.participants.set(participant.id, participant);
     participant.status = 'queued';
+    // Follow it from the start: when the host sends its body back, this record
+    // adopts it and the focus bar lights up on its own.
+    if (focus) ui.focus(participant.id);
     return { ok: true, message: `${participant.name} sent to the host.`, tone: 'ok' };
   }
 
@@ -182,6 +234,9 @@ function raiseSquads(mode) {
       // The newest participant is the one just added.
       const bot = world.lobby.list().at(-1);
       bot.codename = codename;
+      // A squad reads as its commander's family: the same colour, a step
+      // darker - or lighter, if the commander's colour is already dark.
+      bot.favColor = shade(commander.favColor ?? TEAMS[team].color);
       bot.commanderId = commander.id;
       bot.commanderName = commander.name;
       bot.squadCodenames = codenames;
@@ -218,18 +273,16 @@ const ui = new UI({
   directLog,
   onJoin: join,
   onMessage: deliver,
+  mySeat: () => mySeat(),
   onSkipBrief: () => {
     if (!role.canEdit) return;
     if (net?.state.available && !net.isHost) return net.send(TOPICS.setup, { go: true });
     match.goLive();
   },
-  onDemo: () => {
-    if (net?.state.available && !net.isHost) return net.send(TOPICS.bots, { count: 4 });
-    addDemoAgents(4);
-  },
-  onClear: () => {
-    if (net?.state.available && !net.isHost) return net.send(TOPICS.clear, {});
-    clearArena();
+  onEndRound: () => {
+    if (!role.canEdit) return;
+    if (net?.state.available && !net.isHost) return net.send(TOPICS.setup, { end: true });
+    match.finish('ended');
   },
   onSelect: () => {
     ui.applyChatFocus();
@@ -250,6 +303,29 @@ let role = { isOwner: true, canEdit: true, known: false };
 const screens = createScreens({
   world,
   match,
+  me: () => ({ seat: mySeat(), profile }),
+  onProfile: (next) => {
+    profile = next;
+    saveProfile(next);
+    // Your fighter defaults to your name; you can still call it something else.
+    if (!ui.el.name.value) ui.el.name.value = next.name;
+    net?.setPresence({ name: next.name, color: next.color });
+    if (!net?.state.available) {
+      match.syncSeats([{ id: 'local', name: next.name, color: next.color, canPlay: true }]);
+    }
+    screens.render();
+  },
+  onPickSide: (side) => {
+    if (net?.state.available && !net.isHost) return net.send(TOPICS.seat, { side });
+    match.setSide(mySeat(), side);
+    screens.renderLobby();
+  },
+  onMoveSeat: (seatId, side) => {
+    if (!role.canEdit) return;
+    if (net?.state.available && !net.isHost) return net.send(TOPICS.setup, { seat: { id: seatId, side } });
+    match.setSide(seatId, side);
+    screens.renderLobby();
+  },
   onConfigure: (patch) => {
     if (!role.canEdit) return;
     if (net?.state.available && !net.isHost) return net.send(TOPICS.setup, { settings: patch });
@@ -332,13 +408,20 @@ const NO_CREDENTIALS_HINT =
   `The server is running but has no working credentials. Set <code>ANTHROPIC_API_KEY</code>, or try the ` +
   `free routes: <code>npm run stub-model</code>, or point <code>ANTHROPIC_BASE_URL</code> at a local model ` +
   `with <code>PROMPT_WARS_COMPAT=1</code>.`;
+// Two ways to reach Claude report in at different times, and both feed this one
+// state. Writing the badge from each as it arrived meant the last to answer
+// won - inside the artifact a failed server probe could land after Claude had
+// reported in and bury it under a paragraph about running a server.
+const modelStatus = { sample: null, server: null };
+const publishModel = () => ui.setModelStatus(modelStatus);
+
 async function checkModelBackend() {
   // Opened straight off disk there is no server to ask, and attempting the
   // fetch only logs a CORS failure. Offline brains still work.
   if (!location.protocol.startsWith('http')) {
     brains.claude.markUnavailable();
-    ui.setModelBadge('off', 'Offline brain · no server behind this page', { hint: NO_SERVER_HINT });
-    return;
+    modelStatus.server = { ready: false, hint: NO_SERVER_HINT };
+    return publishModel();
   }
 
   try {
@@ -346,17 +429,16 @@ async function checkModelBackend() {
     if (!response.ok) throw new Error(String(response.status));
     const data = await response.json();
     if (data.ready) {
-      // In compatibility mode something other than Claude is answering, so name
-      // the model rather than claiming a provider.
-      ui.setModelBadge('ok', data.compat ? `Model ready · ${data.model}` : `Claude ready · ${data.model}`, { compat: data.compat });
+      modelStatus.server = { ready: true, model: data.model, compat: Boolean(data.compat) };
     } else {
       brains.claude.markUnavailable();
-      ui.setModelBadge('off', data.reason ?? 'Claude off', { hint: NO_CREDENTIALS_HINT });
+      modelStatus.server = { ready: false, hint: NO_CREDENTIALS_HINT };
     }
   } catch {
     brains.claude.markUnavailable();
-    ui.setModelBadge('off', 'Offline brain · server unreachable', { hint: NO_SERVER_HINT });
+    modelStatus.server = { ready: false, hint: NO_SERVER_HINT };
   }
+  publishModel();
 }
 checkModelBackend();
 
@@ -364,17 +446,9 @@ checkModelBackend();
 // `sample` spends the viewer's own Claude usage, so it is offered only once the
 // runtime has actually handed it over.
 brains.sample.ready.then(() => {
-  const option = ui.el.brain.querySelector('option[value="sample"]');
-  if (brains.sample.available) {
-    option.disabled = false;
-    ui.el.brain.value = 'sample';
-    ui.setModelBadge('ok', 'Claude · your account');
-    ui.renderUsage(usage.state);
-  } else {
-    option.disabled = true;
-    option.textContent = 'Claude — not available here';
-  }
-  ui.syncTierRow();
+  modelStatus.sample = brains.sample.available;
+  if (brains.sample.available) ui.renderUsage(usage.state);
+  publishModel();
 });
 
 // ------------------------------------------------------------------ the room
@@ -395,6 +469,8 @@ world.brains.remote = createRemoteBrain({ net, fallback: brains.local });
 function makeGhost(netId) {
   const participant = createParticipant({ name: '…', prompt: '', brainKind: 'remote', colorIndex: netId });
   participant.isMine = false;
+  // Anything the host is sending is in the arena right now.
+  participant.status = 'live';
   world.lobby.participants.set(participant.id, participant);
   const agent = {
     id: `ghost${netId}`, netId, participant, name: '…',
@@ -462,6 +538,14 @@ net.onClearRequest = () => {
   if (net.isHost) clearArena();
 };
 
+// The host sends my own fighter back to me as just another body. This page
+// already has a record for it - the one holding its inbox and conversation -
+// so that record adopts the body instead of a second entry appearing.
+net.adoptGhost = (seat) => {
+  if (!seat || seat !== mySeat()) return null;
+  return world.lobby.list().find((p) => p.isMine && p.seat === seat) ?? null;
+};
+
 // Guests follow the host's phase, score and clock rather than running any of
 // it themselves.
 net.onPhase = (state) => {
@@ -472,10 +556,32 @@ net.onPhase = (state) => {
   ui.renderMatch();
 };
 
+// Everyone present has a seat, built from what they told the room about
+// themselves. Presence is display data and only ever seats a spectator; what
+// side they play on is decided below, from messages the platform stamps.
+net.onPeopleChanged = (peers) => {
+  if (!net.isHost) return;
+  match.syncSeats(peers.map((p) => ({
+    id: p.peer,
+    name: p.presence?.name,
+    color: p.presence?.color,
+    canPlay: p.presence?.canHost !== false,
+  })));
+};
+
+// A person choosing their own side. The seat is the sender's peer label, which
+// the platform stamps - so nobody can move anybody but themselves this way.
+net.onSeatRequest = (data, msg) => {
+  if (!net.isHost || match.phase !== PHASES.lobby) return;
+  match.setSide(msg.peer, data?.side ?? null);
+  screens.renderLobby();
+};
+
 // Everything the owner decides in the lobby arrives here, on a topic the
 // platform already refuses from anyone below Editor.
 net.onSetupRequest = (data) => {
   if (!net.isHost || !data) return;
+  if (data.seat?.id) match.setSide(String(data.seat.id), data.seat.side ?? null);
   if (data.settings) match.configure(data.settings);
   if (data.team?.id) {
     const participant = world.lobby.get(data.team.id);
@@ -483,6 +589,7 @@ net.onSetupRequest = (data) => {
   }
   if (data.start) match.openBriefing();
   if (data.go) match.goLive();
+  if (data.end) match.finish('ended');
   if (data.lobby) match.toLobby();
   screens.renderLobby();
   net.send(TOPICS.phase, match.state);
@@ -580,6 +687,10 @@ function frame(now) {
     accumulator -= STEP;
   }
 
+  // Colour is viewer-relative - in a team game your own fighter is your colour
+  // on your screen and your side's on everyone else's - so it is worked out
+  // here, per page, rather than stored on the body.
+  for (const agent of world.agents) agent.color = colorFor(agent.participant);
   renderer.draw(world, { selectedId: ui.selectedId, match });
 
   // The focus bar carries sub-second action flashes, so it tracks the frame
@@ -597,8 +708,11 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 
-// Nothing is in the arena, and nothing happens, until someone presses a key on
-// the title card and sets a game up.
+// The title card is each page's own gate; the game behind it starts in the
+// lobby. A page that turns out to be a guest is overwritten by its host.
+match.begin();
+ui.colorOf = colorFor;
+screens.setProfile(loadProfile());
 ui.update();
 screens.render();
 requestAnimationFrame(frame);

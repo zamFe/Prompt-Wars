@@ -845,7 +845,6 @@ body[data-phase="postgame"] .topbar, body[data-phase="postgame"] main { display:
 .screen-landing {
   align-items: center;
   justify-content: center;
-  cursor: pointer;
   background:
     radial-gradient(1100px 620px at 50% 38%, rgba(94, 200, 255, 0.10), transparent 70%),
     radial-gradient(760px 520px at 50% 95%, rgba(255, 92, 122, 0.08), transparent 70%),
@@ -1189,6 +1188,169 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   .podium .step.first { order: -1; }
   .screen { padding: 16px; }
 }
+
+/* ------------------------------------------------------------ profile */
+.profile {
+  margin: 0 auto;
+  max-width: 440px;
+  text-align: left;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.profile-name input { font-size: 16px; padding: 10px 12px; }
+.profile-colors { border: 0; margin: 0; padding: 0; }
+.profile-colors legend { font-size: 12px; color: var(--muted); margin-bottom: 7px; padding: 0; }
+
+.swatches { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 7px; }
+.swatch {
+  aspect-ratio: 1;
+  width: 100%;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  background: var(--swatch);
+  padding: 0;
+  cursor: pointer;
+  box-shadow: inset -3px -3px 6px rgba(0, 0, 0, 0.35);
+}
+.swatch:hover { transform: scale(1.08); }
+.swatch[aria-checked="true"] { border-color: var(--text); box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.18); }
+.swatch.custom {
+  position: relative;
+  display: grid;
+  place-items: center;
+  background: conic-gradient(#ff5c7a, #ffd166, #4ade80, #38bdf8, #c084fc, #ff5c7a);
+  overflow: hidden;
+}
+.swatch.custom input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+.swatch.custom span { font-weight: 700; color: #0b0d13; pointer-events: none; }
+
+.profile-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.profile-preview { display: flex; align-items: center; gap: 9px; font-family: var(--font-display); font-size: 16px; min-width: 0; }
+.profile-preview i {
+  width: 26px; height: 26px; border-radius: 50%; flex: none;
+  box-shadow: inset -4px -4px 8px rgba(0, 0, 0, 0.4);
+}
+.profile-preview b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.profile-note { margin: 0; color: var(--muted); font-size: 11.5px; line-height: 1.45; }
+
+/* ------------------------------------------------- lobby: who sits where */
+.team-col.stands { background: transparent; border-style: dashed; }
+.team-col h4 .pick-side {
+  margin-left: auto;
+  font-family: var(--font-body);
+  font-size: 11px;
+  letter-spacing: 0;
+  text-transform: none;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--accent);
+  background: rgba(94, 200, 255, 0.1);
+  color: var(--accent);
+}
+.team-col h4 .pick-side:hover { background: rgba(94, 200, 255, 0.2); }
+.team-col select.move {
+  width: auto;
+  font-size: 11px;
+  padding: 2px 4px;
+  border-radius: 6px;
+  background: var(--panel-2);
+}
+.team-col li.bot .name { color: var(--muted); }
+
+/* ----------------------------------------------------- the fighter card */
+.fighter-summary { display: flex; flex-direction: column; gap: 4px; }
+.fighter-summary p { margin: 0; font-size: 12.5px; }
+.fs-who { display: flex; align-items: center; gap: 8px; min-width: 0; flex-wrap: wrap; }
+.fs-who i { width: 13px; height: 13px; border-radius: 50%; flex: none; }
+.fs-who b { font-family: var(--font-display); font-size: 15px; }
+.fs-who .muted { font-size: 12px; }
+.fs-status { color: var(--text); }
+button.wide { width: 100%; margin-top: 10px; }
+.fighter-card[data-state="form"] .fighter-summary { display: none; }
+
+.hint-line { margin: -4px 0 0; color: var(--muted); font-size: 11.5px; line-height: 1.45; }
+.brain-why { font-size: 12px; color: var(--muted); margin-top: -4px; }
+.brain-why summary { cursor: pointer; font-size: 11.5px; }
+.brain-why summary:hover { color: var(--text); }
+.brain-why > div {
+  margin-top: 6px;
+  padding: 8px 10px;
+  border-radius: 7px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  line-height: 1.5;
+}
+.brain-why code {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--accent);
+  background: rgba(94, 200, 255, 0.09);
+  padding: 1px 4px;
+  border-radius: 4px;
+}
+.brain-why a { color: var(--accent); }
+select:disabled { opacity: 0.7; }
+
+/* --------------------------------------------------- HUD and topbar bits */
+.hud-lives { color: var(--bad); letter-spacing: 0.08em; font-size: 14px; white-space: nowrap; }
+button.danger { color: #fca5a5; border-color: rgba(239, 68, 68, 0.4); }
+button.danger:hover { border-color: var(--bad); }
+
+/* The lobby is about who is playing, so that comes first and gets the width:
+   three columns - the stands and both sides - read side by side. Mode and map
+   share the row under it; the rules lie flat along the bottom. */
+.lobby-roster-card { grid-column: 1 / -1; order: -1; }
+.lobby-rules-card { grid-column: 1 / -1; }
+.lobby-rules-card .setting-rows {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+  align-items: start;
+}
+.lobby-rules-card .setting-note { grid-column: 1 / -1; margin-top: -6px; }
+.mode-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.team-columns { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+
+@media (max-width: 860px) {
+  .lobby-rules-card .setting-rows { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* Five tabs in a 272px rail. Flex shares any overflow across EVERY item, so a
+   row five pixels too wide ("ARENA 10") took a pixel from each tab and put an
+   ellipsis on all five at once. Tabs now never shrink below their words: the
+   row is tighter, the count smaller, and if a font still runs wide the row
+   scrolls rather than cutting a label short. */
+.rail-tabs {
+  gap: 1px;
+  justify-content: space-between;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.rail-tabs::-webkit-scrollbar { display: none; }
+.rail-tabs button {
+  flex: 0 0 auto;
+  padding: 6px 4px;
+  letter-spacing: 0;
+  overflow: visible;
+  text-overflow: clip;
+}
+.rail-tabs em { font-size: 9px; margin-left: 2px; }
+.roster .star { color: var(--warn); font-size: 11px; }
+
+/* Phone width: the mode name gets its own line in the header rather than
+   pushing the clock off the edge, and the tagline gives the wordmark its room. */
+@media (max-width: 720px) {
+  .hud { flex-wrap: wrap; row-gap: 4px; gap: 10px; }
+  .hud-mode { flex-basis: 100%; }
+  .hud-score { margin-left: 0; }
+  .hud-clock { min-width: 0; margin-left: auto; }
+  .tagline { display: none; }
+}
 </style>
 <!--
     Four screens, one page. `data-phase` on the body is the only thing that
@@ -1196,16 +1358,33 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
     shown in the phases it does not belong to.
   -->
   <section class="screen screen-landing" id="screen-landing">
-    <div class="landing-inner">
+    <form class="landing-inner" id="profile-form" autocomplete="off">
       <span class="brand-dot big"></span>
       <h1>Prompt Wars</h1>
       <p class="landing-tag">You do not play. Your <b>prompt</b> does.</p>
       <p class="landing-sub">
-        Write instructions for a fighter. It sees through a 45° cone, acts through six slow tools,
-        and from then on it is on its own.
+        Write instructions for a fighter. It sees through a 45° cone, hears what it cannot see,
+        acts through six slow tools, and from then on it is on its own.
       </p>
-      <p class="landing-go" id="landing-go">Press anything to begin</p>
-    </div>
+
+      <div class="profile">
+        <label class="profile-name">
+          <span>Your name</span>
+          <input id="profile-name" maxlength="14" placeholder="Rook" required />
+        </label>
+
+        <fieldset class="profile-colors">
+          <legend>Favourite colour</legend>
+          <div class="swatches" id="profile-swatches" role="radiogroup" aria-label="Favourite colour"></div>
+        </fieldset>
+
+        <div class="profile-foot">
+          <span class="profile-preview"><i id="profile-sphere"></i><b id="profile-preview-name">Rook</b></span>
+          <button type="submit" class="primary big">Enter the lobby</button>
+        </div>
+        <p class="profile-note">Your fighters wear this colour. In a team game everyone else sees your side's colour.</p>
+      </div>
+    </form>
   </section>
 
   <section class="screen screen-lobby" id="screen-lobby">
@@ -1229,7 +1408,7 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
           <div class="map-cards" id="map-cards"></div>
         </section>
 
-        <section class="lobby-card">
+        <section class="lobby-card lobby-rules-card">
           <h3>Rules</h3>
           <div class="setting-rows">
             <label class="setting">
@@ -1249,7 +1428,7 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
         </section>
 
         <section class="lobby-card lobby-roster-card">
-          <h3>Fighters <em id="lobby-count"></em></h3>
+          <h3>Players <em id="lobby-count"></em></h3>
           <div class="team-columns" id="team-columns"></div>
           <div class="row lobby-actions" id="lobby-actions">
             <button type="button" class="ghost" id="btn-add-bot">Add a bot</button>
@@ -1305,10 +1484,6 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
       <span class="tagline">write a prompt, it fights for you</span>
     </div>
     <div class="stats">
-      <span class="stat"><b id="stat-alive">0</b>/<span id="stat-max">10</span> in arena</span>
-      <span class="stat"><b id="stat-queue">0</b> queued</span>
-      <span class="stat"><b id="stat-cooldown">0</b> on timer</span>
-      <span class="stat"><b id="stat-clock">0:00</b></span>
       <span class="badge" id="badge-room" hidden>solo</span>
       <div class="usage" id="usage" hidden>
         <span class="usage-label">Claude calls</span>
@@ -1317,6 +1492,7 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
       </div>
       <span class="badge" id="badge-model">checking model…</span>
       <button id="btn-pause" class="ghost" type="button">Pause</button>
+      <button id="btn-end" class="ghost danger" type="button" hidden>End round</button>
     </div>
   </header>
 
@@ -1330,6 +1506,7 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
       <div class="hud" id="hud">
         <span class="hud-mode" id="hud-mode"></span>
         <div class="hud-score" id="hud-score"></div>
+        <span class="hud-lives" id="hud-lives" hidden></span>
         <span class="hud-clock" id="hud-clock">—</span>
       </div>
 
@@ -1413,8 +1590,19 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
     </aside>
 
     <aside class="panel">
-      <section class="card" id="deploy-card">
+      <!--
+        One card, four states: write your prompt (briefing), ready (written,
+        waiting for the round), fighting (live - the form is gone; you talk to
+        it in Agent chat), or spectating. The form only takes space when
+        filling it in is the thing to do.
+      -->
+      <section class="card fighter-card" id="deploy-card" data-state="form">
         <h2>Your fighter <em id="deploy-phase"></em></h2>
+
+        <div class="fighter-summary" id="fighter-summary" hidden></div>
+        <button type="button" class="ghost wide" id="btn-rewrite" hidden>Rewrite the prompt</button>
+        <button type="button" class="primary wide" id="btn-join-late" hidden>Join mid-round</button>
+
         <form id="join-form" autocomplete="off">
           <div class="row">
             <label class="grow">
@@ -1424,9 +1612,9 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
             <label>
               <span>Brain</span>
               <select id="field-brain">
+                <option value="sample" hidden>Claude</option>
+                <option value="claude" hidden>Claude (server)</option>
                 <option value="local">Offline interpreter</option>
-                <option value="sample">Claude — your account</option>
-                <option value="claude">Claude (server)</option>
               </select>
             </label>
           </div>
@@ -1434,12 +1622,15 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
             <span>Thinking <em id="tier-lock"></em></span>
             <select id="field-tier"></select>
           </label>
-          <p class="tier-note" id="tier-note" hidden></p>
-          <p class="brain-note" id="brain-note" hidden></p>
+          <p class="hint-line" id="brain-hint" hidden></p>
+          <details class="brain-why" id="brain-why" hidden>
+            <summary>Why is Claude not available?</summary>
+            <div id="brain-note"></div>
+          </details>
           <label>
             <span>Prompt <em id="prompt-count">0 / 1200</em></span>
             <textarea id="field-prompt" rows="5" maxlength="1200" required
-              placeholder="Describe how your agent should fight. It can turn, walk, sidestep, aim, fire, reload and hold — nothing else."></textarea>
+              placeholder="Describe how your fighter should fight. It can turn, walk, sidestep, aim, fire, reload and hold — nothing else."></textarea>
           </label>
           <div class="row">
             <select id="field-preset" class="grow">
@@ -1449,11 +1640,6 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
           </div>
           <p class="form-note" id="join-status"></p>
         </form>
-        <div class="row" id="admin-row">
-          <button type="button" class="ghost" id="btn-demo">Add 4 bots</button>
-          <button type="button" class="ghost" id="btn-clear">Clear arena</button>
-        </div>
-        <p class="role-note" id="role-note" hidden></p>
       </section>
 
       <!--
@@ -1465,7 +1651,7 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
         <div class="rail-tabs" id="rail-tabs" role="tablist" aria-label="Arena information">
           <button type="button" role="tab" data-tab="roster" aria-selected="true">Arena<em id="roster-count"></em></button>
           <button type="button" role="tab" data-tab="board" aria-selected="false">Board</button>
-          <button type="button" role="tab" data-tab="champs" aria-selected="false">Champs</button>
+          <button type="button" role="tab" data-tab="champs" aria-selected="false" title="Champions: best lives so far">Best</button>
           <button type="button" role="tab" data-tab="agent" aria-selected="false">Agent</button>
           <button type="button" role="tab" data-tab="feed" aria-selected="false">Feed</button>
         </div>
@@ -3063,6 +3249,10 @@ function createParticipant({ name, prompt, brainKind, colorIndex }) {
     readyAt: 0,
     // Which side, in a team mode. Null in a free-for-all.
     team: null,
+    // The person this fighter belongs to - their seat in the lobby - and the
+    // colour they picked. Both null for a bot.
+    seat: null,
+    favColor: null,
     // Commander mode: who this is, and who it answers to.
     role: null,              // 'commander' | 'squad'
     codename: null,          // a squad fighter's call-sign
@@ -4839,6 +5029,87 @@ function createClaudeBrain({ endpoint = '/api/decide', fallback = null } = {}) {
   };
 }
 
+// ---- public/src/colors.js ----------------------------------------
+// Who is drawn in what colour.
+//
+// Colour does two different jobs depending on the mode, and the rules follow
+// the job:
+//
+//   free-for-all   colour is identity. Your fighter wears your colour, for
+//                  everyone, and bots wear the palette.
+//   team modes     colour is the side. Everyone is red or blue - except, on
+//                  your own screen only, your own fighter, which wears your
+//                  colour so you can always find it.
+//   commander      colour is the army. A commander wears its player's colour
+//                  and its four wear the same colour a shade off it, so two
+//                  armies read as two families.
+//
+// The team ring drawn around every sphere in a team mode stays regardless, so
+// sides are never ambiguous even when two players pick the same favourite.
+const isHex = (value) => typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value);
+
+const toRgb = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
+const toHex = (rgb) => `#${rgb.map((c) => Math.round(Math.min(1, Math.max(0, c)) * 255).toString(16).padStart(2, '0')).join('')}`;
+
+function toHsl([r, g, b]) {
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  if (max === min) return [0, 0, l];
+  const d = max - min;
+  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+  const h = max === r ? (g - b) / d + (g < b ? 6 : 0) : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return [h / 6, s, l];
+}
+
+function fromHsl([h, s, l]) {
+  if (s === 0) return [l, l, l];
+  const hue = (p, q, t) => {
+    const u = t < 0 ? t + 1 : t > 1 ? t - 1 : t;
+    if (u < 1 / 6) return p + (q - p) * 6 * u;
+    if (u < 1 / 2) return q;
+    if (u < 2 / 3) return p + (q - p) * (2 / 3 - u) * 6;
+    return p;
+  };
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+  const p = 2 * l - q;
+  return [hue(p, q, h + 1 / 3), hue(p, q, h), hue(p, q, h - 1 / 3)];
+}
+
+/** How light a colour reads, 0..1, weighted the way eyes weigh it. */
+function luminance(hex) {
+  const [r, g, b] = toRgb(hex);
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+/**
+ * The same colour, a step away: darker if it is light enough to take it,
+ * lighter if it is already dark - so the step is always visible.
+ */
+function shade(hex, step = 0.16) {
+  if (!isHex(hex)) return hex;
+  const [h, s, l] = toHsl(toRgb(hex));
+  const darker = luminance(hex) > 0.32;
+  return toHex(fromHsl([h, s, Math.min(0.92, Math.max(0.12, l + (darker ? -step : step)))]));
+}
+
+/**
+ * The colour to draw a fighter in, on THIS page.
+ *
+ * @param p      a participant, or a result row shaped like one
+ * @param view   { mode, mySeat, myColor } - the mode being played, and who is
+ *               looking at the screen
+ */
+function colorOf(p, { mode = null, mySeat = null, myColor = null } = {}) {
+  const palette = AGENT_COLORS[(p?.colorIndex ?? 0) % AGENT_COLORS.length];
+  const side = p?.team && TEAMS[p.team] ? TEAMS[p.team].color : null;
+  const own = Boolean(p?.seat) && p.seat === mySeat;
+
+  if (mode?.squad) return (isHex(p?.favColor) ? p.favColor : null) ?? side ?? palette;
+  if (mode?.teams) return own && isHex(myColor) ? myColor : side ?? palette;
+  return (isHex(p?.favColor) ? p.favColor : null) ?? palette;
+}
+
 // ---- public/src/match.js -----------------------------------------
 // The match: what game is being played, who is on which side, and what the
 // screen is showing.
@@ -4990,6 +5261,10 @@ function createMatch({ world, onPhase = () => {}, onEvent = () => {}, onFormUp =
   let scores = { a: 0, b: 0 };
   let flags = null;
   let results = null;
+  // The people in the lobby, keyed by seat: a peer label in a shared room,
+  // "local" on a page running alone. A seat is a person; a fighter is what
+  // they send into a round. `side` is null while they spectate.
+  let seats = {};
   let startedAt = null;
 
   const mode = () => MODES[settings.mode] ?? MODES.ffa;
@@ -5130,7 +5405,73 @@ function createMatch({ world, onPhase = () => {}, onEvent = () => {}, onFormUp =
           ? Object.fromEntries(Object.entries(flags).map(([k, f]) => [k, { state: f.state, x: Math.round(f.x), y: Math.round(f.y) }]))
           : null,
         results,
+        seats: Object.fromEntries(Object.entries(seats).map(([id, seat]) => [id, { ...seat }])),
       };
+    },
+
+    get seats() {
+      return seats;
+    },
+
+    /** The sides a person can take in this mode, spectating aside. */
+    sideOptions() {
+      return mode().teams ? ['a', 'b'] : ['play'];
+    },
+
+    /**
+     * Rebuild the seat list from who is actually present. Everyone arrives
+     * spectating; a person already seated keeps their side; a person who has
+     * left takes their seat with them.
+     */
+    syncSeats(present = []) {
+      const next = {};
+      for (const person of present) {
+        if (!person?.id || !person.name) continue;
+        const kept = seats[person.id];
+        next[person.id] = {
+          name: String(person.name).slice(0, 18),
+          color: isHex(person.color) ? person.color : '#8b93a7',
+          side: kept?.side ?? null,
+          // A Viewer can watch and nothing else, so it is never offered a side.
+          canPlay: person.canPlay !== false,
+        };
+      }
+      const changed = JSON.stringify(next) !== JSON.stringify(seats);
+      seats = next;
+      if (changed) onPhase(api.state);
+      return changed;
+    },
+
+    /**
+     * Put a person on a side, or back in the stands. The owner can do this to
+     * anyone; a person can do it only to themselves, which the host enforces by
+     * taking the seat from the platform-stamped sender, never from the message.
+     */
+    setSide(seatId, side) {
+      const seat = seats[seatId];
+      if (!seat) return false;
+      const wanted = side === null || this.sideOptions().includes(side) ? side : null;
+      if (wanted && !seat.canPlay) return false;
+
+      // Commander is one person a side.
+      if (wanted && mode().squad) {
+        const taken = Object.entries(seats).some(([id, other]) => id !== seatId && other.side === wanted) ||
+          world.lobby.list().some((p) => p.role === 'commander' && !p.seat && p.team === wanted);
+        if (taken) return false;
+      }
+
+      seat.side = wanted;
+      onPhase(api.state);
+      return true;
+    },
+
+    /** A team mode's sides, or "playing", follow a change of mode. */
+    reseat(nextMode) {
+      for (const seat of Object.values(seats)) {
+        if (!seat.side) continue;
+        if (nextMode.teams && seat.side === 'play') seat.side = null;
+        if (!nextMode.teams && seat.side !== 'play') seat.side = 'play';
+      }
     },
 
     /** Any key or click leaves the title card. */
@@ -5167,9 +5508,28 @@ function createMatch({ world, onPhase = () => {}, onEvent = () => {}, onFormUp =
       return kept;
     },
 
+    /**
+     * Fighters belong to people, and people sit where they sit. A fighter whose
+     * person has gone to the stands - or left - leaves with them; one whose
+     * person changed sides changes with them.
+     */
+    fieldSeats() {
+      for (const participant of world.lobby.list()) {
+        if (!participant.seat) continue;
+        const seat = seats[participant.seat];
+        if (!seat?.side) {
+          world.lobby.remove(participant.id);
+          continue;
+        }
+        participant.team = seat.side === 'a' || seat.side === 'b' ? seat.side : null;
+        participant.favColor = seat.color;
+      }
+    },
+
     /** Which sides still have room for a commander. */
     freeCommandSlot() {
-      const taken = (team) => world.lobby.list().some((p) => p.team === team && p.role === 'commander');
+      const taken = (team) => world.lobby.list().some((p) => p.team === team && p.role === 'commander') ||
+        Object.values(seats).some((seat) => seat.side === team);
       return !taken('a') ? 'a' : !taken('b') ? 'b' : null;
     },
 
@@ -5190,6 +5550,7 @@ function createMatch({ world, onPhase = () => {}, onEvent = () => {}, onFormUp =
       settings = next;
 
       if (next.mode !== before) {
+        api.reseat(MODES[next.mode]);
         // Squads belong to the mode that raised them.
         api.dropSquads();
         if (MODES[next.mode].squad) api.trimToCommanders();
@@ -5214,6 +5575,7 @@ function createMatch({ world, onPhase = () => {}, onEvent = () => {}, onFormUp =
     /** The owner has started the round: everyone gets the clock to write. */
     openBriefing() {
       if (phase !== PHASES.lobby) return false;
+      api.fieldSeats();
       if (mode().squad) api.trimToCommanders();
       world.clearArena?.({ keepParticipants: true });
       scores = { a: 0, b: 0 };
@@ -5337,6 +5699,17 @@ function createMatch({ world, onPhase = () => {}, onEvent = () => {}, onFormUp =
       settings = { ...settings, ...state.settings };
       scores = { ...state.scores };
       results = state.results ?? null;
+      // Seats arrive from the host and are only ever displayed here, so they
+      // are reshaped rather than trusted.
+      seats = {};
+      for (const [id, seat] of Object.entries(state.seats ?? {})) {
+        seats[String(id).slice(0, 64)] = {
+          name: String(seat?.name ?? 'Someone').slice(0, 18),
+          color: isHex(seat?.color) ? seat.color : '#8b93a7',
+          side: seat?.side === 'a' || seat?.side === 'b' || seat?.side === 'play' ? seat.side : null,
+          canPlay: seat?.canPlay !== false,
+        };
+      }
       limit = 0;
       if (state.flags) {
         flags ??= { a: { team: 'a' }, b: { team: 'b' } };
@@ -5379,6 +5752,10 @@ function buildResults({ world, mode, scores, settings, reason, startedAt }) {
       name: p.name,
       colorIndex: p.colorIndex,
       team: p.team ?? null,
+      // What a viewer needs to colour this row the way the arena coloured it.
+      seat: p.seat ?? null,
+      favColor: p.favColor ?? null,
+      role: p.role ?? null,
       brainKind: p.brainKind,
       isMine: Boolean(p.isMine),
       kills: p.kills,
@@ -5938,6 +6315,10 @@ function createUsageMeter({ budget = DEFAULT_BUDGET, onChange = () => {} } = {})
 // own and the room only ever lights it up.
 const TOPICS = {
   tick: 'tick', roster: 'roster', join: 'join', plan: 'plan', need: 'need', part: 'part',
+  // A person choosing their own side in the lobby. Contributors may send it;
+  // the host takes the seat from the platform-stamped sender, so nobody can
+  // move anyone but themselves.
+  seat: 'seat',
   // What game is being played, and how it stands. Sent by the host, read by
   // everyone, so a guest's screen follows the host through every phase.
   phase: 'phase',
@@ -5971,6 +6352,8 @@ function encodeRoster(world) {
     a.netId, a.name, a.participant.colorIndex, a.participant.ownerId ?? null,
     a.participant.kills, a.participant.assists ?? 0, a.chat?.text ?? null,
     a.team ?? null, a.carrying ?? null,
+    a.participant.seat ?? null, a.participant.favColor ?? null, a.participant.role ?? null,
+    a.participant.id, Number.isFinite(a.participant.livesLeft) ? a.participant.livesLeft : null,
   ]);
 }
 
@@ -6013,7 +6396,7 @@ function createNet({ world, makeGhost, onState = () => {} } = {}) {
       room.emit(TOPICS.tick, encodeSnapshot(world)).catch(() => {});
 
       const rosterKey = world.agents
-        .map((a) => `${a.netId}:${a.participant.kills}:${a.team ?? ''}:${a.carrying ?? ''}:${a.chat?.text ?? ''}`)
+        .map((a) => `${a.netId}:${a.participant.kills}:${a.participant.livesLeft}:${a.team ?? ''}:${a.carrying ?? ''}:${a.chat?.text ?? ''}`)
         .join('|');
       if (rosterKey !== lastRosterKey) {
         lastRosterKey = rosterKey;
@@ -6082,6 +6465,13 @@ function createNet({ world, makeGhost, onState = () => {} } = {}) {
         if (state.isHost && !wasHost) startTicking();
         if (!state.isHost && wasHost) stopTicking();
         publish();
+        // Who is here, and what they called themselves. Presence is display
+        // data, never authority - it only ever seats someone as a spectator.
+        this.onPeopleChanged?.(peers.filter((p) => p.kind === 'viewer'));
+      }));
+
+      unsubscribes.push(room.on(TOPICS.seat, (msg) => {
+        if (state.isHost) this.onSeatRequest?.(msg.data, msg);
       }));
 
       // --- as a guest: render what the host sends ---------------------------
@@ -6092,7 +6482,7 @@ function createNet({ world, makeGhost, onState = () => {} } = {}) {
 
       unsubscribes.push(room.on(TOPICS.roster, (msg) => {
         if (state.isHost || msg.peer !== hostPeer) return;
-        applyRoster(world, msg.data, makeGhost);
+        applyRoster(world, msg.data, makeGhost, this.adoptGhost);
       }));
 
       // --- as the host: take in players and their plans ---------------------
@@ -6201,6 +6591,16 @@ function applySnapshot(world, data, makeGhost) {
     agent.ammo = ammo;
     agent.alive = hp > 0;
   }
+  // A body the host no longer sends has died. Its person's record says so,
+  // rather than going on reading "live" or "waiting" forever.
+  for (const gone of world.agents.filter((a) => !seen.has(a.netId))) {
+    const person = gone.participant;
+    if (person?.agent !== gone) continue;
+    person.agent = null;
+    const left = Number.isFinite(person.livesLeft) ? person.livesLeft : null;
+    person.status = left !== null && left <= 1 ? 'eliminated' : 'cooldown';
+    if (left !== null) person.livesLeft = Math.max(0, left - 1);
+  }
   world.agents = world.agents.filter((a) => seen.has(a.netId));
 
   world.projectiles = (data.p ?? []).map(([x, y, dx, dy]) => ({
@@ -6215,15 +6615,32 @@ function applySnapshot(world, data, makeGhost) {
 }
 
 /** Identities and scores, which change far less often than positions. */
-function applyRoster(world, rows, makeGhost) {
+function applyRoster(world, rows, makeGhost, adopt = () => null) {
   if (!Array.isArray(rows)) return;
-  for (const [netId, name, colorIndex, ownerId, kills, assists, chat, team, carrying] of rows) {
+  world.ghostOwners ??= new Map();
+
+  for (const [netId, name, colorIndex, ownerId, kills, assists, chat, team, carrying, seat, favColor, role, pid, livesLeft] of rows) {
     let agent = world.agents.find((a) => a.netId === netId);
     if (!agent) {
       agent = makeGhost(netId);
       if (!agent) continue;
       world.agents.push(agent);
     }
+
+    // One record per person, not one per body. A new life arrives as a new
+    // body, and the guest's OWN fighter already has a record on this page -
+    // the one holding its inbox and its conversation. Both are adopted rather
+    // than listed twice.
+    const hostId = typeof pid === 'string' ? pid.slice(0, 32) : null;
+    const owner = adopt?.(typeof seat === 'string' ? seat : null) ?? (hostId ? world.ghostOwners.get(hostId) : null);
+    if (owner && owner !== agent.participant) {
+      world.lobby.participants.delete(agent.participant.id);
+      agent.participant = owner;
+    }
+    agent.participant.agent = agent;
+    agent.participant.status = 'live';
+    agent.participant.livesLeft = typeof livesLeft === 'number' ? livesLeft : Infinity;
+    if (hostId) world.ghostOwners.set(hostId, agent.participant);
     agent.name = String(name ?? 'agent').slice(0, 14);
     agent.participant.name = agent.name;
     agent.participant.colorIndex = Number(colorIndex) || 0;
@@ -6233,6 +6650,9 @@ function applyRoster(world, rows, makeGhost) {
     agent.team = team === 'a' || team === 'b' ? team : null;
     agent.participant.team = agent.team;
     agent.carrying = carrying === 'a' || carrying === 'b' ? carrying : null;
+    agent.participant.seat = typeof seat === 'string' ? seat.slice(0, 64) : null;
+    agent.participant.favColor = /^#[0-9a-f]{6}$/i.test(favColor ?? '') ? favColor : null;
+    agent.participant.role = role === 'commander' || role === 'squad' ? role : null;
     // Raised through say() rather than written straight onto the agent, so a
     // guest's global chat fills from the host's arena exactly as the host's own
     // does. Private replies never travel: they are produced on, and stay on,
@@ -6773,14 +7193,18 @@ const DEMO_NAMES = [
 
 const $ = (id) => document.getElementById(id);
 class UI {
-  constructor({ world, match, chatLog, directLog, onJoin, onDemo, onClear, onSelect, onTogglePause, onMessage, onSkipBrief }) {
+  constructor({ world, match, chatLog, directLog, onJoin, onSelect, onTogglePause, onMessage, onSkipBrief, onEndRound, mySeat }) {
     this.world = world;
     this.match = match;
+    // How a fighter is coloured on this page. main.js replaces this with the
+    // mode- and viewer-aware rule once it knows who is looking.
+    this.colorOf = (p) => AGENT_COLORS[(p?.colorIndex ?? 0) % AGENT_COLORS.length];
     this.chatLog = chatLog;
     this.directLog = directLog;
     this.onJoin = onJoin;
     this.onSelect = onSelect;
     this.onMessage = onMessage;
+    this.mySeat = mySeat ?? (() => null);
     this.selectedId = null;
     this.lastLogLength = 0;
     // Which of the five rail views is on screen. Only this one is rendered.
@@ -6788,12 +7212,8 @@ class UI {
     this.directThreadId = null;
 
     this.el = {
-      alive: $('stat-alive'),
-      max: $('stat-max'),
-      queue: $('stat-queue'),
-      cooldown: $('stat-cooldown'),
-      clock: $('stat-clock'),
       badge: $('badge-model'),
+      end: $('btn-end'),
       pause: $('btn-pause'),
       form: $('join-form'),
       name: $('field-name'),
@@ -6802,16 +7222,20 @@ class UI {
       preset: $('field-preset'),
       count: $('prompt-count'),
       brainNote: $('brain-note'),
+      brainWhy: $('brain-why'),
+      brainHint: $('brain-hint'),
+      card: $('deploy-card'),
+      summary: $('fighter-summary'),
+      rewrite: $('btn-rewrite'),
+      joinLate: $('btn-join-late'),
+      hudLives: $('hud-lives'),
       tierRow: $('tier-row'),
       tierSelect: $('field-tier'),
-      tierNote: $('tier-note'),
       tierLock: $('tier-lock'),
       usage: $('usage'),
       usageFill: $('usage-fill'),
       usageValue: $('usage-value'),
       badgeRoom: $('badge-room'),
-      adminRow: $('admin-row'),
-      roleNote: $('role-note'),
       status: $('join-status'),
       roster: $('roster'),
       rosterCount: $('roster-count'),
@@ -6902,7 +7326,6 @@ class UI {
       this.renderDirect();
     }
 
-    this.el.max.textContent = String(WORLD.maxAgents);
     this.fillPresets();
     this.fillTiers();
     this.fillTools();
@@ -6918,9 +7341,10 @@ class UI {
       });
       this.showStatus(result.message, result.tone);
       if (result.ok) {
-        this.el.name.value = '';
-        this.el.prompt.value = '';
-        this.updateCount();
+        // The prompt stays in the box: rewriting it in the briefing starts
+        // from what you sent, not from nothing.
+        this.editing = false;
+        this.renderFighterCard();
       }
     });
 
@@ -6935,8 +7359,10 @@ class UI {
     });
 
     this.el.skipBrief.addEventListener('click', () => onSkipBrief?.());
-    this.el.demo.addEventListener('click', () => onDemo());
-    this.el.clear.addEventListener('click', () => onClear());
+    this.el.end.addEventListener('click', () => onEndRound?.());
+    // The form is folded away while you have a fighter; these bring it back.
+    this.el.rewrite.addEventListener('click', () => { this.editing = true; this.renderFighterCard(); });
+    this.el.joinLate.addEventListener('click', () => { this.editing = true; this.renderFighterCard(); });
     this.el.pause.addEventListener('click', () => {
       const paused = onTogglePause();
       this.el.pause.textContent = paused ? 'Resume' : 'Pause';
@@ -6976,23 +7402,37 @@ class UI {
       .map((t) => `<option value="${t.id}">${escapeHtml(t.label)}</option>`)
       .join('');
     this.el.tierSelect.value = DEFAULT_TIER;
-    this.el.tierNote.hidden = false;
-    this.el.tierSelect.addEventListener('change', () => this.describeTier());
-    this.el.brain.addEventListener('change', () => this.syncTierRow());
-    this.describeTier();
+    this.el.tierSelect.addEventListener('change', () => this.describeBrain());
+    this.el.brain.addEventListener('change', () => {
+      this.chosenBrain = this.el.brain.value;
+      this.syncTierRow();
+    });
+    this.describeBrain();
   }
 
-  describeTier() {
+  /**
+   * One short line under the brain picker, and only when it says something
+   * the picker does not: how a tier thinks, or what offline means when you
+   * could have had Claude.
+   */
+  describeBrain() {
+    const brain = this.el.brain.value;
     const tier = MODEL_TIERS.find((t) => t.id === this.el.tierSelect.value);
-    this.el.tierNote.textContent = tier?.note ?? '';
-    this.el.tierNote.hidden = !tier;
+    const claudeAround = !this.el.brain.querySelector('option[value="sample"]').hidden ||
+      !this.el.brain.querySelector('option[value="claude"]').hidden;
+
+    const line = brain === 'local'
+      ? claudeAround ? 'Reads your prompt for intent with no Claude calls. Cheaper, and much less clever.' : ''
+      : tier?.note ?? '';
+    this.el.brainHint.textContent = line;
+    this.el.brainHint.hidden = !line;
   }
 
   /** The tier only applies to a brain that actually calls Claude. */
   syncTierRow() {
     const usesClaude = this.el.brain.value === 'sample' || this.el.brain.value === 'claude';
     this.el.tierRow.hidden = !usesClaude;
-    this.el.tierNote.hidden = !usesClaude;
+    this.describeBrain();
     this.lockTierIfDeployed();
   }
 
@@ -7018,18 +7458,7 @@ class UI {
    */
   setRole({ isOwner, canEdit, known }) {
     this.role = { isOwner, canEdit, known };
-    this.el.adminRow.hidden = !canEdit;
-
-    if (!known) {
-      this.el.roleNote.hidden = true;
-      return;
-    }
-    this.el.roleNote.hidden = false;
-    this.el.roleNote.innerHTML = isOwner
-      ? 'You are the <b>owner</b>: you can add bots and clear the arena.'
-      : canEdit
-        ? 'You are an <b>editor</b>: you can add bots and clear the arena.'
-        : 'You can <b>deploy your own agent</b>. Adding bots and clearing the arena belong to the owner.';
+    this.renderMatch();
   }
 
   /** What this page has spent of the viewer's Claude account. */
@@ -7129,20 +7558,57 @@ class UI {
     this.el.status.className = `form-note ${tone}`;
   }
 
-  setModelBadge(state, detail, { compat = false, hint = null } = {}) {
-    const badge = this.el.badge;
-    const option = this.el.brain.querySelector('option[value="claude"]');
-    if (option) option.textContent = compat ? 'Live model (via gateway)' : 'Claude (live)';
+  /**
+   * What thinks for your fighter, decided once from everything known.
+   *
+   * There are two ways to reach Claude - your own account, inside an artifact,
+   * and a server holding a key - and they report in at different times. They
+   * used to each write the badge as they arrived, so whichever answered LAST
+   * won: inside the artifact a failed server probe could land after Claude had
+   * already reported in, and replace "Claude · your account" with a paragraph
+   * about running a server. Now both feed one state and the badge is derived.
+   *
+   * @param sample  true / false once known, null while still asking
+   * @param server  { ready, model, compat, hint } once known, null while asking
+   */
+  setModelStatus({ sample = null, server = null } = {}) {
+    const brainSample = this.el.brain.querySelector('option[value="sample"]');
+    const brainServer = this.el.brain.querySelector('option[value="claude"]');
 
-    // "Off" on its own tells a visitor nothing. Say what is running instead,
-    // and what running the server would add.
-    this.el.brainNote.hidden = !hint;
-    if (hint) this.el.brainNote.innerHTML = hint;
-    badge.textContent = detail;
-    badge.className = `badge ${state}`;
-    // Only offer the live brain when the server can actually reach the model.
-    this.el.brain.querySelector('option[value="claude"]').disabled = state !== 'ok';
-    if (state !== 'ok' && this.el.brain.value === 'claude') this.el.brain.value = 'local';
+    // An option that cannot work is not offered at all, rather than shown
+    // greyed out with an explanation nobody asked for.
+    brainSample.hidden = sample !== true;
+    brainServer.hidden = !server?.ready;
+    brainServer.textContent = server?.compat ? `Model (${server.model})` : 'Claude (server)';
+
+    const best = sample === true ? 'sample' : server?.ready ? 'claude' : 'local';
+    const current = this.el.brain.value;
+    if (this.el.brain.querySelector(`option[value="${current}"]`).hidden || this.chosenBrain === undefined) {
+      this.el.brain.value = best;
+    }
+
+    const badge = this.el.badge;
+    if (sample === true) {
+      badge.textContent = 'Claude · your account';
+      badge.className = 'badge ok';
+    } else if (server?.ready) {
+      badge.textContent = server.compat ? `Model · ${server.model}` : `Claude · ${server.model}`;
+      badge.className = 'badge ok';
+    } else if (sample === null && server === null) {
+      badge.textContent = 'Checking for Claude…';
+      badge.className = 'badge';
+    } else {
+      badge.textContent = 'Offline brain';
+      badge.className = 'badge off';
+    }
+
+    // The long explanation only exists for the case it explains - nothing but
+    // the offline brain on offer - and it is folded away even then.
+    const offlineOnly = sample !== true && !server?.ready && (sample !== null || server !== null);
+    this.el.brainWhy.hidden = !offlineOnly || !server?.hint;
+    if (server?.hint) this.el.brainNote.innerHTML = server.hint;
+    this.el.brain.disabled = best === 'local' && offlineOnly;
+    this.syncTierRow();
   }
 
   /** Clicking toggles: click the focused agent again to let go of it. */
@@ -7188,15 +7654,9 @@ class UI {
   update() {
     const world = this.world;
     const participants = world.lobby.list();
-    const alive = world.agents.filter((a) => a.alive);
-
-    this.el.alive.textContent = String(alive.length);
-    this.el.queue.textContent = String(world.lobby.queue.length);
-    this.el.cooldown.textContent = String(participants.filter((p) => p.status === 'cooldown').length);
-    const total = Math.floor(world.time);
-    this.el.clock.textContent = `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
 
     this.lockTierIfDeployed();
+    this.renderFighterCard();
     this.renderRail(participants);
     this.syncDirect();
   }
@@ -7206,7 +7666,7 @@ class UI {
    * four behind it cost nothing until you open them.
    */
   renderRail(participants) {
-    this.el.rosterCount.textContent = participants.length ? ` ${participants.length}` : '';
+    this.el.rosterCount.textContent = participants.length ? `${participants.length}` : '';
 
     switch (this.railTab) {
       case 'roster': return this.renderRoster(participants);
@@ -7239,7 +7699,7 @@ class UI {
   }
 
   rosterRow(p) {
-    const color = AGENT_COLORS[p.colorIndex % AGENT_COLORS.length];
+    const color = this.colorOf(p);
     const agent = p.agent;
     let sub;
 
@@ -7259,9 +7719,9 @@ class UI {
 
     const lives = Number.isFinite(p.livesLeft) ? ` · ${p.livesLeft} ${p.livesLeft === 1 ? 'life' : 'lives'}` : '';
     sub += lives;
-    // In commander mode the name is a call-sign, so say whose it is.
+    // In commander mode the name is a call-sign, so say whose it is. A
+    // commander is marked on its name, where truncation cannot reach it.
     if (p.role === 'squad' && p.commanderName) sub += ` · ${p.commanderName}'s`;
-    if (p.role === 'commander') sub += ' · commander';
 
     const hp = agent ? Math.max(0, agent.hp / AGENT.maxHp) : 0;
     const hpColor = hp > 0.5 ? 'var(--good)' : hp > 0.25 ? 'var(--warn)' : 'var(--bad)';
@@ -7272,7 +7732,7 @@ class UI {
       <li data-id="${p.id}" class="${p.status !== 'live' ? 'waiting' : ''} ${this.selectedId === p.id ? 'selected' : ''}">
         <span class="dot" style="background:${color};${teamRing}"></span>
         <span class="who">
-          <span class="name">${escapeHtml(p.name)}</span>
+          <span class="name">${p.role === 'commander' ? '<span class="star" title="Commander">★</span> ' : ''}${escapeHtml(p.name)}</span>
           <div class="sub">${escapeHtml(sub)}${brainTag}</div>
           ${p.status === 'live' ? `<div class="hpbar"><i style="width:${hp * 100}%;background:${hpColor}"></i></div>` : ''}
         </span>
@@ -7287,7 +7747,7 @@ class UI {
       return;
     }
 
-    const color = AGENT_COLORS[participant.colorIndex % AGENT_COLORS.length];
+    const color = this.colorOf(participant);
     const agent = participant.agent;
     const parts = [
       `<div class="who-line"><span class="dot" style="background:${color}"></span>${escapeHtml(participant.name)}
@@ -7360,6 +7820,86 @@ class UI {
     this.el.inspector.innerHTML = parts.join('');
   }
 
+  /** This viewer's own fighter, if they have one in this round. */
+  get myFighter() {
+    const mine = this.world.lobby.list().filter((p) => p.isMine && p.status !== 'gone');
+    return mine.sort((a, b) => b.joinedAt - a.joinedAt)[0] ?? null;
+  }
+
+  /**
+   * The fighter card. The form takes the space only while filling it in is
+   * the thing to do; the rest of the time this is a two-line summary, and the
+   * conversation with your fighter happens in Agent chat.
+   */
+  renderFighterCard() {
+    const match = this.match;
+    if (!match) return;
+    const phase = match.phase;
+    const seat = match.seats[this.mySeat()] ?? null;
+    const mine = this.myFighter;
+    const briefing = phase === PHASES.briefing;
+    const live = phase === PHASES.live;
+
+    if (phase !== this.cardPhase) {
+      this.cardPhase = phase;
+      this.editing = false;
+    }
+
+    let state;
+    if (!seat?.side) state = 'spectating';
+    else if (this.editing) state = 'form';
+    else if (!mine) state = live ? 'late' : 'form';
+    else state = briefing ? 'ready' : 'fighting';
+
+    const key = `${state}:${mine?.id ?? ''}:${mine?.status ?? ''}:${mine?.livesLeft ?? ''}:${this.colorOf(mine ?? {})}`;
+    if (key === this.cardKey) return;
+    this.cardKey = key;
+
+    this.el.card.dataset.state = state;
+    this.el.form.hidden = state !== 'form';
+    this.el.rewrite.hidden = state !== 'ready';
+    this.el.joinLate.hidden = state !== 'late';
+    this.el.summary.hidden = state === 'form';
+    this.el.deployPhase.textContent = {
+      form: briefing ? 'write it now' : 'join mid-round',
+      ready: 'ready',
+      fighting: 'in the round',
+      late: '',
+      spectating: 'spectating',
+    }[state];
+    this.el.form.querySelector('button[type=submit]').textContent = mine ? 'Send the new prompt' : briefing ? 'Enter arena' : 'Join mid-round';
+
+    if (state === 'spectating') {
+      this.el.summary.innerHTML = '<p class="muted">You are spectating this round. Pick a side in the lobby to play the next one.</p>';
+      return;
+    }
+    if (state === 'late') {
+      this.el.summary.innerHTML = '<p class="muted">You have no fighter in this round yet.</p>';
+      return;
+    }
+    if (!mine) return;
+
+    const brain = { sample: 'Claude', claude: 'Claude (server)', remote: 'Claude', local: 'offline interpreter' }[mine.brainKind] ?? 'offline';
+    const tier = mine.brainKind === 'sample' || mine.brainKind === 'claude'
+      ? ` · ${MODEL_TIERS.find((t) => t.id === mine.tier)?.label.toLowerCase() ?? 'quick'}`
+      : '';
+    const lives = Number.isFinite(mine.livesLeft) && live
+      ? ` · ${mine.livesLeft} ${mine.livesLeft === 1 ? 'life' : 'lives'} left`
+      : '';
+    const status = briefing
+      ? 'Ready. It goes in when the clock runs out.'
+      : mine.status === 'eliminated'
+        ? 'Out of lives — watching the rest.'
+        : mine.status === 'cooldown'
+          ? 'Down — back in a moment.'
+          : 'In the arena. Talk to it in Agent chat.';
+
+    this.el.summary.innerHTML = `
+      <div class="fs-who"><i style="background:${this.colorOf(mine)}"></i><b>${escapeHtml(mine.name)}</b>
+        <span class="muted">${escapeHtml(brain)}${tier}${lives}</span></div>
+      <p class="fs-status">${escapeHtml(status)}</p>`;
+  }
+
   /**
    * The strip over the arena: what is being played, how it stands, and how long
    * is left. Diffed like the focus bar, because it is written every frame.
@@ -7379,13 +7919,24 @@ class UI {
     const mode = MODES[match.settings.mode] ?? MODES.ffa;
     const briefing = phase === PHASES.briefing;
 
-    set('phase', phase, () => {
+    set('phase', `${phase}:${this.role?.canEdit}`, () => {
       this.el.briefBanner.hidden = !briefing;
       this.el.hud.hidden = briefing;
-      this.el.deployPhase.textContent = briefing
-        ? 'write it now'
-        : phase === PHASES.live ? 'join mid-round' : '';
-      this.el.form.querySelector('button[type=submit]').textContent = briefing ? 'Enter arena' : 'Join mid-round';
+      this.el.end.hidden = !(this.role?.canEdit && phase === PHASES.live);
+      this.el.skipBrief.hidden = !this.role?.canEdit;
+      this.renderFighterCard();
+    });
+
+    // Your lives sit next to the clock: the two numbers that decide what you
+    // can still afford to do.
+    const mine = this.myFighter;
+    const lives = phase === PHASES.live && mine && Number.isFinite(mine.livesLeft) ? mine.livesLeft : null;
+    set('lives', lives, (v) => {
+      this.el.hudLives.hidden = v === null;
+      if (v !== null) {
+        this.el.hudLives.textContent = v === 0 ? 'out' : '♥'.repeat(Math.min(v, 10));
+        this.el.hudLives.title = `${v} ${v === 1 ? 'life' : 'lives'} left`;
+      }
     });
 
     const left = match.remaining;
@@ -7459,7 +8010,7 @@ class UI {
     // A pulse is "live" for PULSE.duration after the world stamped it.
     const firing = (kind) => Boolean(agent) && now - agent.pulses[kind] < PULSE.duration;
 
-    const color = AGENT_COLORS[participant.colorIndex % AGENT_COLORS.length];
+    const color = this.colorOf(participant);
     set('color', color, (v) => { this.el.fbDot.style.background = v; });
     set('name', participant.name, (v) => { this.el.fbName.textContent = v; });
     const brainLabel = { sample: 'your account', claude: 'server', remote: 'their account', local: 'offline' };
@@ -7528,7 +8079,7 @@ class UI {
 
     this.el.leaderboard.innerHTML = live.length
       ? live.map((p, i) => {
-          const color = AGENT_COLORS[p.colorIndex % AGENT_COLORS.length];
+          const color = this.colorOf(p);
           return `<li class="${p.id === this.selectedId ? 'selected' : ''}" data-id="${p.id}">
             <span class="rank">${i + 1}</span>
             <span class="dot" style="background:${color}"></span>
@@ -7629,6 +8180,9 @@ class UI {
       : 'Deploy an agent to talk to it';
     this.el.directInput.maxLength = COMMS.messageLength;
     this.el.directEmpty.hidden = thread.length > 0;
+    this.el.directEmpty.textContent = target
+      ? `Say something to ${target.name}. It answers here, and only you two can see this.`
+      : 'Deploy a fighter, then talk to it here. Only you two can see this.';
 
     if (id !== this.directThreadId) {
       this.directThreadId = id;
@@ -7951,10 +8505,15 @@ function createDirectLog({ max = COMMS.directMax } = {}) {
 
 
 
+
 const byId = (id) => document.getElementById(id);
 function createScreens({
   world,
   match,
+  me = () => ({ seat: null, profile: null }),
+  onProfile = () => {},
+  onPickSide = () => {},
+  onMoveSeat = () => {},
   onConfigure = () => {},
   onAddBot = () => {},
   onClearLobby = () => {},
@@ -7965,6 +8524,11 @@ function createScreens({
   const el = {
     body: document.body,
     landing: byId('screen-landing'),
+    profileForm: byId('profile-form'),
+    profileName: byId('profile-name'),
+    swatches: byId('profile-swatches'),
+    profileSphere: byId('profile-sphere'),
+    profilePreview: byId('profile-preview-name'),
     lobbySub: byId('lobby-sub'),
     lobbyRoom: byId('lobby-room'),
     modeCards: byId('mode-cards'),
@@ -7999,19 +8563,41 @@ function createScreens({
   let role = { canEdit: true, known: false };
   let room = null;
 
-  // --- the title card: anything at all moves on ------------------------------
-  const leaveLanding = () => {
-    if (match.phase !== PHASES.landing) return;
-    onStartPressed();
+  // --- the title card: who you are, and what colour you fight in -------------
+  let pickedColor = null;
+
+  el.swatches.innerHTML =
+    AGENT_COLORS.map((color) => `<button type="button" class="swatch" role="radio" aria-checked="false"
+        data-color="${color}" style="--swatch:${color}" title="${color}"></button>`).join('') +
+    // Anything outside the palette, for anyone who has a colour in mind.
+    `<label class="swatch custom" title="Any colour"><input type="color" id="profile-custom" value="#ffffff" />
+      <span>+</span></label>`;
+
+  const choose = (color) => {
+    if (!isHex(color)) return;
+    pickedColor = color.toLowerCase();
+    for (const swatch of el.swatches.querySelectorAll('.swatch[data-color]')) {
+      swatch.setAttribute('aria-checked', String(swatch.dataset.color.toLowerCase() === pickedColor));
+    }
+    el.profileSphere.style.background = pickedColor;
   };
-  const onStartPressed = () => {
-    match.begin();
-    api.render();
+  const preview = () => {
+    el.profilePreview.textContent = el.profileName.value.trim() || 'Rook';
   };
-  // "Any press or click" means any: a key, a tap, a click anywhere on the page.
-  // Each handler checks the phase itself, so they cost nothing afterwards.
-  window.addEventListener('keydown', leaveLanding);
-  window.addEventListener('pointerdown', leaveLanding);
+
+  el.swatches.addEventListener('click', (event) => {
+    const swatch = event.target.closest('.swatch[data-color]');
+    if (swatch) choose(swatch.dataset.color);
+  });
+  byId('profile-custom').addEventListener('input', (event) => choose(event.target.value));
+  el.profileName.addEventListener('input', preview);
+
+  el.profileForm.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const name = el.profileName.value.trim().slice(0, 14);
+    if (!name) return el.profileName.focus();
+    onProfile({ name, color: pickedColor ?? AGENT_COLORS[0] });
+  });
 
   // --- lobby controls --------------------------------------------------------
   el.modeCards.innerHTML = MODE_LIST
@@ -8048,8 +8634,23 @@ function createScreens({
   el.returnBtn.addEventListener('click', () => onReturn());
 
   el.teamColumns.addEventListener('click', (event) => {
-    const button = event.target.closest('button[data-swap]');
-    if (button && role.canEdit) onSetTeam(button.dataset.swap, button.dataset.team);
+    const swap = event.target.closest('button[data-swap]');
+    if (swap && role.canEdit) return onSetTeam(swap.dataset.swap, swap.dataset.team);
+    const pick = event.target.closest('button[data-pick]');
+    if (pick) return onPickSide(pick.dataset.pick === 'none' ? null : pick.dataset.pick);
+    return undefined;
+  });
+  // The owner moves anybody, from a picker on that person's row.
+  el.teamColumns.addEventListener('change', (event) => {
+    const move = event.target.closest('select[data-move]');
+    if (move && role.canEdit) onMoveSeat(move.dataset.move, move.value === 'none' ? null : move.value);
+  });
+
+  /** The rules a finished round's colours are drawn by, for this viewer. */
+  const viewFor = (results) => ({
+    mode: MODES[results.mode],
+    mySeat: me().seat,
+    myColor: me().profile?.color,
   });
 
   const api = {
@@ -8075,10 +8676,26 @@ function createScreens({
         : `Lose ${lives} ${lives === 1 ? 'life' : 'lives'} and you spectate the rest of the round.`;
     },
 
+    /** Fill the form from a profile this viewer saved last time. */
+    setProfile(profile) {
+      if (profile?.name) el.profileName.value = profile.name;
+      choose(profile?.color ?? AGENT_COLORS[Math.floor(Math.random() * AGENT_COLORS.length)]);
+      preview();
+    },
+
     render() {
-      el.body.dataset.phase = match.phase;
-      if (match.phase === PHASES.lobby) api.renderLobby();
-      if (match.phase === PHASES.postgame) api.renderPostgame();
+      // The profile screen is this page's own gate, in front of whatever the
+      // room is doing - a newcomer names themselves before anything else.
+      const { profile } = me();
+      const shown = !profile ? PHASES.landing : match.phase === PHASES.landing ? PHASES.lobby : match.phase;
+      el.body.dataset.phase = shown;
+      if (shown === PHASES.landing) {
+        requestAnimationFrame(() => {
+          if (document.activeElement !== el.profileName) el.profileName.focus();
+        });
+      }
+      if (shown === PHASES.lobby) api.renderLobby();
+      if (shown === PHASES.postgame) api.renderPostgame();
     },
 
     renderLobby() {
@@ -8107,12 +8724,16 @@ function createScreens({
       el.lobbyRoleNote.innerHTML = 'The owner sets the game up and starts it. ' +
         'You write your own fighter’s prompt once the round begins.';
 
-      const fighters = world.lobby.list().length;
+      const playing = Object.values(match.seats).filter((seat) => seat.side).length;
+      const fighters = world.lobby.list().filter((p) => !p.seat).length + playing;
+      const mySide = match.seats[me().seat]?.side ?? null;
       el.start.disabled = fighters === 0;
       el.lobbyHint.textContent = !role.canEdit
-        ? 'Waiting for the owner to start the round…'
+        ? mySide
+          ? 'You are in. You write your prompt once the owner starts the round…'
+          : 'Pick a side to play, or stay in the stands and watch.'
         : fighters === 0
-          ? 'Add a bot, or just start — everyone writes a prompt in the next minute either way.'
+          ? 'Pick a side yourself, or add a bot. Prompts are written in the minute after you press Start.'
           : `${MODES[settings.mode].name} on ${MAPS.find((m) => m.id === settings.map)?.name}, ` +
             `${minutes(settings.roundSeconds)}.`;
 
@@ -8126,35 +8747,83 @@ function createScreens({
       }
     },
 
+    /**
+     * Everyone in the lobby, by where they sit: the stands, then each side.
+     * People are seats; bots are fighters with no seat. The owner can move
+     * anyone; a person can move themselves; a Viewer can only watch.
+     */
     renderRoster() {
-      const everyone = world.lobby.list();
-      el.lobbyCount.textContent = everyone.length ? `${everyone.length} in` : 'nobody yet';
+      const { seat: mySeat, profile } = me();
+      const seats = match.seats;
+      const people = Object.entries(seats);
+      const bots = world.lobby.list().filter((p) => !p.seat && p.role !== 'squad');
+      const mode = match.mode;
+      const view = { mode, mySeat, myColor: profile?.color };
 
-      const row = (p) => {
-        const color = AGENT_COLORS[p.colorIndex % AGENT_COLORS.length];
-        const tag = p.isMine ? 'yours' : p.brainKind === 'local' ? 'bot' : 'theirs';
-        const swap = match.isTeamMode && role.canEdit
-          ? `<button class="swap" data-swap="${p.id}" data-team="${p.team === 'a' ? 'b' : 'a'}" title="Move to the other side">&#8644;</button>`
+      el.lobbyCount.textContent = `${people.length} ${people.length === 1 ? 'person' : 'people'}` +
+        (bots.length ? ` · ${bots.length} bot${bots.length === 1 ? '' : 's'}` : '');
+
+      const sides = mode.teams
+        ? [
+            { id: null, name: 'Spectating', color: null },
+            { id: 'a', name: TEAMS.a.name, color: TEAMS.a.color },
+            { id: 'b', name: TEAMS.b.name, color: TEAMS.b.color },
+          ]
+        : [
+            { id: null, name: 'Spectating', color: null },
+            { id: 'play', name: 'In the fight', color: null },
+          ];
+
+      const options = (current) => sides
+        .map((side) => `<option value="${side.id ?? 'none'}" ${side.id === (current ?? null) ? 'selected' : ''}>${esc(side.name)}</option>`)
+        .join('');
+
+      const personRow = ([id, seat]) => {
+        const isMe = id === mySeat;
+        const tag = isMe ? 'you' : seat.canPlay ? '' : 'watching only';
+        const control = role.canEdit && seat.canPlay
+          ? `<select class="move" data-move="${esc(id)}" aria-label="Move ${esc(seat.name)}">${options(seat.side)}</select>`
           : '<span></span>';
-        return `<li class="${p.isMine ? 'mine' : ''}">
-            <i class="dot" style="background:${color}"></i>
-            <span class="who"><span class="name">${esc(p.name)}</span></span>
-            <span class="tag">${tag}</span>${swap}</li>`;
+        return `<li class="${isMe ? 'mine' : ''}">
+            <i class="dot" style="background:${esc(seat.color)}"></i>
+            <span class="who"><span class="name">${esc(seat.name)}</span></span>
+            <span class="tag">${tag}</span>${control}</li>`;
       };
 
-      if (!match.isTeamMode) {
-        el.teamColumns.innerHTML = `<div class="team-col solo"><ul>${
-          everyone.map(row).join('') || '<li class="empty">Nobody has joined yet.</li>'
-        }</ul></div>`;
-        return;
-      }
+      const botRow = (p) => {
+        const color = colorOf(p, view);
+        const swap = mode.teams && role.canEdit
+          ? `<button class="swap" data-swap="${p.id}" data-team="${p.team === 'a' ? 'b' : 'a'}" title="Move to the other side">&#8644;</button>`
+          : '<span></span>';
+        return `<li class="bot">
+            <i class="dot" style="background:${color}"></i>
+            <span class="who"><span class="name">${esc(p.name)}</span></span>
+            <span class="tag">${p.role === 'commander' ? 'bot commander' : 'bot'}</span>${swap}</li>`;
+      };
 
-      el.teamColumns.innerHTML = ['a', 'b'].map((team) => {
-        const members = everyone.filter((p) => p.team === team);
-        return `<div class="team-col">
-            <h4><i style="background:${TEAMS[team].color}"></i>${esc(TEAMS[team].name)}
-              <span class="tag">${members.length}</span></h4>
-            <ul>${members.map(row).join('') || '<li class="empty">Nobody yet.</li>'}</ul>
+      const mine = seats[mySeat];
+      const canJoin = (side) => {
+        if (!mine || !mine.canPlay || (mine.side ?? null) === side.id) return false;
+        // Commander is one person a side, and a bot commander counts.
+        if (side.id && mode.squad) {
+          const held = people.some(([id, other]) => id !== mySeat && other.side === side.id) ||
+            bots.some((b) => b.role === 'commander' && b.team === side.id);
+          if (held) return false;
+        }
+        return true;
+      };
+
+      el.teamColumns.innerHTML = sides.map((side) => {
+        const here = people.filter(([, seat]) => (seat.side ?? null) === side.id);
+        const hereBots = side.id === null ? [] : bots.filter((b) => (mode.teams ? b.team === side.id : true));
+        const join = canJoin(side)
+          ? `<button type="button" class="pick-side" data-pick="${side.id ?? 'none'}">${side.id ? 'Join' : 'Spectate'}</button>`
+          : '';
+        const rows = here.map(personRow).join('') + hereBots.map(botRow).join('');
+        return `<div class="team-col ${side.id === null ? 'stands' : ''}">
+            <h4>${side.color ? `<i style="background:${side.color}"></i>` : ''}${esc(side.name)}
+              <span class="tag">${here.length + hereBots.length}</span>${join}</h4>
+            <ul>${rows || `<li class="empty">${side.id === null ? 'Nobody watching.' : 'Nobody yet.'}</li>`}</ul>
           </div>`;
       }).join('');
     },
@@ -8181,7 +8850,7 @@ function createScreens({
       el.podium.innerHTML = order.map((entry, index) => {
         const place = index === 1 ? 1 : index === 0 ? 2 : 3;
         if (!entry) return `<div class="step empty"><span class="place">${ordinal(place)}</span></div>`;
-        const color = AGENT_COLORS[entry.colorIndex % AGENT_COLORS.length];
+        const color = colorOf(entry, viewFor(results));
         return `<div class="step ${place === 1 ? 'first' : ''}">
             <span class="place">${ordinal(place)}</span>
             <div class="sphere" style="background:${color}"></div>
@@ -8204,8 +8873,8 @@ function createScreens({
         `<thead><tr><th>Fighter</th>${ctf ? '<th>Caps</th><th>Ret</th>' : ''}<th>K</th><th>D</th><th>A</th>` +
         `<th>Dmg</th><th>Acc</th><th>Best life</th></tr></thead><tbody>` +
         results.rows.map((r) => {
-          const color = AGENT_COLORS[r.colorIndex % AGENT_COLORS.length];
-          return `<tr class="${r.isMine ? 'mine' : ''}">
+          const color = colorOf(r, viewFor(results));
+          return `<tr class="${r.seat && r.seat === me().seat ? 'mine' : ''}">
             <td class="name"><i style="background:${color}"></i>${esc(r.name)}
               ${r.team ? `<span class="team-tag">${esc(TEAMS[r.team].short)}</span>` : ''}</td>
             ${ctf ? `<td>${r.captures}</td><td>${r.returns}</td>` : ''}
@@ -8246,6 +8915,7 @@ function esc(value) {
 
 // ---- public/src/main.js ------------------------------------------
 // Entry point: builds the world, wires the UI, runs the loop.
+
 
 
 
@@ -8301,6 +8971,36 @@ function deliver(participant, text) {
   return line;
 }
 
+// ------------------------------------------------------------ who you are
+// A name and a favourite colour, asked for on the title card and remembered in
+// this browser for next time. Kept per viewer, so it is only ever a
+// convenience: it never reaches another viewer except through presence.
+const PROFILE_KEY = 'prompt-wars:profile';
+let profile = null;
+
+function loadProfile() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(PROFILE_KEY) ?? 'null');
+    return saved?.name && isHex(saved.color) ? { name: String(saved.name).slice(0, 14), color: saved.color } : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveProfile(next) {
+  try {
+    localStorage.setItem(PROFILE_KEY, JSON.stringify(next));
+  } catch {
+    // Private windows and blocked storage: the profile still works this visit.
+  }
+}
+
+/** This page's seat: its peer label in a shared room, or "local" alone. */
+const mySeat = () => (net?.state.available ? net.me ?? null : 'local');
+
+/** How a fighter is coloured on THIS page. */
+const colorFor = (participant) => colorOf(participant, { mode: match.mode, mySeat: mySeat(), myColor: profile?.color });
+
 let usedColors = new Set();
 let usedNames = new Set();
 
@@ -8336,10 +9036,19 @@ function join({ name, prompt, brainKind, tier, team = null, role = null, focus =
     return { ok: false, message: 'Call budget spent. Raise it, or deploy on the offline interpreter.', tone: 'bad' };
   }
 
+  // A person fights where they sit. Their seat - picked in the lobby, or moved
+  // by the owner - decides the side, so there is nothing to guess here. A
+  // spectator does not get a fighter at all.
+  const seatId = mine ? mySeat() : ownerPeer;
+  const seat = seatId && role !== 'squad' && (mine || ownerPeer) ? match.seats[seatId] : null;
+  if (seatId && (mine || ownerPeer) && role !== 'squad' && !seat?.side) {
+    return { ok: false, message: 'You are spectating this round. Pick a side in the lobby to play the next one.', tone: 'warn' };
+  }
+
   // Commander mode is one agent a side. A commander takes a free chair or is
   // turned away; the squads it is given are not commanders and skip all this.
-  let side = team;
-  if (match.mode.squad && role !== 'squad') {
+  let side = seat ? (seat.side === 'play' ? null : seat.side) : team;
+  if (match.mode.squad && role !== 'squad' && !seat) {
     const free = match.freeCommandSlot();
     side = team && free !== null ? team : free;
     if (!side) {
@@ -8362,12 +9071,24 @@ function join({ name, prompt, brainKind, tier, team = null, role = null, focus =
   participant.ownerId = ownerId;
   // Agents I deployed: only these may lock my tier selector or bill my account.
   participant.isMine = mine;
+  if (seat) {
+    participant.seat = seatId;
+    participant.favColor = mine ? profile?.color ?? seat.color : seat.color;
+    // One fighter per person: writing a new prompt replaces the old fighter
+    // rather than sending in a second one.
+    for (const old of world.lobby.list()) {
+      if (old.seat === seatId && old !== participant) world.lobby.remove(old.id);
+    }
+  }
 
   if (mine && !net?.isHost && net?.state.available) {
     // Someone else is simulating: ask them to put this agent in.
     net.send(TOPICS.join, { name: participant.name, prompt, tier: participant.tier });
     world.lobby.participants.set(participant.id, participant);
     participant.status = 'queued';
+    // Follow it from the start: when the host sends its body back, this record
+    // adopts it and the focus bar lights up on its own.
+    if (focus) ui.focus(participant.id);
     return { ok: true, message: `${participant.name} sent to the host.`, tone: 'ok' };
   }
 
@@ -8427,6 +9148,9 @@ function raiseSquads(mode) {
       // The newest participant is the one just added.
       const bot = world.lobby.list().at(-1);
       bot.codename = codename;
+      // A squad reads as its commander's family: the same colour, a step
+      // darker - or lighter, if the commander's colour is already dark.
+      bot.favColor = shade(commander.favColor ?? TEAMS[team].color);
       bot.commanderId = commander.id;
       bot.commanderName = commander.name;
       bot.squadCodenames = codenames;
@@ -8463,18 +9187,16 @@ const ui = new UI({
   directLog,
   onJoin: join,
   onMessage: deliver,
+  mySeat: () => mySeat(),
   onSkipBrief: () => {
     if (!role.canEdit) return;
     if (net?.state.available && !net.isHost) return net.send(TOPICS.setup, { go: true });
     match.goLive();
   },
-  onDemo: () => {
-    if (net?.state.available && !net.isHost) return net.send(TOPICS.bots, { count: 4 });
-    addDemoAgents(4);
-  },
-  onClear: () => {
-    if (net?.state.available && !net.isHost) return net.send(TOPICS.clear, {});
-    clearArena();
+  onEndRound: () => {
+    if (!role.canEdit) return;
+    if (net?.state.available && !net.isHost) return net.send(TOPICS.setup, { end: true });
+    match.finish('ended');
   },
   onSelect: () => {
     ui.applyChatFocus();
@@ -8495,6 +9217,29 @@ let role = { isOwner: true, canEdit: true, known: false };
 const screens = createScreens({
   world,
   match,
+  me: () => ({ seat: mySeat(), profile }),
+  onProfile: (next) => {
+    profile = next;
+    saveProfile(next);
+    // Your fighter defaults to your name; you can still call it something else.
+    if (!ui.el.name.value) ui.el.name.value = next.name;
+    net?.setPresence({ name: next.name, color: next.color });
+    if (!net?.state.available) {
+      match.syncSeats([{ id: 'local', name: next.name, color: next.color, canPlay: true }]);
+    }
+    screens.render();
+  },
+  onPickSide: (side) => {
+    if (net?.state.available && !net.isHost) return net.send(TOPICS.seat, { side });
+    match.setSide(mySeat(), side);
+    screens.renderLobby();
+  },
+  onMoveSeat: (seatId, side) => {
+    if (!role.canEdit) return;
+    if (net?.state.available && !net.isHost) return net.send(TOPICS.setup, { seat: { id: seatId, side } });
+    match.setSide(seatId, side);
+    screens.renderLobby();
+  },
   onConfigure: (patch) => {
     if (!role.canEdit) return;
     if (net?.state.available && !net.isHost) return net.send(TOPICS.setup, { settings: patch });
@@ -8577,13 +9322,20 @@ const NO_CREDENTIALS_HINT =
   `The server is running but has no working credentials. Set <code>ANTHROPIC_API_KEY</code>, or try the ` +
   `free routes: <code>npm run stub-model</code>, or point <code>ANTHROPIC_BASE_URL</code> at a local model ` +
   `with <code>PROMPT_WARS_COMPAT=1</code>.`;
+// Two ways to reach Claude report in at different times, and both feed this one
+// state. Writing the badge from each as it arrived meant the last to answer
+// won - inside the artifact a failed server probe could land after Claude had
+// reported in and bury it under a paragraph about running a server.
+const modelStatus = { sample: null, server: null };
+const publishModel = () => ui.setModelStatus(modelStatus);
+
 async function checkModelBackend() {
   // Opened straight off disk there is no server to ask, and attempting the
   // fetch only logs a CORS failure. Offline brains still work.
   if (!location.protocol.startsWith('http')) {
     brains.claude.markUnavailable();
-    ui.setModelBadge('off', 'Offline brain · no server behind this page', { hint: NO_SERVER_HINT });
-    return;
+    modelStatus.server = { ready: false, hint: NO_SERVER_HINT };
+    return publishModel();
   }
 
   try {
@@ -8591,17 +9343,16 @@ async function checkModelBackend() {
     if (!response.ok) throw new Error(String(response.status));
     const data = await response.json();
     if (data.ready) {
-      // In compatibility mode something other than Claude is answering, so name
-      // the model rather than claiming a provider.
-      ui.setModelBadge('ok', data.compat ? `Model ready · ${data.model}` : `Claude ready · ${data.model}`, { compat: data.compat });
+      modelStatus.server = { ready: true, model: data.model, compat: Boolean(data.compat) };
     } else {
       brains.claude.markUnavailable();
-      ui.setModelBadge('off', data.reason ?? 'Claude off', { hint: NO_CREDENTIALS_HINT });
+      modelStatus.server = { ready: false, hint: NO_CREDENTIALS_HINT };
     }
   } catch {
     brains.claude.markUnavailable();
-    ui.setModelBadge('off', 'Offline brain · server unreachable', { hint: NO_SERVER_HINT });
+    modelStatus.server = { ready: false, hint: NO_SERVER_HINT };
   }
+  publishModel();
 }
 checkModelBackend();
 
@@ -8609,17 +9360,9 @@ checkModelBackend();
 // `sample` spends the viewer's own Claude usage, so it is offered only once the
 // runtime has actually handed it over.
 brains.sample.ready.then(() => {
-  const option = ui.el.brain.querySelector('option[value="sample"]');
-  if (brains.sample.available) {
-    option.disabled = false;
-    ui.el.brain.value = 'sample';
-    ui.setModelBadge('ok', 'Claude · your account');
-    ui.renderUsage(usage.state);
-  } else {
-    option.disabled = true;
-    option.textContent = 'Claude — not available here';
-  }
-  ui.syncTierRow();
+  modelStatus.sample = brains.sample.available;
+  if (brains.sample.available) ui.renderUsage(usage.state);
+  publishModel();
 });
 
 // ------------------------------------------------------------------ the room
@@ -8640,6 +9383,8 @@ world.brains.remote = createRemoteBrain({ net, fallback: brains.local });
 function makeGhost(netId) {
   const participant = createParticipant({ name: '…', prompt: '', brainKind: 'remote', colorIndex: netId });
   participant.isMine = false;
+  // Anything the host is sending is in the arena right now.
+  participant.status = 'live';
   world.lobby.participants.set(participant.id, participant);
   const agent = {
     id: `ghost${netId}`, netId, participant, name: '…',
@@ -8707,6 +9452,14 @@ net.onClearRequest = () => {
   if (net.isHost) clearArena();
 };
 
+// The host sends my own fighter back to me as just another body. This page
+// already has a record for it - the one holding its inbox and conversation -
+// so that record adopts the body instead of a second entry appearing.
+net.adoptGhost = (seat) => {
+  if (!seat || seat !== mySeat()) return null;
+  return world.lobby.list().find((p) => p.isMine && p.seat === seat) ?? null;
+};
+
 // Guests follow the host's phase, score and clock rather than running any of
 // it themselves.
 net.onPhase = (state) => {
@@ -8717,10 +9470,32 @@ net.onPhase = (state) => {
   ui.renderMatch();
 };
 
+// Everyone present has a seat, built from what they told the room about
+// themselves. Presence is display data and only ever seats a spectator; what
+// side they play on is decided below, from messages the platform stamps.
+net.onPeopleChanged = (peers) => {
+  if (!net.isHost) return;
+  match.syncSeats(peers.map((p) => ({
+    id: p.peer,
+    name: p.presence?.name,
+    color: p.presence?.color,
+    canPlay: p.presence?.canHost !== false,
+  })));
+};
+
+// A person choosing their own side. The seat is the sender's peer label, which
+// the platform stamps - so nobody can move anybody but themselves this way.
+net.onSeatRequest = (data, msg) => {
+  if (!net.isHost || match.phase !== PHASES.lobby) return;
+  match.setSide(msg.peer, data?.side ?? null);
+  screens.renderLobby();
+};
+
 // Everything the owner decides in the lobby arrives here, on a topic the
 // platform already refuses from anyone below Editor.
 net.onSetupRequest = (data) => {
   if (!net.isHost || !data) return;
+  if (data.seat?.id) match.setSide(String(data.seat.id), data.seat.side ?? null);
   if (data.settings) match.configure(data.settings);
   if (data.team?.id) {
     const participant = world.lobby.get(data.team.id);
@@ -8728,6 +9503,7 @@ net.onSetupRequest = (data) => {
   }
   if (data.start) match.openBriefing();
   if (data.go) match.goLive();
+  if (data.end) match.finish('ended');
   if (data.lobby) match.toLobby();
   screens.renderLobby();
   net.send(TOPICS.phase, match.state);
@@ -8825,6 +9601,10 @@ function frame(now) {
     accumulator -= STEP;
   }
 
+  // Colour is viewer-relative - in a team game your own fighter is your colour
+  // on your screen and your side's on everyone else's - so it is worked out
+  // here, per page, rather than stored on the body.
+  for (const agent of world.agents) agent.color = colorFor(agent.participant);
   renderer.draw(world, { selectedId: ui.selectedId, match });
 
   // The focus bar carries sub-second action flashes, so it tracks the frame
@@ -8842,8 +9622,11 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 
-// Nothing is in the arena, and nothing happens, until someone presses a key on
-// the title card and sets a game up.
+// The title card is each page's own gate; the game behind it starts in the
+// lobby. A page that turns out to be a guest is overwritten by its host.
+match.begin();
+ui.colorOf = colorFor;
+screens.setProfile(loadProfile());
 ui.update();
 screens.render();
 requestAnimationFrame(frame);

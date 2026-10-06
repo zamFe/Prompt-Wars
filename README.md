@@ -361,6 +361,25 @@ The layout keeps the chats beside the arena down to about 1280px. Below that
 they move under it, with the rail holding its width on the right; below 1080px
 everything stacks, arena first.
 
+## The game screen
+
+The arena and the two chats get the room. Over the arena, one strip carries the
+mode, the score, **your lives** and the clock. To the right, the fighter card
+changes with the phase: the full prompt form during the briefing, then — once
+you are in — two lines (your fighter, its brain, lives left, what it is doing)
+and a reminder that you talk to it in Agent chat. The form only takes space
+while filling it in is the thing to do.
+
+What thinks for your fighter is decided once, from both ways of reaching Claude.
+Inside the artifact that is your own account; the server option is not even
+offered there, and the explanation of how to run one only appears — folded —
+when nothing but the offline brain is available. It used to be written by
+whichever check answered last, so a failed server probe could land after
+Claude had reported in and bury it under a paragraph about `npm start`.
+
+The owner's in-round control is **End round**, in the top bar. Adding bots and
+clearing the arena belong to the lobby now.
+
 ## Following an agent
 
 The bar under the arena follows one agent. Deploying your own agent focuses it;
@@ -389,16 +408,22 @@ single lives.
 The page moves through four screens, and `data-phase` on `<body>` is the only
 thing that decides which one is up.
 
-**Landing.** A title card. Any key, any click, anywhere.
+**Profile.** A name and a favourite colour, remembered in your browser for next
+time. It is each page's own gate: someone arriving mid-round names themselves
+first, then sees whatever the room is doing.
 
-**Lobby.** The owner picks the mode, the map and the rules; everyone else
-watches the choices arrive. Bots can be added — they join the thinner side — and
-dragged across with the swap arrow. Nothing is in the arena yet.
+**Lobby.** Everyone present is listed, and everyone arrives **spectating**. You
+pick a side yourself — *Join* on a team, or *In the fight* for a free-for-all —
+and the owner can move anyone, person or bot, from a picker on their row. The
+owner also chooses the mode, the map and the rules. A Viewer is listed as
+*watching only* and never offered a side, because the platform would refuse
+everything they sent. Nothing is in the arena yet.
 
 **Briefing.** The round is called and a clock starts: **60 seconds** to write
 the prompt your fighter carries in, adjustable by the owner from 15 seconds to
-five minutes. The owner can also start early. Whoever has written a prompt is in
-the round; whoever has not, is not.
+five minutes. Your fighter's name starts as yours. The owner can start early.
+Whoever has a side and has written a prompt is in the round; a spectator is not.
+Writing again replaces your fighter rather than sending in a second one.
 
 **Live.** Ten minutes by default, 1–30 adjustable. The strip over the arena
 carries the mode, the score and the countdown.
@@ -461,6 +486,21 @@ This is the one mode where the second chat card is a **team channel** rather
 than a global one. You read your own side's traffic; the other side's reaches
 you only through your agent's ears.
 
+### Colours
+
+Colour does a different job in each kind of game, and follows the job:
+
+| Mode | What colour means |
+|---|---|
+| **Free-for-all** | who you are — your fighter wears your colour, for everyone |
+| **Team deathmatch, capture the flag** | which side — everyone is red or blue, **except your own fighter on your own screen**, which wears your colour so you can always find it |
+| **Commander** | whose army — a commander wears its player's colour, and its four wear it **a shade darker**, or **lighter** if the colour is already dark |
+
+That makes colour viewer-relative, so it is worked out per page every frame
+rather than stored on the body. The team ring around every sphere in a team
+mode stays regardless, so sides are never ambiguous even when two players pick
+the same favourite.
+
 ### Maps
 
 Three, and every one of them is **point-symmetric** — rotate it 180° and you get
@@ -502,7 +542,10 @@ The level is enforced by the platform, not the page. Room topics are admin-only
 unless the artifact opens them to Contributors at publish time, so the lobby
 controls (`setup`, `bots`, `clear`) are left closed and everything a host or a
 player must send (`tick`, `roster`, `phase`, `need`, `plan`, `join`, `part`) is
-opened.
+opened — along with `seat`, so a person can choose their own side. The host
+takes the seat from the platform-stamped sender, never from the message, so
+nobody can move anyone but themselves that way; moving other people is
+`setup`, which only the owner can send.
 
 The page that simulates is the **host**, elected without a negotiation — the
 lowest peer label wins — but only among pages that can actually send. Each page

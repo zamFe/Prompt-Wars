@@ -17,16 +17,33 @@
     shown in the phases it does not belong to.
   -->
   <section class="screen screen-landing" id="screen-landing">
-    <div class="landing-inner">
+    <form class="landing-inner" id="profile-form" autocomplete="off">
       <span class="brand-dot big"></span>
       <h1>Prompt Wars</h1>
       <p class="landing-tag">You do not play. Your <b>prompt</b> does.</p>
       <p class="landing-sub">
-        Write instructions for a fighter. It sees through a 45° cone, acts through six slow tools,
-        and from then on it is on its own.
+        Write instructions for a fighter. It sees through a 45° cone, hears what it cannot see,
+        acts through six slow tools, and from then on it is on its own.
       </p>
-      <p class="landing-go" id="landing-go">Press anything to begin</p>
-    </div>
+
+      <div class="profile">
+        <label class="profile-name">
+          <span>Your name</span>
+          <input id="profile-name" maxlength="14" placeholder="Rook" required />
+        </label>
+
+        <fieldset class="profile-colors">
+          <legend>Favourite colour</legend>
+          <div class="swatches" id="profile-swatches" role="radiogroup" aria-label="Favourite colour"></div>
+        </fieldset>
+
+        <div class="profile-foot">
+          <span class="profile-preview"><i id="profile-sphere"></i><b id="profile-preview-name">Rook</b></span>
+          <button type="submit" class="primary big">Enter the lobby</button>
+        </div>
+        <p class="profile-note">Your fighters wear this colour. In a team game everyone else sees your side's colour.</p>
+      </div>
+    </form>
   </section>
 
   <section class="screen screen-lobby" id="screen-lobby">
@@ -50,7 +67,7 @@
           <div class="map-cards" id="map-cards"></div>
         </section>
 
-        <section class="lobby-card">
+        <section class="lobby-card lobby-rules-card">
           <h3>Rules</h3>
           <div class="setting-rows">
             <label class="setting">
@@ -70,7 +87,7 @@
         </section>
 
         <section class="lobby-card lobby-roster-card">
-          <h3>Fighters <em id="lobby-count"></em></h3>
+          <h3>Players <em id="lobby-count"></em></h3>
           <div class="team-columns" id="team-columns"></div>
           <div class="row lobby-actions" id="lobby-actions">
             <button type="button" class="ghost" id="btn-add-bot">Add a bot</button>
@@ -126,10 +143,6 @@
       <span class="tagline">write a prompt, it fights for you</span>
     </div>
     <div class="stats">
-      <span class="stat"><b id="stat-alive">0</b>/<span id="stat-max">10</span> in arena</span>
-      <span class="stat"><b id="stat-queue">0</b> queued</span>
-      <span class="stat"><b id="stat-cooldown">0</b> on timer</span>
-      <span class="stat"><b id="stat-clock">0:00</b></span>
       <span class="badge" id="badge-room" hidden>solo</span>
       <div class="usage" id="usage" hidden>
         <span class="usage-label">Claude calls</span>
@@ -138,6 +151,7 @@
       </div>
       <span class="badge" id="badge-model">checking model…</span>
       <button id="btn-pause" class="ghost" type="button">Pause</button>
+      <button id="btn-end" class="ghost danger" type="button" hidden>End round</button>
     </div>
   </header>
 
@@ -151,6 +165,7 @@
       <div class="hud" id="hud">
         <span class="hud-mode" id="hud-mode"></span>
         <div class="hud-score" id="hud-score"></div>
+        <span class="hud-lives" id="hud-lives" hidden></span>
         <span class="hud-clock" id="hud-clock">—</span>
       </div>
 
@@ -234,8 +249,19 @@
     </aside>
 
     <aside class="panel">
-      <section class="card" id="deploy-card">
+      <!--
+        One card, four states: write your prompt (briefing), ready (written,
+        waiting for the round), fighting (live - the form is gone; you talk to
+        it in Agent chat), or spectating. The form only takes space when
+        filling it in is the thing to do.
+      -->
+      <section class="card fighter-card" id="deploy-card" data-state="form">
         <h2>Your fighter <em id="deploy-phase"></em></h2>
+
+        <div class="fighter-summary" id="fighter-summary" hidden></div>
+        <button type="button" class="ghost wide" id="btn-rewrite" hidden>Rewrite the prompt</button>
+        <button type="button" class="primary wide" id="btn-join-late" hidden>Join mid-round</button>
+
         <form id="join-form" autocomplete="off">
           <div class="row">
             <label class="grow">
@@ -245,9 +271,9 @@
             <label>
               <span>Brain</span>
               <select id="field-brain">
+                <option value="sample" hidden>Claude</option>
+                <option value="claude" hidden>Claude (server)</option>
                 <option value="local">Offline interpreter</option>
-                <option value="sample">Claude — your account</option>
-                <option value="claude">Claude (server)</option>
               </select>
             </label>
           </div>
@@ -255,12 +281,15 @@
             <span>Thinking <em id="tier-lock"></em></span>
             <select id="field-tier"></select>
           </label>
-          <p class="tier-note" id="tier-note" hidden></p>
-          <p class="brain-note" id="brain-note" hidden></p>
+          <p class="hint-line" id="brain-hint" hidden></p>
+          <details class="brain-why" id="brain-why" hidden>
+            <summary>Why is Claude not available?</summary>
+            <div id="brain-note"></div>
+          </details>
           <label>
             <span>Prompt <em id="prompt-count">0 / 1200</em></span>
             <textarea id="field-prompt" rows="5" maxlength="1200" required
-              placeholder="Describe how your agent should fight. It can turn, walk, sidestep, aim, fire, reload and hold — nothing else."></textarea>
+              placeholder="Describe how your fighter should fight. It can turn, walk, sidestep, aim, fire, reload and hold — nothing else."></textarea>
           </label>
           <div class="row">
             <select id="field-preset" class="grow">
@@ -270,11 +299,6 @@
           </div>
           <p class="form-note" id="join-status"></p>
         </form>
-        <div class="row" id="admin-row">
-          <button type="button" class="ghost" id="btn-demo">Add 4 bots</button>
-          <button type="button" class="ghost" id="btn-clear">Clear arena</button>
-        </div>
-        <p class="role-note" id="role-note" hidden></p>
       </section>
 
       <!--
@@ -286,7 +310,7 @@
         <div class="rail-tabs" id="rail-tabs" role="tablist" aria-label="Arena information">
           <button type="button" role="tab" data-tab="roster" aria-selected="true">Arena<em id="roster-count"></em></button>
           <button type="button" role="tab" data-tab="board" aria-selected="false">Board</button>
-          <button type="button" role="tab" data-tab="champs" aria-selected="false">Champs</button>
+          <button type="button" role="tab" data-tab="champs" aria-selected="false" title="Champions: best lives so far">Best</button>
           <button type="button" role="tab" data-tab="agent" aria-selected="false">Agent</button>
           <button type="button" role="tab" data-tab="feed" aria-selected="false">Feed</button>
         </div>
